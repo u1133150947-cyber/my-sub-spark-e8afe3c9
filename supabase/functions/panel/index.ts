@@ -116,6 +116,25 @@ async function listInbounds(key: PanelKey) {
   return json.obj as any[];
 }
 
+// Returns map: email -> { up, down, total } summed across all inbounds on a panel
+async function getClientTrafficsByEmail(key: PanelKey): Promise<Record<string, { up: number; down: number; total: number }>> {
+  const inbounds = await listInbounds(key);
+  const out: Record<string, { up: number; down: number; total: number }> = {};
+  for (const ib of inbounds) {
+    const stats: any[] = ib.clientStats ?? [];
+    for (const c of stats) {
+      const up = Number(c.up ?? 0);
+      const down = Number(c.down ?? 0);
+      const prev = out[c.email] ?? { up: 0, down: 0, total: 0 };
+      prev.up += up;
+      prev.down += down;
+      prev.total += up + down;
+      out[c.email] = prev;
+    }
+  }
+  return out;
+}
+
 async function addClient(
   key: PanelKey,
   inboundId: number,
@@ -241,6 +260,53 @@ Deno.serve(async (req) => {
         }
       }
       return new Response(JSON.stringify(result), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "stats") {
+      // Aggregate per-client traffic from both panels and persist a snapshot per subscription
+      const { data: subs } = await supabase
+        .from("subscriptions")
+        .select("id, name, client_email, created_at");
+      const byEmail = new Map<string, { id: string; name: string; created_at: string }>();
+      (subs ?? []).forEach((s) => byEmail.set(s.client_email, s));
+
+      const usagePerSub = new Map<string, { up: number; down: number; total: number }>();
+      const panelErrors: Record<string, string> = {};
+      for (const key of ["cz", "ru"] as PanelKey[]) {
+        try {
+          const m = await getClientTrafficsByEmail(key);
+          for (const [email, v] of Object.entries(m)) {
+            const sub = byEmail.get(email);
+            if (!sub) continue;
+            const cur = usagePerSub.get(sub.id) ?? { up: 0, down: 0, total: 0 };
+            cur.up += v.up;
+            cur.down += v.down;
+            cur.total += v.total;
+            usagePerSub.set(sub.id, cur);
+          }
+        } catch (e) {
+          panelErrors[key] = e instanceof Error ? e.message : String(e);
+        }
+      }
+
+      // Persist snapshots
+      const rows = Array.from(usagePerSub.entries()).map(([sid, v]) => ({
+        subscription_id: sid,
+        used_bytes: v.total,
+      }));
+      if (rows.length) {
+        await supabase.from("traffic_snapshots").insert(rows);
+      }
+
+      // Build per-sub array
+      const perSub = (subs ?? []).map((s) => {
+        const u = usagePerSub.get(s.id) ?? { up: 0, down: 0, total: 0 };
+        return { id: s.id, name: s.name, up: u.up, down: u.down, total: u.total };
+      });
+
+      return new Response(JSON.stringify({ perSub, panelErrors }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
