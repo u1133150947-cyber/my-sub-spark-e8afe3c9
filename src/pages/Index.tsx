@@ -293,37 +293,15 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="relative overflow-hidden border-b border-border">
-        <div
-          className="absolute inset-0 opacity-20"
-          style={{ background: "var(--gradient-hero)" }}
-          aria-hidden
-        />
-        <div className="container relative py-10 md:py-14">
-          <div className="flex items-center gap-3 mb-4">
-            <div
-              className="size-10 rounded-xl flex items-center justify-center"
-              style={{ background: "var(--gradient-hero)" }}
-            >
-              <Zap className="size-5 text-primary-foreground" />
-            </div>
-            <span className="text-sm uppercase tracking-widest text-muted-foreground">
-              3X-UI Sub Manager
-            </span>
+      <header className="border-b border-border">
+        <div className="container py-4 flex items-center gap-3">
+          <div
+            className="size-8 rounded-lg flex items-center justify-center"
+            style={{ background: "var(--gradient-hero)" }}
+          >
+            <Zap className="size-4 text-primary-foreground" />
           </div>
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight max-w-2xl">
-            Создавайте подписки для{" "}
-            <span
-              className="bg-clip-text text-transparent"
-              style={{ backgroundImage: "var(--gradient-hero)" }}
-            >
-              Happ
-            </span>{" "}
-            одной кнопкой
-          </h1>
-          <p className="mt-3 text-muted-foreground max-w-xl">
-            Подключено к вашим панелям 3X-UI. Создание клиентов, генерация ссылок и удаление — без входа в админки.
-          </p>
+          <span className="font-semibold">3X-UI Sub Manager</span>
         </div>
       </header>
 
