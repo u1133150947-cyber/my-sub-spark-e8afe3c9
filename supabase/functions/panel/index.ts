@@ -321,10 +321,21 @@ Deno.serve(async (req) => {
       const { data: subsRows } = await supabase
         .from("subscriptions")
         .select("id, name, client_email");
+      const { data: mappings } = await supabase
+        .from("client_mappings")
+        .select("panel, client_email, subscription_id, label");
       const emailToInfo = new Map<string, { sid: string; name: string; remark: string | null }>();
       (links ?? []).forEach((l: any) => {
         const sub = (subsRows ?? []).find((s: any) => s.id === l.subscription_id);
         emailToInfo.set(l.client_email, { sid: l.subscription_id, name: sub?.name ?? "?", remark: l.remark });
+      });
+      const mapByPanelEmail = new Map<string, { sid: string | null; name: string | null }>();
+      (mappings ?? []).forEach((m: any) => {
+        const sub = (subsRows ?? []).find((s: any) => s.id === m.subscription_id);
+        mapByPanelEmail.set(`${m.panel}::${m.client_email}`, {
+          sid: m.subscription_id,
+          name: sub?.name ?? m.label ?? null,
+        });
       });
 
       for (const key of ["cz", "ru"] as PanelKey[]) {
@@ -335,11 +346,12 @@ Deno.serve(async (req) => {
           const emails: string[] = j.obj ?? [];
           for (const email of emails) {
             const info = emailToInfo.get(email);
+            const manual = mapByPanelEmail.get(`${key}::${email}`);
             result.push({
               panel: key,
               email,
-              subscription_id: info?.sid ?? null,
-              sub_name: info?.name ?? null,
+              subscription_id: info?.sid ?? manual?.sid ?? null,
+              sub_name: info?.name ?? manual?.name ?? null,
               remark: info?.remark ?? null,
             });
           }

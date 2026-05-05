@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      client_mappings: {
+        Row: {
+          client_email: string
+          created_at: string
+          id: string
+          label: string | null
+          panel: string
+          subscription_id: string | null
+        }
+        Insert: {
+          client_email: string
+          created_at?: string
+          id?: string
+          label?: string | null
+          panel: string
+          subscription_id?: string | null
+        }
+        Update: {
+          client_email?: string
+          created_at?: string
+          id?: string
+          label?: string | null
+          panel?: string
+          subscription_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_mappings_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       panels: {
         Row: {
           created_at: string
