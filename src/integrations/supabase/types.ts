@@ -100,6 +100,27 @@ export type Database = {
         }
         Relationships: []
       }
+      traffic_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          subscription_id: string
+          used_bytes: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          subscription_id: string
+          used_bytes?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          subscription_id?: string
+          used_bytes?: number
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
