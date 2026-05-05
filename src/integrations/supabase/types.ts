@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       subscription_inbounds: {
         Row: {
+          client_email: string
           created_at: string
           host: string
           id: string
@@ -28,6 +29,7 @@ export type Database = {
           subscription_id: string
         }
         Insert: {
+          client_email: string
           created_at?: string
           host: string
           id?: string
@@ -40,6 +42,7 @@ export type Database = {
           subscription_id: string
         }
         Update: {
+          client_email?: string
           created_at?: string
           host?: string
           id?: string

@@ -274,17 +274,29 @@ Deno.serve(async (req) => {
 
       const usagePerSub = new Map<string, { up: number; down: number; total: number }>();
       const panelErrors: Record<string, string> = {};
+      // Build email -> subscription_id map from subscription_inbounds (per-inbound emails)
+      const { data: allLinks } = await supabase
+        .from("subscription_inbounds")
+        .select("subscription_id, client_email");
+      const emailToSub = new Map<string, string>();
+      (allLinks ?? []).forEach((l: any) => {
+        if (l.client_email) emailToSub.set(l.client_email, l.subscription_id);
+      });
+      // Also map legacy base email
+      (subs ?? []).forEach((s) => {
+        if (!emailToSub.has(s.client_email)) emailToSub.set(s.client_email, s.id);
+      });
       for (const key of ["cz", "ru"] as PanelKey[]) {
         try {
           const m = await getClientTrafficsByEmail(key);
           for (const [email, v] of Object.entries(m)) {
-            const sub = byEmail.get(email);
-            if (!sub) continue;
-            const cur = usagePerSub.get(sub.id) ?? { up: 0, down: 0, total: 0 };
+            const sid = emailToSub.get(email);
+            if (!sid) continue;
+            const cur = usagePerSub.get(sid) ?? { up: 0, down: 0, total: 0 };
             cur.up += v.up;
             cur.down += v.down;
             cur.total += v.total;
-            usagePerSub.set(sub.id, cur);
+            usagePerSub.set(sid, cur);
           }
         } catch (e) {
           panelErrors[key] = e instanceof Error ? e.message : String(e);
@@ -324,7 +336,7 @@ Deno.serve(async (req) => {
       const clientUuid = uuidv4();
       const slug = randomSlug(12);
       const subId = randomSlug(16);
-      const email = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
+      const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
       const expiryMs = days > 0 ? Date.now() + days * 24 * 60 * 60 * 1000 : 0;
       const totalBytes = totalGB > 0 ? Math.floor(totalGB * 1024 * 1024 * 1024) : 0;
 
@@ -334,7 +346,7 @@ Deno.serve(async (req) => {
         .insert({
           slug,
           name,
-          client_email: email,
+          client_email: baseEmail,
           client_uuid: clientUuid,
           expiry_ms: expiryMs,
           total_bytes: totalBytes,
@@ -361,6 +373,7 @@ Deno.serve(async (req) => {
             flow = "xtls-rprx-vision";
           }
 
+          const email = `${baseEmail}_${sel.panel}${ib.id}`;
           await addClient(sel.panel, sel.inboundId, {
             id: clientUuid,
             email,
@@ -379,6 +392,7 @@ Deno.serve(async (req) => {
             port: ib.port,
             host: hostFromUrl(cfg.url),
             stream_settings: stream,
+            client_email: email,
           });
           if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
 
@@ -477,9 +491,10 @@ Deno.serve(async (req) => {
           try { stream = JSON.parse(ib.streamSettings); } catch { stream = {}; }
           if (ib.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
 
+          const email = `${sub.client_email}_${sel.panel}${ib.id}`;
           await addClient(sel.panel, sel.inboundId, {
             id: sub.client_uuid,
-            email: sub.client_email,
+            email,
             expiryTime: sub.expiry_ms,
             totalGB: sub.total_bytes,
             subId: subIdShort,
@@ -494,6 +509,7 @@ Deno.serve(async (req) => {
             port: ib.port,
             host: hostFromUrl(cfg.url),
             stream_settings: stream,
+            client_email: email,
           });
           if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
@@ -565,7 +581,7 @@ Deno.serve(async (req) => {
       if (hasDays || hasGB) {
         const { data: links } = await supabase
           .from("subscription_inbounds")
-          .select("panel, inbound_id, protocol, stream_settings")
+          .select("panel, inbound_id, protocol, stream_settings, client_email")
           .eq("subscription_id", subId);
         const subIdShort = sub.slug.slice(0, 16);
         for (const l of links ?? []) {
@@ -575,7 +591,7 @@ Deno.serve(async (req) => {
             if (l.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
             await updateClient(l.panel as PanelKey, l.inbound_id, {
               id: sub.client_uuid,
-              email: sub.client_email,
+              email: l.client_email ?? sub.client_email,
               expiryTime: newExpiry,
               totalGB: newTotal,
               subId: subIdShort,
