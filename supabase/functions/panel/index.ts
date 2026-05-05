@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import https from "node:https";
+import http from "node:http";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -23,28 +25,57 @@ function getPanelConfig(key: PanelKey) {
 const cookieCache = new Map<PanelKey, { cookie: string; ts: number }>();
 const COOKIE_TTL_MS = 30 * 60 * 1000;
 
+// Use node:https to allow skipping TLS verification on panels with expired certs
+function nodeRequest(
+  urlStr: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
+): Promise<{ status: number; headers: Record<string, string | string[]>; body: string }> {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlStr);
+    const isHttps = u.protocol === "https:";
+    const lib: any = isHttps ? https : http;
+    const req = lib.request(
+      {
+        hostname: u.hostname,
+        port: u.port || (isHttps ? 443 : 80),
+        path: u.pathname + u.search,
+        method: opts.method ?? "GET",
+        headers: opts.headers ?? {},
+        rejectUnauthorized: false,
+      },
+      (res: any) => {
+        const chunks: Buffer[] = [];
+        res.on("data", (c: Buffer) => chunks.push(c));
+        res.on("end", () =>
+          resolve({
+            status: res.statusCode ?? 0,
+            headers: res.headers,
+            body: Buffer.concat(chunks).toString("utf8"),
+          }),
+        );
+      },
+    );
+    req.on("error", reject);
+    if (opts.body) req.write(opts.body);
+    req.end();
+  });
+}
+
 async function loginPanel(key: PanelKey): Promise<string> {
   const cached = cookieCache.get(key);
   if (cached && Date.now() - cached.ts < COOKIE_TTL_MS) return cached.cookie;
 
   const cfg = getPanelConfig(key);
-  const res = await fetch(`${cfg.url}/login`, {
+  const res = await nodeRequest(`${cfg.url}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ username: cfg.username, password: cfg.password }),
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Login failed [${key}] ${res.status}: ${text}`);
-
-  // Collect Set-Cookie (Deno fetch may merge into one)
-  const setCookies: string[] = [];
-  const headersAny = res.headers as any;
-  if (typeof headersAny.getSetCookie === "function") {
-    setCookies.push(...headersAny.getSetCookie());
-  } else {
-    const sc = res.headers.get("set-cookie");
-    if (sc) setCookies.push(sc);
+  } as any);
+  if (res.status < 200 || res.status >= 300) {
+    throw new Error(`Login failed [${key}] ${res.status}: ${res.body}`);
   }
+  const sc = res.headers["set-cookie"];
+  const setCookies: string[] = Array.isArray(sc) ? sc : sc ? [sc as string] : [];
   const cookie = setCookies
     .map((c) => c.split(";")[0])
     .filter(Boolean)
@@ -55,27 +86,31 @@ async function loginPanel(key: PanelKey): Promise<string> {
   return cookie;
 }
 
-async function panelFetch(key: PanelKey, path: string, init?: RequestInit) {
+async function panelFetch(
+  key: PanelKey,
+  path: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string },
+) {
   const cfg = getPanelConfig(key);
   let cookie = await loginPanel(key);
-  let res = await fetch(`${cfg.url}${path}`, {
-    ...init,
-    headers: { ...(init?.headers ?? {}), Cookie: cookie, Accept: "application/json" },
-  });
+  const doReq = (ck: string) =>
+    nodeRequest(`${cfg.url}${path}`, {
+      method: init?.method ?? "GET",
+      headers: { ...(init?.headers ?? {}), Cookie: ck, Accept: "application/json" },
+      body: init?.body,
+    });
+  let res = await doReq(cookie);
   if (res.status === 401 || res.status === 403) {
     cookieCache.delete(key);
     cookie = await loginPanel(key);
-    res = await fetch(`${cfg.url}${path}`, {
-      ...init,
-      headers: { ...(init?.headers ?? {}), Cookie: cookie, Accept: "application/json" },
-    });
+    res = await doReq(cookie);
   }
   return res;
 }
 
 async function listInbounds(key: PanelKey) {
   const res = await panelFetch(key, "/panel/api/inbounds/list", { method: "GET" });
-  const json = await res.json();
+  const json = JSON.parse(res.body);
   if (!json.success) throw new Error(`list inbounds [${key}]: ${json.msg}`);
   return json.obj as any[];
 }
@@ -114,7 +149,7 @@ async function addClient(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: inboundId, settings }),
   });
-  const json = await res.json();
+  const json = JSON.parse(res.body);
   if (!json.success) throw new Error(`addClient [${key}/${inboundId}]: ${json.msg}`);
   return json;
 }
@@ -284,7 +319,8 @@ Deno.serve(async (req) => {
       for (const l of links ?? []) {
         try {
           const res = await panelFetch(l.panel as PanelKey, `/panel/api/inbounds/${l.inbound_id}/delClient/${sub.client_uuid}`, { method: "POST" });
-          const j = await res.json().catch(() => ({}));
+          let j: any = {};
+          try { j = JSON.parse(res.body); } catch {}
           if (!j.success) errors.push({ panel: l.panel, inbound: l.inbound_id, msg: j.msg });
         } catch (e) {
           errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) });
