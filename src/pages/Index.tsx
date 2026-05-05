@@ -673,6 +673,26 @@ const Index = () => {
                           </div>
                         </div>
 
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <Label className="text-xs text-muted-foreground">
+                              Маскировочные SNI (по одному в строке, опционально)
+                            </Label>
+                            <Button variant="outline" size="sm" onClick={() => saveSniWhitelist(s)}>
+                              <Check className="size-3.5 mr-1" /> Сохранить SNI
+                            </Button>
+                          </div>
+                          <textarea
+                            className="w-full min-h-[90px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                            placeholder={"www.microsoft.com\nwww.apple.com\nwww.cloudflare.com"}
+                            value={editSniText}
+                            onChange={(e) => setEditSniText(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Если задано — при выдаче подписки SNI в ссылках будет случайно подменён на один из этих доменов. Пусто = использовать оригинальный SNI inbound'а.
+                          </p>
+                        </div>
+
                         <div className="flex gap-2 justify-end">
                           <Button variant="ghost" size="sm" onClick={closeEdit} disabled={savingEdit}>
                             <X className="size-4 mr-1" /> Отмена
