@@ -683,11 +683,8 @@ const Index = () => {
                             </Button>
                           </div>
                           <div className="mb-2">
-                            <div className="text-[11px] text-muted-foreground mb-1.5">
-                              Быстрое добавление (клик — добавить в список):
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {[
+                            {(() => {
+                              const PRESETS = [
                                 "www.microsoft.com",
                                 "www.apple.com",
                                 "www.cloudflare.com",
@@ -708,32 +705,65 @@ const Index = () => {
                                 "www.spotify.com",
                                 "www.netflix.com",
                                 "www.tiktok.com",
-                              ].map((d) => {
-                                const lines = editSniText.split(/\s+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
-                                const active = lines.includes(d);
-                                return (
-                                  <button
-                                    key={d}
-                                    type="button"
-                                    onClick={() => {
-                                      const cur = editSniText.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
-                                      if (cur.includes(d)) {
-                                        setEditSniText(cur.filter((x) => x !== d).join("\n"));
-                                      } else {
-                                        setEditSniText([...cur, d].join("\n"));
-                                      }
-                                    }}
-                                    className={`text-[11px] px-2 py-1 rounded-md border transition ${
-                                      active
-                                        ? "bg-primary/20 border-primary/50 text-primary"
-                                        : "bg-background border-input text-muted-foreground hover:bg-accent hover:text-foreground"
-                                    }`}
-                                  >
-                                    {active ? "✓ " : "+ "}{d}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                              ];
+                              const cur = editSniText.split(/\r?\n/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+                              return (
+                                <>
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <div className="text-[11px] text-muted-foreground">
+                                      Быстрое добавление (клик — добавить/убрать):
+                                    </div>
+                                    <div className="flex gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const merged = Array.from(new Set([...cur, ...PRESETS]));
+                                          setEditSniText(merged.join("\n"));
+                                        }}
+                                        className="text-[11px] px-2 py-1 rounded-md border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                                      >
+                                        + Добавить все
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const set = new Set(PRESETS);
+                                          setEditSniText(cur.filter((x) => !set.has(x)).join("\n"));
+                                        }}
+                                        className="text-[11px] px-2 py-1 rounded-md border border-destructive/40 bg-destructive/10 text-destructive hover:bg-destructive/20"
+                                      >
+                                        × Удалить все
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {PRESETS.map((d) => {
+                                      const active = cur.includes(d);
+                                      return (
+                                        <button
+                                          key={d}
+                                          type="button"
+                                          onClick={() => {
+                                            if (cur.includes(d)) {
+                                              setEditSniText(cur.filter((x) => x !== d).join("\n"));
+                                            } else {
+                                              setEditSniText([...cur, d].join("\n"));
+                                            }
+                                          }}
+                                          className={`text-[11px] px-2 py-1 rounded-md border transition ${
+                                            active
+                                              ? "bg-primary/20 border-primary/50 text-primary"
+                                              : "bg-background border-input text-muted-foreground hover:bg-accent hover:text-foreground"
+                                          }`}
+                                        >
+                                          {active ? "✓ " : "+ "}{d}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </>
+                              );
+                            })()}
                           </div>
                           <textarea
                             className="w-full min-h-[90px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
