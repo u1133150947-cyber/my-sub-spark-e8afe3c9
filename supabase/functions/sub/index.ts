@@ -54,17 +54,26 @@ Deno.serve(async (req) => {
       .eq("id", sub.id)
       .then(() => {});
 
+    // Forward all upstream headers except hop-by-hop / encoding ones
+    const SKIP = new Set([
+      "connection",
+      "keep-alive",
+      "transfer-encoding",
+      "content-encoding",
+      "content-length",
+      "vary",
+      "strict-transport-security",
+      "set-cookie",
+      "server",
+      "date",
+      "alt-svc",
+    ]);
     const passthroughHeaders: Record<string, string> = { ...corsHeaders };
-    const ct = upstreamRes.headers.get("content-type");
-    if (ct) passthroughHeaders["content-type"] = ct;
-    const profileTitle = upstreamRes.headers.get("profile-title");
-    if (profileTitle) passthroughHeaders["profile-title"] = profileTitle;
-    const subUserInfo = upstreamRes.headers.get("subscription-userinfo");
-    if (subUserInfo) passthroughHeaders["subscription-userinfo"] = subUserInfo;
-    const updateInterval = upstreamRes.headers.get("profile-update-interval");
-    if (updateInterval) passthroughHeaders["profile-update-interval"] = updateInterval;
-    const supportUrl = upstreamRes.headers.get("support-url");
-    if (supportUrl) passthroughHeaders["support-url"] = supportUrl;
+    upstreamRes.headers.forEach((value, key) => {
+      if (!SKIP.has(key.toLowerCase())) {
+        passthroughHeaders[key] = value;
+      }
+    });
 
     return new Response(body, {
       status: upstreamRes.status,
