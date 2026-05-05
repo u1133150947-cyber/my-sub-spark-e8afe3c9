@@ -65,8 +65,18 @@ function buildVless(
     if (httpPath) params.set("path", httpPath);
   }
 
-  const remark = encodeURIComponent(`${inbound.remark} - ${email}`);
+  const displayRemark = mapRemark(inbound.remark);
+  const remark = encodeURIComponent(displayRemark);
   return `vless://${uuid}@${inbound.host}:${inbound.port}?${params.toString()}#${remark}`;
+}
+
+// Friendly remark overrides for subscription display
+function mapRemark(remark: string): string {
+  const map: Record<string, string> = {
+    YouTubeRU: "YouTube без рекламы",
+    dpBeget_ru: "Чехия",
+  };
+  return map[remark] ?? remark;
 }
 
 Deno.serve(async (req) => {
