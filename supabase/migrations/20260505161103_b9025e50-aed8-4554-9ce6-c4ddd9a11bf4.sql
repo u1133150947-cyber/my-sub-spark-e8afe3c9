@@ -1,0 +1,1 @@
+ALTER TABLE public.subscriptions ADD COLUMN IF NOT EXISTS sni_whitelist text[] NOT NULL DEFAULT '{}';

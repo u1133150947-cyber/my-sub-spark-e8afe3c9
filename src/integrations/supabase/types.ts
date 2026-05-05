@@ -176,6 +176,7 @@ export type Database = {
           last_accessed_at: string | null
           name: string
           slug: string
+          sni_whitelist: string[]
           total_bytes: number
         }
         Insert: {
@@ -188,6 +189,7 @@ export type Database = {
           last_accessed_at?: string | null
           name: string
           slug: string
+          sni_whitelist?: string[]
           total_bytes?: number
         }
         Update: {
@@ -200,6 +202,7 @@ export type Database = {
           last_accessed_at?: string | null
           name?: string
           slug?: string
+          sni_whitelist?: string[]
           total_bytes?: number
         }
         Relationships: []
