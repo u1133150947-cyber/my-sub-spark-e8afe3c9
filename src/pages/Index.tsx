@@ -78,6 +78,7 @@ const Index = () => {
   const [editGB, setEditGB] = useState<string>("");
   const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
+  const [editSniText, setEditSniText] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
 
@@ -213,6 +214,14 @@ const Index = () => {
     setEditName(s.name);
     setEditDays("");
     setEditGB("");
+    // load current whitelist
+    const { data: subRow } = await supabase
+      .from("subscriptions")
+      .select("sni_whitelist")
+      .eq("id", s.id)
+      .maybeSingle();
+    const wl = (subRow as any)?.sni_whitelist as string[] | null;
+    setEditSniText(Array.isArray(wl) ? wl.join("\n") : "");
     const { data } = await supabase
       .from("subscription_inbounds")
       .select("panel, inbound_id, remark")
@@ -226,6 +235,7 @@ const Index = () => {
     setEditingId(null);
     setEditSelected(new Set());
     setEditExisting(new Set());
+    setEditSniText("");
   };
 
   const toggleEdit = (key: string) => {
@@ -305,6 +315,22 @@ const Index = () => {
     } finally {
       setSavingEdit(false);
     }
+  };
+
+  const saveSniWhitelist = async (s: Subscription) => {
+    const list = editSniText
+      .split(/[\s,]+/)
+      .map((x) => x.trim().toLowerCase())
+      .filter((x) => x.length > 0 && /^[a-z0-9.\-]+\.[a-z]{2,}$/.test(x));
+    const { error } = await supabase
+      .from("subscriptions")
+      .update({ sni_whitelist: list } as any)
+      .eq("id", s.id);
+    if (error) {
+      toast.error("Ошибка: " + error.message);
+      return;
+    }
+    toast.success(list.length ? `SNI whitelist: ${list.length} доменов` : "SNI whitelist очищен");
   };
 
   const copy = async (text: string) => {
@@ -645,6 +671,26 @@ const Index = () => {
                               );
                             })}
                           </div>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <Label className="text-xs text-muted-foreground">
+                              Маскировочные SNI (по одному в строке, опционально)
+                            </Label>
+                            <Button variant="outline" size="sm" onClick={() => saveSniWhitelist(s)}>
+                              <Check className="size-3.5 mr-1" /> Сохранить SNI
+                            </Button>
+                          </div>
+                          <textarea
+                            className="w-full min-h-[90px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                            placeholder={"www.microsoft.com\nwww.apple.com\nwww.cloudflare.com"}
+                            value={editSniText}
+                            onChange={(e) => setEditSniText(e.target.value)}
+                          />
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Если задано — при выдаче подписки SNI в ссылках будет случайно подменён на один из этих доменов. Пусто = использовать оригинальный SNI inbound'а.
+                          </p>
                         </div>
 
                         <div className="flex gap-2 justify-end">
