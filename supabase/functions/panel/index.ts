@@ -242,6 +242,52 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const action = url.searchParams.get("action") ?? "";
 
+    if (action === "testPanel") {
+      const body = await req.json().catch(() => ({}));
+      const panelUrl: string = (body.panel_url ?? "").replace(/\/+$/, "");
+      const username: string = body.username ?? "";
+      const password: string = body.password ?? "";
+      if (!panelUrl || !username || !password) {
+        return new Response(JSON.stringify({ ok: false, error: "panel_url, username, password обязательны" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      try {
+        const res = await nodeRequest(`${panelUrl}/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ username, password }).toString(),
+        });
+        if (res.status < 200 || res.status >= 300) {
+          return new Response(JSON.stringify({ ok: false, error: `HTTP ${res.status}: ${res.body.slice(0, 200)}` }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        let parsed: any = null;
+        try { parsed = JSON.parse(res.body); } catch {}
+        if (parsed && parsed.success === false) {
+          return new Response(JSON.stringify({ ok: false, error: parsed.msg ?? "Login refused" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        const sc = res.headers["set-cookie"];
+        const hasCookie = Array.isArray(sc) ? sc.length > 0 : !!sc;
+        if (!hasCookie && !(parsed && parsed.success)) {
+          return new Response(JSON.stringify({ ok: false, error: "Панель не вернула сессию" }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ ok: false, error: e?.message ?? String(e) }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     if (action === "inbounds") {
       // List inbounds from both panels
       const result: Record<string, any> = {};
