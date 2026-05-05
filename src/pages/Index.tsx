@@ -81,39 +81,6 @@ const Index = () => {
   const [editSniText, setEditSniText] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
-  const [genPanel, setGenPanel] = useState<PanelKey>("cz");
-  const [genNets, setGenNets] = useState<Set<string>>(new Set(["tcp", "xhttp", "grpc", "ws"]));
-  const [genBusy, setGenBusy] = useState(false);
-
-  const generateInboundSet = async (s: Subscription) => {
-    const networks = Array.from(genNets);
-    if (!networks.length) {
-      toast.error("Выберите хотя бы один транспорт");
-      return;
-    }
-    if (!confirm(`Создать ${networks.length} inbound(ов) на панели ${PANEL_LABEL[genPanel]} и подключить к подписке «${s.name}»?`)) return;
-    setGenBusy(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("panel?action=generateInboundSet", {
-        method: "POST",
-        body: { id: s.id, panel: genPanel, networks },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      const okCount = (data?.created ?? []).length;
-      const errCount = (data?.errors ?? []).length;
-      if (okCount) toast.success(`Создано inbound'ов: ${okCount}`);
-      if (errCount) toast.warning(`Ошибки на ${errCount} транспортах`, {
-        description: data.errors.map((e: any) => `${e.network}: ${e.error}`).join("\n"),
-      });
-      loadInbounds();
-      loadSubs();
-    } catch (e: any) {
-      toast.error("Ошибка: " + (e?.message ?? e));
-    } finally {
-      setGenBusy(false);
-    }
-  };
 
   const bulkAdd = async (panel: PanelKey, inboundId: number, remark: string) => {
     if (!confirm(`Добавить «${remark}» ВСЕМ существующим клиентам?`)) return;
