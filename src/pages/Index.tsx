@@ -673,62 +673,6 @@ const Index = () => {
                           </div>
                         </div>
 
-                        <div className="rounded-lg border border-border/60 bg-card/40 p-3 space-y-3">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div>
-                              <div className="text-sm font-semibold">⚡ Авто-генерация inbound'ов</div>
-                              <div className="text-[11px] text-muted-foreground">
-                                Создаст новые vless-reality inbound'ы прямо на панели и подключит к этой подписке. Порты случайные, SNI берётся из whitelist выше (или дефолтного списка).
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <div className="flex items-center gap-1.5">
-                              {(["cz", "ru"] as PanelKey[]).map((p) => (
-                                <button
-                                  key={p}
-                                  type="button"
-                                  onClick={() => setGenPanel(p)}
-                                  className={`text-xs px-2.5 py-1 rounded-md border transition ${
-                                    genPanel === p
-                                      ? "bg-primary/20 border-primary/50 text-primary"
-                                      : "bg-background border-input text-muted-foreground hover:bg-accent"
-                                  }`}
-                                >
-                                  {PANEL_LABEL[p]}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {(["tcp", "xhttp", "grpc", "ws"] as const).map((n) => {
-                                const active = genNets.has(n);
-                                return (
-                                  <button
-                                    key={n}
-                                    type="button"
-                                    onClick={() => {
-                                      const next = new Set(genNets);
-                                      next.has(n) ? next.delete(n) : next.add(n);
-                                      setGenNets(next);
-                                    }}
-                                    className={`text-xs px-2.5 py-1 rounded-md border font-mono transition ${
-                                      active
-                                        ? "bg-primary/20 border-primary/50 text-primary"
-                                        : "bg-background border-input text-muted-foreground hover:bg-accent"
-                                    }`}
-                                  >
-                                    {active ? "✓ " : ""}vless-reality-{n}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <Button size="sm" onClick={() => generateInboundSet(s)} disabled={genBusy}
-                              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
-                              {genBusy ? <Loader2 className="size-4 animate-spin" /> : (<><Zap className="size-4 mr-1" />Сгенерировать</>)}
-                            </Button>
-                          </div>
-                        </div>
-
                         <div className="flex gap-2 justify-end">
                           <Button variant="ghost" size="sm" onClick={closeEdit} disabled={savingEdit}>
                             <X className="size-4 mr-1" /> Отмена
