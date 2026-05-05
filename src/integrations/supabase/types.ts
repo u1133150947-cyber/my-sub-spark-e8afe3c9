@@ -14,6 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      panels: {
+        Row: {
+          created_at: string
+          host: string
+          id: string
+          last_checked_at: string | null
+          name: string
+          panel_url: string
+          password: string
+          public_host: string
+          readiness: string
+          ssh_auth_type: string
+          ssh_key_passphrase: string
+          ssh_password: string
+          ssh_port: number
+          ssh_user: string
+          status: string
+          status_message: string
+          template: string
+          updated_at: string
+          username: string
+        }
+        Insert: {
+          created_at?: string
+          host: string
+          id?: string
+          last_checked_at?: string | null
+          name: string
+          panel_url: string
+          password: string
+          public_host?: string
+          readiness?: string
+          ssh_auth_type?: string
+          ssh_key_passphrase?: string
+          ssh_password?: string
+          ssh_port?: number
+          ssh_user?: string
+          status?: string
+          status_message?: string
+          template?: string
+          updated_at?: string
+          username: string
+        }
+        Update: {
+          created_at?: string
+          host?: string
+          id?: string
+          last_checked_at?: string | null
+          name?: string
+          panel_url?: string
+          password?: string
+          public_host?: string
+          readiness?: string
+          ssh_auth_type?: string
+          ssh_key_passphrase?: string
+          ssh_password?: string
+          ssh_port?: number
+          ssh_user?: string
+          status?: string
+          status_message?: string
+          template?: string
+          updated_at?: string
+          username?: string
+        }
+        Relationships: []
+      }
       subscription_inbounds: {
         Row: {
           client_email: string

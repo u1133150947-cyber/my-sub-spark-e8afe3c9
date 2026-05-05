@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { StatsDashboard } from "@/components/StatsDashboard";
+import { PanelsManager } from "@/components/PanelsManager";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -328,10 +329,11 @@ const Index = () => {
 
       <main className="container py-8">
         <Tabs defaultValue="subs" className="space-y-6">
-          <TabsList className="grid w-full max-w-md grid-cols-3">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
             <TabsTrigger value="create">➕ Новый</TabsTrigger>
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
+            <TabsTrigger value="servers">🖥️ Серверы</TabsTrigger>
           </TabsList>
 
           <TabsContent value="stats" className="mt-0">
@@ -617,6 +619,10 @@ const Index = () => {
             </div>
           )}
         </section>
+          </TabsContent>
+
+          <TabsContent value="servers" className="mt-0">
+            <PanelsManager />
           </TabsContent>
         </Tabs>
       </main>
