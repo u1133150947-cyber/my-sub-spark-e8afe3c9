@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { StatsDashboard } from "@/components/StatsDashboard";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Subscription = {
   id: string;
@@ -31,6 +40,25 @@ const subUrl = (slug: string) => `${SUPABASE_URL}/functions/v1/sub/${slug}`;
 const happUrl = (slug: string) => `happ://add/${encodeURIComponent(subUrl(slug))}`;
 
 const PANEL_LABEL: Record<PanelKey, string> = { cz: "🇨🇿 Чехия", ru: "🇷🇺 Россия" };
+
+const PRESETS: { label: string; days: number; gb: number }[] = [
+  { label: "Trial 3 дня", days: 3, gb: 5 },
+  { label: "1 месяц", days: 30, gb: 0 },
+  { label: "3 месяца", days: 90, gb: 0 },
+  { label: "6 месяцев", days: 180, gb: 0 },
+  { label: "1 год", days: 365, gb: 0 },
+  { label: "Безлимит", days: 0, gb: 0 },
+];
+
+const CLIENT_LINKS: { label: string; emoji: string; build: (u: string) => string }[] = [
+  { label: "Happ", emoji: "📱", build: (u) => `happ://add/${encodeURIComponent(u)}` },
+  { label: "v2RayTun", emoji: "🚀", build: (u) => `v2raytun://import/${encodeURIComponent(u)}` },
+  { label: "Streisand", emoji: "🌊", build: (u) => `streisand://import/${u}` },
+  { label: "Shadowrocket", emoji: "🚀", build: (u) => `sub://${btoa(u).replace(/=+$/, "")}` },
+  { label: "Hiddify", emoji: "🛡️", build: (u) => `hiddify://install-config?url=${encodeURIComponent(u)}` },
+  { label: "Clash Meta", emoji: "⚡", build: (u) => `clash://install-config?url=${encodeURIComponent(u)}` },
+  { label: "NekoBox", emoji: "🐱", build: (u) => `sn://subscription?url=${encodeURIComponent(u)}` },
+];
 
 const Index = () => {
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -247,6 +275,20 @@ const Index = () => {
     return d.toLocaleDateString("ru-RU");
   };
   const fmtGB = (b: number) => (b ? `${(b / 1024 / 1024 / 1024).toFixed(0)} GB` : "∞");
+
+  const applyPreset = (p: { days: number; gb: number }) => {
+    setDays(p.days);
+    setTotalGB(p.gb);
+  };
+
+  const expiryStatus = (s: Subscription) => {
+    if (!s.expiry_ms) return { label: "∞", tone: "muted" as const };
+    const left = s.expiry_ms - Date.now();
+    const days = Math.ceil(left / 86400000);
+    if (left < 0) return { label: "истекла", tone: "danger" as const };
+    if (days <= 3) return { label: `${days} дн.`, tone: "warn" as const };
+    return { label: `${days} дн.`, tone: "muted" as const };
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
