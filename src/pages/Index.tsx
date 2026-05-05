@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +9,15 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { StatsDashboard } from "@/components/StatsDashboard";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Subscription = {
   id: string;
@@ -31,6 +40,25 @@ const subUrl = (slug: string) => `${SUPABASE_URL}/functions/v1/sub/${slug}`;
 const happUrl = (slug: string) => `happ://add/${encodeURIComponent(subUrl(slug))}`;
 
 const PANEL_LABEL: Record<PanelKey, string> = { cz: "🇨🇿 Чехия", ru: "🇷🇺 Россия" };
+
+const PRESETS: { label: string; days: number; gb: number }[] = [
+  { label: "Trial 3 дня", days: 3, gb: 5 },
+  { label: "1 месяц", days: 30, gb: 0 },
+  { label: "3 месяца", days: 90, gb: 0 },
+  { label: "6 месяцев", days: 180, gb: 0 },
+  { label: "1 год", days: 365, gb: 0 },
+  { label: "Безлимит", days: 0, gb: 0 },
+];
+
+const CLIENT_LINKS: { label: string; emoji: string; build: (u: string) => string }[] = [
+  { label: "Happ", emoji: "📱", build: (u) => `happ://add/${encodeURIComponent(u)}` },
+  { label: "v2RayTun", emoji: "🚀", build: (u) => `v2raytun://import/${encodeURIComponent(u)}` },
+  { label: "Streisand", emoji: "🌊", build: (u) => `streisand://import/${u}` },
+  { label: "Shadowrocket", emoji: "🚀", build: (u) => `sub://${btoa(u).replace(/=+$/, "")}` },
+  { label: "Hiddify", emoji: "🛡️", build: (u) => `hiddify://install-config?url=${encodeURIComponent(u)}` },
+  { label: "Clash Meta", emoji: "⚡", build: (u) => `clash://install-config?url=${encodeURIComponent(u)}` },
+  { label: "NekoBox", emoji: "🐱", build: (u) => `sn://subscription?url=${encodeURIComponent(u)}` },
+];
 
 const Index = () => {
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -248,6 +276,20 @@ const Index = () => {
   };
   const fmtGB = (b: number) => (b ? `${(b / 1024 / 1024 / 1024).toFixed(0)} GB` : "∞");
 
+  const applyPreset = (p: { days: number; gb: number }) => {
+    setDays(p.days);
+    setTotalGB(p.gb);
+  };
+
+  const expiryStatus = (s: Subscription) => {
+    if (!s.expiry_ms) return { label: "∞", tone: "muted" as const };
+    const left = s.expiry_ms - Date.now();
+    const days = Math.ceil(left / 86400000);
+    if (left < 0) return { label: "истекла", tone: "danger" as const };
+    if (days <= 3) return { label: `${days} дн.`, tone: "warn" as const };
+    return { label: `${days} дн.`, tone: "muted" as const };
+  };
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="relative overflow-hidden border-b border-border">
@@ -284,9 +326,19 @@ const Index = () => {
         </div>
       </header>
 
-      <main className="container py-8 space-y-8">
-        <StatsDashboard />
+      <main className="container py-8">
+        <Tabs defaultValue="subs" className="space-y-6">
+          <TabsList className="grid w-full max-w-md grid-cols-3">
+            <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
+            <TabsTrigger value="create">➕ Новый</TabsTrigger>
+            <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
+          </TabsList>
 
+          <TabsContent value="stats" className="mt-0">
+            <StatsDashboard />
+          </TabsContent>
+
+          <TabsContent value="create" className="mt-0">
         <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -296,6 +348,27 @@ const Index = () => {
               <RefreshCw className={`size-4 mr-1 ${loadingInbounds ? "animate-spin" : ""}`} />
               Обновить
             </Button>
+          </div>
+
+          <div className="mb-4">
+            <Label className="text-xs text-muted-foreground mb-2 block">Быстрые тарифы</Label>
+            <div className="flex flex-wrap gap-2">
+              {PRESETS.map((p) => {
+                const active = days === p.days && totalGB === p.gb;
+                return (
+                  <Button
+                    key={p.label}
+                    type="button"
+                    size="sm"
+                    variant={active ? "default" : "outline"}
+                    onClick={() => applyPreset(p)}
+                    style={active ? { background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" } : undefined}
+                  >
+                    {p.label}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3 mb-4">
@@ -364,7 +437,9 @@ const Index = () => {
             )}
           </Button>
         </Card>
+          </TabsContent>
 
+          <TabsContent value="subs" className="mt-0">
         <section>
           <h2 className="text-lg font-semibold mb-4">Подписки ({subs.length})</h2>
           {subs.length === 0 ? (
@@ -376,6 +451,7 @@ const Index = () => {
               {subs.map((s) => {
                 const url = subUrl(s.slug);
                 const happ = happUrl(s.slug);
+                const status = expiryStatus(s);
                 return (
                   <Card key={s.id} className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
@@ -385,8 +461,16 @@ const Index = () => {
                           <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                             {s.hits} hits
                           </span>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
-                            до {fmtExpire(s.expiry_ms)}
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              status.tone === "danger"
+                                ? "bg-destructive/20 text-destructive"
+                                : status.tone === "warn"
+                                ? "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+                                : "bg-secondary text-muted-foreground"
+                            }`}
+                          >
+                            {status.tone === "muted" && s.expiry_ms ? `до ${fmtExpire(s.expiry_ms)}` : status.label}
                           </span>
                           <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                             {fmtGB(s.total_bytes)}
@@ -401,13 +485,42 @@ const Index = () => {
                         <Button variant="secondary" size="sm" onClick={() => copy(url)}>
                           <Copy className="size-3.5 mr-1" /> URL
                         </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => copy(happ)}
-                          style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
-                        >
-                          <Smartphone className="size-3.5 mr-1" /> Happ
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
+                            >
+                              <Share2 className="size-3.5 mr-1" /> Открыть в…
+                              <ChevronDown className="size-3 ml-1" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>Импорт в клиент</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {CLIENT_LINKS.map((c) => {
+                              const link = c.build(url);
+                              return (
+                                <DropdownMenuItem key={c.label} asChild>
+                                  <a href={link} className="cursor-pointer flex items-center justify-between gap-2">
+                                    <span>
+                                      <span className="mr-2">{c.emoji}</span>
+                                      {c.label}
+                                    </span>
+                                    <Copy
+                                      className="size-3.5 text-muted-foreground hover:text-foreground"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        copy(link);
+                                      }}
+                                    />
+                                  </a>
+                                </DropdownMenuItem>
+                              );
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button variant="outline" size="sm" onClick={() => setActiveQr(activeQr === s.id ? null : s.id)}>
                           QR
                         </Button>
@@ -504,6 +617,8 @@ const Index = () => {
             </div>
           )}
         </section>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
