@@ -20,6 +20,54 @@ type Panel = {
 
 const empty = { name: "", panel_url: "", username: "", password: "" };
 
+const FLAG_MAP: { keys: string[]; flag: string }[] = [
+  { keys: ["россия", "russia", "ru", "москв", "спб", "питер"], flag: "🇷🇺" },
+  { keys: ["чехия", "czech", "cz", "прага", "prague"], flag: "🇨🇿" },
+  { keys: ["германия", "germany", "de", "берлин", "франкфурт"], flag: "🇩🇪" },
+  { keys: ["нидерланд", "netherlands", "nl", "амстердам"], flag: "🇳🇱" },
+  { keys: ["франция", "france", "fr", "париж"], flag: "🇫🇷" },
+  { keys: ["великобритания", "британия", "uk", "gb", "лондон"], flag: "🇬🇧" },
+  { keys: ["сша", "usa", "us", "америк"], flag: "🇺🇸" },
+  { keys: ["канада", "canada", "ca"], flag: "🇨🇦" },
+  { keys: ["япония", "japan", "jp", "токио"], flag: "🇯🇵" },
+  { keys: ["сингапур", "singapore", "sg"], flag: "🇸🇬" },
+  { keys: ["турция", "turkey", "tr", "стамбул"], flag: "🇹🇷" },
+  { keys: ["украина", "ukraine", "ua", "киев"], flag: "🇺🇦" },
+  { keys: ["польша", "poland", "pl", "варшава"], flag: "🇵🇱" },
+  { keys: ["финляндия", "finland", "fi", "хельсинки"], flag: "🇫🇮" },
+  { keys: ["швеция", "sweden", "se"], flag: "🇸🇪" },
+  { keys: ["норвегия", "norway", "no"], flag: "🇳🇴" },
+  { keys: ["испания", "spain", "es"], flag: "🇪🇸" },
+  { keys: ["италия", "italy", "it"], flag: "🇮🇹" },
+  { keys: ["швейцария", "swiss", "ch"], flag: "🇨🇭" },
+  { keys: ["австрия", "austria", "at"], flag: "🇦🇹" },
+  { keys: ["казахстан", "kazakhstan", "kz"], flag: "🇰🇿" },
+  { keys: ["китай", "china", "cn"], flag: "🇨🇳" },
+  { keys: ["гонконг", "hong kong", "hk"], flag: "🇭🇰" },
+  { keys: ["индия", "india", "in"], flag: "🇮🇳" },
+  { keys: ["бразилия", "brazil", "br"], flag: "🇧🇷" },
+  { keys: ["оаэ", "uae", "дубай", "dubai"], flag: "🇦🇪" },
+  { keys: ["латвия", "latvia", "lv", "рига"], flag: "🇱🇻" },
+  { keys: ["литва", "lithuania", "lt"], flag: "🇱🇹" },
+  { keys: ["эстония", "estonia", "ee"], flag: "🇪🇪" },
+];
+
+const FLAG_RE = /\p{Extended_Pictographic}/u;
+
+const detectFlag = (name: string): string => {
+  if (FLAG_RE.test(name)) return "";
+  const lower = name.toLowerCase();
+  for (const { keys, flag } of FLAG_MAP) {
+    if (keys.some((k) => new RegExp(`\\b${k}`, "i").test(lower))) return flag;
+  }
+  return "";
+};
+
+const withFlag = (name: string) => {
+  const f = detectFlag(name);
+  return f ? `${f} ${name}` : name;
+};
+
 export const PanelsManager = () => {
   const [panels, setPanels] = useState<Panel[]>([]);
   const [form, setForm] = useState({ ...empty });
@@ -157,7 +205,7 @@ export const PanelsManager = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <Server className="size-4 text-primary shrink-0" />
-                      <span className="font-semibold truncate">{p.name}</span>
+                      <span className="font-semibold truncate">{withFlag(p.name)}</span>
                       {p.status === "ok" ? (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-600 dark:text-green-400 flex items-center gap-1">
                           <CheckCircle2 className="size-3" /> онлайн
