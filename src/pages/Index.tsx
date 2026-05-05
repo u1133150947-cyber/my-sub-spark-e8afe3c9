@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +23,7 @@ type Subscription = {
 type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean };
 type PanelKey = "cz" | "ru";
 type InboundsResp = Record<PanelKey, InboundInfo[] | { error: string }>;
+type SubInbound = { panel: PanelKey; inbound_id: number; remark: string };
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const subUrl = (slug: string) => `${SUPABASE_URL}/functions/v1/sub/${slug}`;
@@ -40,6 +41,13 @@ const Index = () => {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [activeQr, setActiveQr] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDays, setEditDays] = useState<string>("");
+  const [editGB, setEditGB] = useState<string>("");
+  const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
+  const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const loadSubs = async () => {
     const { data, error } = await supabase
@@ -125,6 +133,105 @@ const Index = () => {
       loadSubs();
     } catch (e: any) {
       toast.error("Ошибка удаления: " + (e?.message ?? e));
+    }
+  };
+
+  const openEdit = async (s: Subscription) => {
+    setEditingId(s.id);
+    setEditName(s.name);
+    setEditDays("");
+    setEditGB("");
+    const { data } = await supabase
+      .from("subscription_inbounds")
+      .select("panel, inbound_id, remark")
+      .eq("subscription_id", s.id);
+    const keys = new Set((data ?? []).map((l: any) => `${l.panel}:${l.inbound_id}`));
+    setEditExisting(keys);
+    setEditSelected(new Set(keys));
+  };
+
+  const closeEdit = () => {
+    setEditingId(null);
+    setEditSelected(new Set());
+    setEditExisting(new Set());
+  };
+
+  const toggleEdit = (key: string) => {
+    setEditSelected((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const saveEdit = async (s: Subscription) => {
+    setSavingEdit(true);
+    try {
+      // Compute additions and removals
+      const toAdd: { panel: PanelKey; inboundId: number }[] = [];
+      const toRemove: { panel: PanelKey; inboundId: number }[] = [];
+      editSelected.forEach((k) => {
+        if (!editExisting.has(k)) {
+          const [p, id] = k.split(":");
+          toAdd.push({ panel: p as PanelKey, inboundId: Number(id) });
+        }
+      });
+      editExisting.forEach((k) => {
+        if (!editSelected.has(k)) {
+          const [p, id] = k.split(":");
+          toRemove.push({ panel: p as PanelKey, inboundId: Number(id) });
+        }
+      });
+
+      // Update name/days/GB
+      const updateBody: any = { id: s.id };
+      if (editName.trim() && editName.trim() !== s.name) updateBody.name = editName.trim();
+      if (editDays !== "") updateBody.days = Number(editDays);
+      if (editGB !== "") updateBody.totalGB = Number(editGB);
+      if (Object.keys(updateBody).length > 1) {
+        const { data, error } = await supabase.functions.invoke("panel?action=update", {
+          method: "POST",
+          body: updateBody,
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        if (data?.errors?.length) {
+          toast.warning(`Обновление: ошибки на ${data.errors.length} серверах`);
+        }
+      }
+
+      // Remove inbounds
+      for (const r of toRemove) {
+        const { data, error } = await supabase.functions.invoke("panel?action=removeInbound", {
+          method: "POST",
+          body: { id: s.id, panel: r.panel, inboundId: r.inboundId },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+      }
+
+      // Add inbounds
+      if (toAdd.length) {
+        const { data, error } = await supabase.functions.invoke("panel?action=addInbounds", {
+          method: "POST",
+          body: { id: s.id, selections: toAdd },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        if (data?.errors?.length) {
+          toast.warning(`Добавление: ошибки на ${data.errors.length} серверах`, {
+            description: data.errors.map((e: any) => `${e.panel}#${e.inboundId}: ${e.error}`).join("\n"),
+          });
+        }
+      }
+
+      toast.success("Подписка обновлена");
+      closeEdit();
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -301,6 +408,9 @@ const Index = () => {
                         <Button variant="outline" size="sm" onClick={() => setActiveQr(activeQr === s.id ? null : s.id)}>
                           QR
                         </Button>
+                        <Button variant="outline" size="sm" onClick={() => editingId === s.id ? closeEdit() : openEdit(s)}>
+                          <Pencil className="size-3.5" />
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => remove(s.id)}>
                           <Trash2 className="size-3.5 text-destructive" />
                         </Button>
@@ -312,6 +422,77 @@ const Index = () => {
                           <QRCodeSVG value={happ} size={180} />
                         </div>
                         <p className="text-xs text-muted-foreground break-all text-center max-w-xs">{happ}</p>
+                      </div>
+                    )}
+                    {editingId === s.id && (
+                      <div className="mt-4 p-4 rounded-lg bg-secondary space-y-4">
+                        <div className="grid gap-3 md:grid-cols-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Имя</Label>
+                            <Input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={64} />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Продлить (дней, 0 = безлимит)</Label>
+                            <Input type="number" min={0} placeholder="не менять" value={editDays} onChange={(e) => setEditDays(e.target.value)} />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Трафик GB (0 = безлимит)</Label>
+                            <Input type="number" min={0} placeholder="не менять" value={editGB} onChange={(e) => setEditGB(e.target.value)} />
+                          </div>
+                        </div>
+
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-2 block">Подключения</Label>
+                          <div className="grid gap-3 md:grid-cols-2">
+                            {(["cz", "ru"] as PanelKey[]).map((panel) => {
+                              const list = inbounds?.[panel];
+                              return (
+                                <Card key={panel} className="p-3 bg-background border-border">
+                                  <div className="flex items-center gap-2 mb-2 text-sm font-semibold">
+                                    <Server className="size-3.5 text-primary" />
+                                    {PANEL_LABEL[panel]}
+                                  </div>
+                                  {Array.isArray(list) && list.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {list.map((ib) => {
+                                        const key = `${panel}:${ib.id}`;
+                                        const wasExisting = editExisting.has(key);
+                                        return (
+                                          <label key={key} className="flex items-center gap-2 cursor-pointer">
+                                            <Checkbox checked={editSelected.has(key)} onCheckedChange={() => toggleEdit(key)} />
+                                            <div className="flex-1 min-w-0">
+                                              <div className="text-sm truncate">
+                                                {ib.remark || `inbound #${ib.id}`}
+                                                {wasExisting && (
+                                                  <span className="ml-2 text-[10px] uppercase text-muted-foreground">активно</span>
+                                                )}
+                                              </div>
+                                              <div className="text-xs text-muted-foreground">
+                                                {ib.protocol.toUpperCase()} · :{ib.port}
+                                              </div>
+                                            </div>
+                                          </label>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <div className="text-xs text-muted-foreground">Нет inbound'ов</div>
+                                  )}
+                                </Card>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="ghost" size="sm" onClick={closeEdit} disabled={savingEdit}>
+                            <X className="size-4 mr-1" /> Отмена
+                          </Button>
+                          <Button size="sm" onClick={() => saveEdit(s)} disabled={savingEdit}
+                            style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
+                            {savingEdit ? <Loader2 className="size-4 animate-spin" /> : (<><Check className="size-4 mr-1" />Сохранить</>)}
+                          </Button>
+                        </div>
                       </div>
                     )}
                   </Card>
