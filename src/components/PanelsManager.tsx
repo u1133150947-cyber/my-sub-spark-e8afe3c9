@@ -122,10 +122,18 @@ export const PanelsManager = () => {
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Удалить панель?")) return;
+    const panel = panels.find((x) => x.id === id);
+    const { count } = await supabase
+      .from("subscription_inbounds")
+      .select("id", { count: "exact", head: true })
+      .eq("panel", panel?.name ?? "");
+    const msg = count && count > 0
+      ? `Удалить панель «${panel?.name}»?\n\nОна используется в ${count} подписк(ах) — пропадёт у пользователей при следующем обновлении подписки.`
+      : `Удалить панель «${panel?.name}»?`;
+    if (!confirm(msg)) return;
     const { error } = await supabase.from("panels").delete().eq("id", id);
     if (error) return toast.error("Ошибка удаления");
-    toast.success("Удалено");
+    toast.success(count && count > 0 ? `Удалено. Очищено подписок: ${count}` : "Удалено");
     load();
   };
 
