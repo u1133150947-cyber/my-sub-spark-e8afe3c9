@@ -14,6 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_login_codes: {
+        Row: {
+          code_hash: string
+          created_at: string
+          expires_at: string
+          id: string
+          used: boolean
+        }
+        Insert: {
+          code_hash: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          used?: boolean
+        }
+        Update: {
+          code_hash?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          used?: boolean
+        }
+        Relationships: []
+      }
+      admin_sessions: {
+        Row: {
+          created_at: string
+          expires_at: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          token: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          token?: string
+        }
+        Relationships: []
+      }
       client_mappings: {
         Row: {
           client_email: string
