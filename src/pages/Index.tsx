@@ -682,6 +682,59 @@ const Index = () => {
                               <Check className="size-3.5 mr-1" /> Сохранить SNI
                             </Button>
                           </div>
+                          <div className="mb-2">
+                            <div className="text-[11px] text-muted-foreground mb-1.5">
+                              Быстрое добавление (клик — добавить в список):
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {[
+                                "www.microsoft.com",
+                                "www.apple.com",
+                                "www.cloudflare.com",
+                                "www.amazon.com",
+                                "www.icloud.com",
+                                "www.bing.com",
+                                "www.office.com",
+                                "www.samsung.com",
+                                "www.lovable.dev",
+                                "www.tesla.com",
+                                "www.adobe.com",
+                                "www.intel.com",
+                                "www.nvidia.com",
+                                "yandex.ru",
+                                "www.yahoo.com",
+                                "www.linkedin.com",
+                                "www.zoom.us",
+                                "www.spotify.com",
+                                "www.netflix.com",
+                                "www.tiktok.com",
+                              ].map((d) => {
+                                const lines = editSniText.split(/\s+/).map((x) => x.trim().toLowerCase()).filter(Boolean);
+                                const active = lines.includes(d);
+                                return (
+                                  <button
+                                    key={d}
+                                    type="button"
+                                    onClick={() => {
+                                      const cur = editSniText.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+                                      if (cur.includes(d)) {
+                                        setEditSniText(cur.filter((x) => x !== d).join("\n"));
+                                      } else {
+                                        setEditSniText([...cur, d].join("\n"));
+                                      }
+                                    }}
+                                    className={`text-[11px] px-2 py-1 rounded-md border transition ${
+                                      active
+                                        ? "bg-primary/20 border-primary/50 text-primary"
+                                        : "bg-background border-input text-muted-foreground hover:bg-accent hover:text-foreground"
+                                    }`}
+                                  >
+                                    {active ? "✓ " : "+ "}{d}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                           <textarea
                             className="w-full min-h-[90px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
                             placeholder={"www.microsoft.com\nwww.apple.com\nwww.cloudflare.com"}
