@@ -927,6 +927,84 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "generateInboundSet" && req.method === "POST") {
+      const body = await req.json();
+      const subId: string = body.id;
+      const panel: PanelKey = body.panel;
+      const networks: Array<"tcp" | "xhttp" | "grpc" | "ws"> = Array.isArray(body.networks) ? body.networks : ["tcp"];
+      if (!subId || !panel || !networks.length) {
+        return new Response(JSON.stringify({ error: "id, panel, networks required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("id, slug, name, client_uuid, client_email, expiry_ms, total_bytes, sni_whitelist")
+        .eq("id", subId)
+        .maybeSingle();
+      if (!sub) return new Response(JSON.stringify({ error: "subscription not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      const cfg = getPanelConfig(panel);
+      const sniPool: string[] = (Array.isArray((sub as any).sni_whitelist) && (sub as any).sni_whitelist.length > 0)
+        ? (sub as any).sni_whitelist
+        : DEFAULT_SNI_POOL;
+
+      const subIdShort = sub.slug.slice(0, 16);
+      const created: any[] = [];
+      const errors: any[] = [];
+
+      for (const network of networks) {
+        try {
+          const { privateKey, publicKey } = await getRealityKeypair(panel);
+          const sni = sniPool[Math.floor(Math.random() * sniPool.length)];
+          const port = randomPort();
+          const remark = `vless-reality-${network}-${randomHex(4)}`;
+          const ib = buildRealityInbound({
+            remark,
+            network,
+            port,
+            sni,
+            privateKey,
+            publicKey,
+            shortId: randomHex(8),
+          });
+          const inboundId = await createInboundOnPanel(panel, ib);
+          if (!inboundId) throw new Error("panel returned no inbound id");
+
+          // Add subscription's client into the new inbound
+          const email = `${sub.client_email}_${panel}${inboundId}`;
+          await addClient(panel, inboundId, {
+            id: sub.client_uuid,
+            email,
+            expiryTime: sub.expiry_ms,
+            totalGB: sub.total_bytes,
+            subId: subIdShort,
+            flow: "xtls-rprx-vision",
+          });
+
+          const stream = JSON.parse(ib.streamSettings);
+          const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
+            subscription_id: sub.id,
+            panel,
+            inbound_id: inboundId,
+            remark,
+            protocol: "vless",
+            port,
+            host: hostFromUrl(cfg.url),
+            stream_settings: stream,
+            client_email: email,
+          });
+          if (ibErr) throw new Error(`db insert: ${ibErr.message}`);
+
+          created.push({ network, inboundId, port, sni, remark });
+        } catch (e) {
+          errors.push({ network, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      return new Response(JSON.stringify({ created, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(JSON.stringify({ error: "Unknown action" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
