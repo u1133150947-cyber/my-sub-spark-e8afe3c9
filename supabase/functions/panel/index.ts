@@ -155,6 +155,44 @@ async function addClient(
   return json;
 }
 
+async function updateClient(
+  key: PanelKey,
+  inboundId: number,
+  client: {
+    id: string;
+    email: string;
+    expiryTime: number;
+    totalGB: number;
+    subId: string;
+    flow?: string;
+  },
+) {
+  const settings = JSON.stringify({
+    clients: [
+      {
+        id: client.id,
+        flow: client.flow ?? "",
+        email: client.email,
+        limitIp: 0,
+        totalGB: client.totalGB,
+        expiryTime: client.expiryTime,
+        enable: true,
+        tgId: "",
+        subId: client.subId,
+        reset: 0,
+      },
+    ],
+  });
+  const res = await panelFetch(key, `/panel/api/inbounds/updateClient/${client.id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: inboundId, settings }),
+  });
+  const json = JSON.parse(res.body);
+  if (!json.success) throw new Error(`updateClient [${key}/${inboundId}]: ${json.msg}`);
+  return json;
+}
+
 function uuidv4() {
   return crypto.randomUUID();
 }
@@ -329,6 +367,169 @@ Deno.serve(async (req) => {
       }
 
       await supabase.from("subscriptions").delete().eq("id", subId);
+      return new Response(JSON.stringify({ ok: true, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "addInbounds" && req.method === "POST") {
+      const body = await req.json();
+      const subId: string = body.id;
+      const selections: Array<{ panel: PanelKey; inboundId: number }> = body.selections ?? [];
+      if (!subId || !selections.length) {
+        return new Response(JSON.stringify({ error: "id and selections required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("id, client_uuid, client_email, expiry_ms, total_bytes, slug")
+        .eq("id", subId)
+        .maybeSingle();
+      if (!sub) return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      const { data: existingLinks } = await supabase
+        .from("subscription_inbounds")
+        .select("panel, inbound_id")
+        .eq("subscription_id", subId);
+      const existingSet = new Set((existingLinks ?? []).map((l) => `${l.panel}:${l.inbound_id}`));
+
+      const created: any[] = [];
+      const errors: any[] = [];
+      const subIdShort = sub.slug.slice(0, 16);
+      for (const sel of selections) {
+        const k = `${sel.panel}:${sel.inboundId}`;
+        if (existingSet.has(k)) {
+          errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" });
+          continue;
+        }
+        try {
+          const cfg = getPanelConfig(sel.panel);
+          const inbounds = await listInbounds(sel.panel);
+          const ib = inbounds.find((x) => x.id === sel.inboundId);
+          if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
+          let flow = "";
+          let stream: any = {};
+          try { stream = JSON.parse(ib.streamSettings); } catch { stream = {}; }
+          if (ib.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
+
+          await addClient(sel.panel, sel.inboundId, {
+            id: sub.client_uuid,
+            email: sub.client_email,
+            expiryTime: sub.expiry_ms,
+            totalGB: sub.total_bytes,
+            subId: subIdShort,
+            flow,
+          });
+          const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
+            subscription_id: sub.id,
+            panel: sel.panel,
+            inbound_id: ib.id,
+            remark: ib.remark ?? `${sel.panel}-${ib.id}`,
+            protocol: ib.protocol,
+            port: ib.port,
+            host: hostFromUrl(cfg.url),
+            stream_settings: stream,
+          });
+          if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
+          created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
+        } catch (e) {
+          errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      return new Response(JSON.stringify({ created, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "removeInbound" && req.method === "POST") {
+      const body = await req.json();
+      const subId: string = body.id;
+      const panel: PanelKey = body.panel;
+      const inboundId: number = Number(body.inboundId);
+      if (!subId || !panel || !inboundId) {
+        return new Response(JSON.stringify({ error: "id, panel, inboundId required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("id, client_uuid")
+        .eq("id", subId)
+        .maybeSingle();
+      if (!sub) return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      let panelErr: string | null = null;
+      try {
+        const res = await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${sub.client_uuid}`, { method: "POST" });
+        let j: any = {};
+        try { j = JSON.parse(res.body); } catch {}
+        if (!j.success) panelErr = j.msg ?? "panel error";
+      } catch (e) {
+        panelErr = e instanceof Error ? e.message : String(e);
+      }
+      await supabase
+        .from("subscription_inbounds")
+        .delete()
+        .eq("subscription_id", subId)
+        .eq("panel", panel)
+        .eq("inbound_id", inboundId);
+      return new Response(JSON.stringify({ ok: true, panelError: panelErr }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "update" && req.method === "POST") {
+      const body = await req.json();
+      const subId: string = body.id;
+      if (!subId) return new Response(JSON.stringify({ error: "id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("id, slug, name, client_uuid, client_email, expiry_ms, total_bytes")
+        .eq("id", subId)
+        .maybeSingle();
+      if (!sub) return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      const newName: string | undefined = typeof body.name === "string" ? body.name.trim() : undefined;
+      const hasDays = body.days !== undefined && body.days !== null && body.days !== "";
+      const hasGB = body.totalGB !== undefined && body.totalGB !== null && body.totalGB !== "";
+      const days = hasDays ? Number(body.days) : null;
+      const totalGB = hasGB ? Number(body.totalGB) : null;
+      const newExpiry = hasDays ? (days! > 0 ? Date.now() + days! * 86400000 : 0) : sub.expiry_ms;
+      const newTotal = hasGB ? (totalGB! > 0 ? Math.floor(totalGB! * 1024 * 1024 * 1024) : 0) : sub.total_bytes;
+
+      const errors: any[] = [];
+      // Push expiry/totalBytes changes to panels
+      if (hasDays || hasGB) {
+        const { data: links } = await supabase
+          .from("subscription_inbounds")
+          .select("panel, inbound_id, protocol, stream_settings")
+          .eq("subscription_id", subId);
+        const subIdShort = sub.slug.slice(0, 16);
+        for (const l of links ?? []) {
+          try {
+            let flow = "";
+            const stream: any = l.stream_settings ?? {};
+            if (l.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
+            await updateClient(l.panel as PanelKey, l.inbound_id, {
+              id: sub.client_uuid,
+              email: sub.client_email,
+              expiryTime: newExpiry,
+              totalGB: newTotal,
+              subId: subIdShort,
+              flow,
+            });
+          } catch (e) {
+            errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+      }
+
+      const upd: any = {};
+      if (newName !== undefined && newName.length > 0) upd.name = newName;
+      if (hasDays) upd.expiry_ms = newExpiry;
+      if (hasGB) upd.total_bytes = newTotal;
+      if (Object.keys(upd).length) {
+        const { error: uErr } = await supabase.from("subscriptions").update(upd).eq("id", subId);
+        if (uErr) throw new Error(`db update: ${uErr.message}`);
+      }
+
       return new Response(JSON.stringify({ ok: true, errors }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
