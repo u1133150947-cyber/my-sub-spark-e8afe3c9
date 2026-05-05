@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
+import { OnlineClients } from "@/components/OnlineClients";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -307,8 +308,9 @@ const Index = () => {
 
       <main className="container py-8">
         <Tabs defaultValue="subs" className="space-y-6">
-          <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsList className="grid w-full max-w-3xl grid-cols-5">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
+            <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
             <TabsTrigger value="create">➕ Новый</TabsTrigger>
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
@@ -316,6 +318,10 @@ const Index = () => {
 
           <TabsContent value="stats" className="mt-0">
             <StatsDashboard />
+          </TabsContent>
+
+          <TabsContent value="online" className="mt-0">
+            <OnlineClients />
           </TabsContent>
 
           <TabsContent value="create" className="mt-0">
