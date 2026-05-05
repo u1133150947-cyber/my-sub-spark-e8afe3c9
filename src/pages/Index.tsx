@@ -81,39 +81,6 @@ const Index = () => {
   const [editSniText, setEditSniText] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
-  const [genPanel, setGenPanel] = useState<PanelKey>("cz");
-  const [genNets, setGenNets] = useState<Set<string>>(new Set(["tcp", "xhttp", "grpc", "ws"]));
-  const [genBusy, setGenBusy] = useState(false);
-
-  const generateInboundSet = async (s: Subscription) => {
-    const networks = Array.from(genNets);
-    if (!networks.length) {
-      toast.error("Выберите хотя бы один транспорт");
-      return;
-    }
-    if (!confirm(`Создать ${networks.length} inbound(ов) на панели ${PANEL_LABEL[genPanel]} и подключить к подписке «${s.name}»?`)) return;
-    setGenBusy(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("panel?action=generateInboundSet", {
-        method: "POST",
-        body: { id: s.id, panel: genPanel, networks },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      const okCount = (data?.created ?? []).length;
-      const errCount = (data?.errors ?? []).length;
-      if (okCount) toast.success(`Создано inbound'ов: ${okCount}`);
-      if (errCount) toast.warning(`Ошибки на ${errCount} транспортах`, {
-        description: data.errors.map((e: any) => `${e.network}: ${e.error}`).join("\n"),
-      });
-      loadInbounds();
-      loadSubs();
-    } catch (e: any) {
-      toast.error("Ошибка: " + (e?.message ?? e));
-    } finally {
-      setGenBusy(false);
-    }
-  };
 
   const bulkAdd = async (panel: PanelKey, inboundId: number, remark: string) => {
     if (!confirm(`Добавить «${remark}» ВСЕМ существующим клиентам?`)) return;
@@ -703,62 +670,6 @@ const Index = () => {
                                 </Card>
                               );
                             })}
-                          </div>
-                        </div>
-
-                        <div className="rounded-lg border border-border/60 bg-card/40 p-3 space-y-3">
-                          <div className="flex items-center justify-between gap-2 flex-wrap">
-                            <div>
-                              <div className="text-sm font-semibold">⚡ Авто-генерация inbound'ов</div>
-                              <div className="text-[11px] text-muted-foreground">
-                                Создаст новые vless-reality inbound'ы прямо на панели и подключит к этой подписке. Порты случайные, SNI берётся из whitelist выше (или дефолтного списка).
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3 flex-wrap">
-                            <div className="flex items-center gap-1.5">
-                              {(["cz", "ru"] as PanelKey[]).map((p) => (
-                                <button
-                                  key={p}
-                                  type="button"
-                                  onClick={() => setGenPanel(p)}
-                                  className={`text-xs px-2.5 py-1 rounded-md border transition ${
-                                    genPanel === p
-                                      ? "bg-primary/20 border-primary/50 text-primary"
-                                      : "bg-background border-input text-muted-foreground hover:bg-accent"
-                                  }`}
-                                >
-                                  {PANEL_LABEL[p]}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {(["tcp", "xhttp", "grpc", "ws"] as const).map((n) => {
-                                const active = genNets.has(n);
-                                return (
-                                  <button
-                                    key={n}
-                                    type="button"
-                                    onClick={() => {
-                                      const next = new Set(genNets);
-                                      next.has(n) ? next.delete(n) : next.add(n);
-                                      setGenNets(next);
-                                    }}
-                                    className={`text-xs px-2.5 py-1 rounded-md border font-mono transition ${
-                                      active
-                                        ? "bg-primary/20 border-primary/50 text-primary"
-                                        : "bg-background border-input text-muted-foreground hover:bg-accent"
-                                    }`}
-                                  >
-                                    {active ? "✓ " : ""}vless-reality-{n}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <Button size="sm" onClick={() => generateInboundSet(s)} disabled={genBusy}
-                              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
-                              {genBusy ? <Loader2 className="size-4 animate-spin" /> : (<><Zap className="size-4 mr-1" />Сгенерировать</>)}
-                            </Button>
                           </div>
                         </div>
 
