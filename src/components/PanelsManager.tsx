@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -79,6 +79,8 @@ export const PanelsManager = () => {
   const [form, setForm] = useState({ ...empty });
   const [saving, setSaving] = useState(false);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
 
   const load = async () => {
     const { data, error } = await supabase
@@ -134,6 +136,24 @@ export const PanelsManager = () => {
     const { error } = await supabase.from("panels").delete().eq("id", id);
     if (error) return toast.error("Ошибка удаления");
     toast.success(count && count > 0 ? `Удалено. Очищено подписок: ${count}` : "Удалено");
+    load();
+  };
+
+  const startEdit = (p: Panel) => {
+    setEditingId(p.id);
+    setEditName(p.name);
+  };
+
+  const saveEdit = async (p: Panel) => {
+    const newName = editName.trim();
+    if (!newName || newName === p.name) {
+      setEditingId(null);
+      return;
+    }
+    const { error } = await supabase.from("panels").update({ name: newName }).eq("id", p.id);
+    if (error) return toast.error("Ошибка: " + error.message);
+    toast.success("Название обновлено — изменится во всех подписках");
+    setEditingId(null);
     load();
   };
 
@@ -247,7 +267,33 @@ export const PanelsManager = () => {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <Server className="size-4 text-primary shrink-0" />
-                      <span className="font-semibold truncate">{withFlag(p.name)}</span>
+                      {editingId === p.id ? (
+                        <>
+                          <Input
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") saveEdit(p);
+                              if (e.key === "Escape") setEditingId(null);
+                            }}
+                            autoFocus
+                            className="h-7 max-w-xs"
+                          />
+                          <Button size="sm" variant="ghost" onClick={() => saveEdit(p)} className="h-7 px-2">
+                            <Check className="size-3.5 text-green-500" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} className="h-7 px-2">
+                            <X className="size-3.5" />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-semibold truncate">{withFlag(p.name)}</span>
+                          <Button size="sm" variant="ghost" onClick={() => startEdit(p)} className="h-6 px-1.5">
+                            <Pencil className="size-3 text-muted-foreground" />
+                          </Button>
+                        </>
+                      )}
                       {p.status === "ok" ? (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-600 dark:text-green-400 flex items-center gap-1">
                           <CheckCircle2 className="size-3" /> онлайн
