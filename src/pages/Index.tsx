@@ -326,9 +326,19 @@ const Index = () => {
         </div>
       </header>
 
-      <main className="container py-8 space-y-8">
-        <StatsDashboard />
+      <main className="container py-8">
+        <Tabs defaultValue="subs" className="space-y-6">
+          <TabsList className="grid w-full max-w-md grid-cols-3">
+            <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
+            <TabsTrigger value="create">➕ Новый</TabsTrigger>
+            <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
+          </TabsList>
 
+          <TabsContent value="stats" className="mt-0">
+            <StatsDashboard />
+          </TabsContent>
+
+          <TabsContent value="create" className="mt-0">
         <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
@@ -338,6 +348,27 @@ const Index = () => {
               <RefreshCw className={`size-4 mr-1 ${loadingInbounds ? "animate-spin" : ""}`} />
               Обновить
             </Button>
+          </div>
+
+          <div className="mb-4">
+            <Label className="text-xs text-muted-foreground mb-2 block">Быстрые тарифы</Label>
+            <div className="flex flex-wrap gap-2">
+              {PRESETS.map((p) => {
+                const active = days === p.days && totalGB === p.gb;
+                return (
+                  <Button
+                    key={p.label}
+                    type="button"
+                    size="sm"
+                    variant={active ? "default" : "outline"}
+                    onClick={() => applyPreset(p)}
+                    style={active ? { background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" } : undefined}
+                  >
+                    {p.label}
+                  </Button>
+                );
+              })}
+            </div>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3 mb-4">
@@ -406,7 +437,9 @@ const Index = () => {
             )}
           </Button>
         </Card>
+          </TabsContent>
 
+          <TabsContent value="subs" className="mt-0">
         <section>
           <h2 className="text-lg font-semibold mb-4">Подписки ({subs.length})</h2>
           {subs.length === 0 ? (
@@ -418,6 +451,7 @@ const Index = () => {
               {subs.map((s) => {
                 const url = subUrl(s.slug);
                 const happ = happUrl(s.slug);
+                const status = expiryStatus(s);
                 return (
                   <Card key={s.id} className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
@@ -427,8 +461,16 @@ const Index = () => {
                           <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                             {s.hits} hits
                           </span>
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
-                            до {fmtExpire(s.expiry_ms)}
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              status.tone === "danger"
+                                ? "bg-destructive/20 text-destructive"
+                                : status.tone === "warn"
+                                ? "bg-yellow-500/20 text-yellow-600 dark:text-yellow-400"
+                                : "bg-secondary text-muted-foreground"
+                            }`}
+                          >
+                            {status.tone === "muted" && s.expiry_ms ? `до ${fmtExpire(s.expiry_ms)}` : status.label}
                           </span>
                           <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                             {fmtGB(s.total_bytes)}
@@ -443,13 +485,42 @@ const Index = () => {
                         <Button variant="secondary" size="sm" onClick={() => copy(url)}>
                           <Copy className="size-3.5 mr-1" /> URL
                         </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => copy(happ)}
-                          style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
-                        >
-                          <Smartphone className="size-3.5 mr-1" /> Happ
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="sm"
+                              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
+                            >
+                              <Share2 className="size-3.5 mr-1" /> Открыть в…
+                              <ChevronDown className="size-3 ml-1" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuLabel>Импорт в клиент</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {CLIENT_LINKS.map((c) => {
+                              const link = c.build(url);
+                              return (
+                                <DropdownMenuItem key={c.label} asChild>
+                                  <a href={link} className="cursor-pointer flex items-center justify-between gap-2">
+                                    <span>
+                                      <span className="mr-2">{c.emoji}</span>
+                                      {c.label}
+                                    </span>
+                                    <Copy
+                                      className="size-3.5 text-muted-foreground hover:text-foreground"
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        copy(link);
+                                      }}
+                                    />
+                                  </a>
+                                </DropdownMenuItem>
+                              );
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button variant="outline" size="sm" onClick={() => setActiveQr(activeQr === s.id ? null : s.id)}>
                           QR
                         </Button>
@@ -546,6 +617,8 @@ const Index = () => {
             </div>
           )}
         </section>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
