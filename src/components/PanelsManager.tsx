@@ -6,6 +6,12 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Panel = {
   id: string;
@@ -163,7 +169,35 @@ export const PanelsManager = () => {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
             <Label className="text-xs text-muted-foreground">Название</Label>
-            <Input value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="🇨🇿 Чехия #1" />
+            <div className="flex gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" className="shrink-0 px-3 text-lg" title="Выбрать флаг">
+                    {(form.name.match(FLAG_RE)?.[0]) || "🏳️"}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-56">
+                  {FLAG_MAP.map(({ flag, keys }) => (
+                    <DropdownMenuItem
+                      key={flag}
+                      onClick={() => {
+                        const cleaned = form.name.replace(FLAG_RE, "").trimStart();
+                        update("name", `${flag} ${cleaned}`.trimEnd());
+                      }}
+                    >
+                      <span className="text-lg mr-2">{flag}</span>
+                      <span className="capitalize">{keys[0]}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Input
+                value={form.name}
+                onChange={(e) => update("name", e.target.value)}
+                placeholder="🇨🇿 Чехия #1"
+                className="flex-1"
+              />
+            </div>
           </div>
           <div className="md:col-span-2">
             <Label className="text-xs text-muted-foreground">URL панели</Label>
