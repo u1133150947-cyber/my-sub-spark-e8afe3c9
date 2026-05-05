@@ -16,6 +16,7 @@ function buildVless(
     remark: string;
     stream_settings: any;
   },
+  sniOverride?: string,
 ) {
   if (inbound.protocol !== "vless") {
     // Only vless supported for now
@@ -34,7 +35,8 @@ function buildVless(
   if (security === "reality" && ss.realitySettings) {
     const r = ss.realitySettings;
     const settings = r.settings ?? {};
-    if (Array.isArray(r.serverNames) && r.serverNames[0]) params.set("sni", r.serverNames[0]);
+    const sni = sniOverride || (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined);
+    if (sni) params.set("sni", sni);
     if (Array.isArray(r.shortIds) && r.shortIds[0]) params.set("sid", r.shortIds[0]);
     if (settings.publicKey) params.set("pbk", settings.publicKey);
     if (settings.fingerprint) params.set("fp", settings.fingerprint);
@@ -43,7 +45,8 @@ function buildVless(
   // TLS
   if (security === "tls" && ss.tlsSettings) {
     const t = ss.tlsSettings;
-    if (t.serverName) params.set("sni", t.serverName);
+    const sni = sniOverride || t.serverName;
+    if (sni) params.set("sni", sni);
     if (Array.isArray(t.alpn)) params.set("alpn", t.alpn.join(","));
     const fp = t.settings?.fingerprint;
     if (fp) params.set("fp", fp);
@@ -100,7 +103,7 @@ Deno.serve(async (req) => {
 
     const { data: sub, error } = await supabase
       .from("subscriptions")
-      .select("id, name, client_email, client_uuid, expiry_ms, total_bytes, hits")
+      .select("id, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist")
       .eq("slug", slug)
       .maybeSingle();
 
@@ -114,8 +117,14 @@ Deno.serve(async (req) => {
       .eq("subscription_id", sub.id);
 
     const lines: string[] = [];
+    const whitelist: string[] = Array.isArray((sub as any).sni_whitelist)
+      ? (sub as any).sni_whitelist.filter((s: string) => typeof s === "string" && s.trim().length > 0)
+      : [];
     for (const ib of inbounds ?? []) {
-      const link = buildVless(sub.client_uuid, sub.client_email, ib as any);
+      const sniOverride = whitelist.length > 0
+        ? whitelist[Math.floor(Math.random() * whitelist.length)]
+        : undefined;
+      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, sniOverride);
       if (link) lines.push(link);
     }
 
