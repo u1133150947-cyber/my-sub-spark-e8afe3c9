@@ -310,6 +310,148 @@ Deno.serve(async (req) => {
       });
     }
 
+    if (action === "onlines") {
+      // Returns currently connected clients across all panels with subscription names
+      const result: { panel: PanelKey; email: string; subscription_id: string | null; sub_name: string | null; remark: string | null }[] = [];
+      const errors: Record<string, string> = {};
+
+      const { data: links } = await supabase
+        .from("subscription_inbounds")
+        .select("client_email, subscription_id, remark, panel, inbound_id");
+      const { data: subsRows } = await supabase
+        .from("subscriptions")
+        .select("id, name, client_email");
+      const emailToInfo = new Map<string, { sid: string; name: string; remark: string | null }>();
+      (links ?? []).forEach((l: any) => {
+        const sub = (subsRows ?? []).find((s: any) => s.id === l.subscription_id);
+        emailToInfo.set(l.client_email, { sid: l.subscription_id, name: sub?.name ?? "?", remark: l.remark });
+      });
+
+      for (const key of ["cz", "ru"] as PanelKey[]) {
+        try {
+          const res = await panelFetch(key, "/panel/api/inbounds/onlines", { method: "POST" });
+          const j = JSON.parse(res.body);
+          if (!j.success) { errors[key] = j.msg ?? "error"; continue; }
+          const emails: string[] = j.obj ?? [];
+          for (const email of emails) {
+            const info = emailToInfo.get(email);
+            result.push({
+              panel: key,
+              email,
+              subscription_id: info?.sid ?? null,
+              sub_name: info?.name ?? null,
+              remark: info?.remark ?? null,
+            });
+          }
+        } catch (e) {
+          errors[key] = e instanceof Error ? e.message : String(e);
+        }
+      }
+      return new Response(JSON.stringify({ onlines: result, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "bulkAddInbound" && req.method === "POST") {
+      const body = await req.json();
+      const panel: PanelKey = body.panel;
+      const inboundId: number = Number(body.inboundId);
+      if (!panel || !inboundId) {
+        return new Response(JSON.stringify({ error: "panel, inboundId required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: allSubs } = await supabase
+        .from("subscriptions")
+        .select("id, slug, client_uuid, client_email, expiry_ms, total_bytes");
+      const { data: existing } = await supabase
+        .from("subscription_inbounds")
+        .select("subscription_id")
+        .eq("panel", panel)
+        .eq("inbound_id", inboundId);
+      const have = new Set((existing ?? []).map((l: any) => l.subscription_id));
+
+      const cfg = getPanelConfig(panel);
+      const inboundsList = await listInbounds(panel);
+      const ib = inboundsList.find((x: any) => x.id === inboundId);
+      if (!ib) return new Response(JSON.stringify({ error: "inbound not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      let stream: any = {};
+      try { stream = JSON.parse(ib.streamSettings); } catch {}
+      const flow = ib.protocol === "vless" && stream.security === "reality" ? "xtls-rprx-vision" : "";
+
+      const created: any[] = [];
+      const errors: any[] = [];
+      for (const sub of allSubs ?? []) {
+        if (have.has(sub.id)) continue;
+        try {
+          const email = `${sub.client_email}_${panel}${ib.id}`;
+          await addClient(panel, inboundId, {
+            id: sub.client_uuid,
+            email,
+            expiryTime: sub.expiry_ms,
+            totalGB: sub.total_bytes,
+            subId: sub.slug.slice(0, 16),
+            flow,
+          });
+          await supabase.from("subscription_inbounds").insert({
+            subscription_id: sub.id,
+            panel,
+            inbound_id: ib.id,
+            remark: ib.remark ?? `${panel}-${ib.id}`,
+            protocol: ib.protocol,
+            port: ib.port,
+            host: hostFromUrl(cfg.url),
+            stream_settings: stream,
+            client_email: email,
+          });
+          created.push(sub.id);
+        } catch (e) {
+          errors.push({ sub: sub.id, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      return new Response(JSON.stringify({ created: created.length, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "bulkRemoveInbound" && req.method === "POST") {
+      const body = await req.json();
+      const panel: PanelKey = body.panel;
+      const inboundId: number = Number(body.inboundId);
+      if (!panel || !inboundId) {
+        return new Response(JSON.stringify({ error: "panel, inboundId required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: links } = await supabase
+        .from("subscription_inbounds")
+        .select("subscription_id")
+        .eq("panel", panel)
+        .eq("inbound_id", inboundId);
+      const subIds = (links ?? []).map((l: any) => l.subscription_id);
+      if (!subIds.length) {
+        return new Response(JSON.stringify({ removed: 0, errors: [] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: subs } = await supabase
+        .from("subscriptions")
+        .select("id, client_uuid")
+        .in("id", subIds);
+      const errors: any[] = [];
+      let removed = 0;
+      for (const s of subs ?? []) {
+        try {
+          await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${s.client_uuid}`, { method: "POST" });
+          removed++;
+        } catch (e) {
+          errors.push({ sub: s.id, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      await supabase
+        .from("subscription_inbounds")
+        .delete()
+        .eq("panel", panel)
+        .eq("inbound_id", inboundId);
+      return new Response(JSON.stringify({ removed, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "stats") {
       // Aggregate per-client traffic from both panels and persist a snapshot per subscription
       const { data: subs } = await supabase

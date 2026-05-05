@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
+import { OnlineClients } from "@/components/OnlineClients";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -78,6 +79,47 @@ const Index = () => {
   const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [savingEdit, setSavingEdit] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+
+  const bulkAdd = async (panel: PanelKey, inboundId: number, remark: string) => {
+    if (!confirm(`Добавить «${remark}» ВСЕМ существующим клиентам?`)) return;
+    const key = `add:${panel}:${inboundId}`;
+    setBulkBusy(key);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=bulkAddInbound", {
+        method: "POST",
+        body: { panel, inboundId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Добавлено клиентам: ${data.created}${data.errors?.length ? `, ошибок: ${data.errors.length}` : ""}`);
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const bulkRemove = async (panel: PanelKey, inboundId: number, remark: string) => {
+    if (!confirm(`Убрать «${remark}» у ВСЕХ клиентов? Они потеряют доступ к этому серверу.`)) return;
+    const key = `rm:${panel}:${inboundId}`;
+    setBulkBusy(key);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=bulkRemoveInbound", {
+        method: "POST",
+        body: { panel, inboundId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Убрано у клиентов: ${data.removed}${data.errors?.length ? `, ошибок: ${data.errors.length}` : ""}`);
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setBulkBusy(null);
+    }
+  };
 
   const loadSubs = async () => {
     const { data, error } = await supabase
@@ -307,8 +349,9 @@ const Index = () => {
 
       <main className="container py-8">
         <Tabs defaultValue="subs" className="space-y-6">
-          <TabsList className="grid w-full max-w-2xl grid-cols-4">
+          <TabsList className="grid w-full max-w-3xl grid-cols-5">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
+            <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
             <TabsTrigger value="create">➕ Новый</TabsTrigger>
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
@@ -316,6 +359,10 @@ const Index = () => {
 
           <TabsContent value="stats" className="mt-0">
             <StatsDashboard />
+          </TabsContent>
+
+          <TabsContent value="online" className="mt-0">
+            <OnlineClients />
           </TabsContent>
 
           <TabsContent value="create" className="mt-0">
@@ -384,16 +431,36 @@ const Index = () => {
                       <div className="space-y-2">
                         {list.map((ib) => {
                           const key = `${panel}:${ib.id}`;
+                          const busy = bulkBusy === `add:${key}` || bulkBusy === `rm:${key}`;
                           return (
-                            <label key={key} className="flex items-center gap-3 cursor-pointer">
-                              <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm truncate">{ib.remark || `inbound #${ib.id}`}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {ib.protocol.toUpperCase()} · :{ib.port}
+                            <div key={key} className="flex items-center gap-2">
+                              <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
+                                <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-sm truncate">{ib.remark || `inbound #${ib.id}`}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {ib.protocol.toUpperCase()} · :{ib.port}
+                                  </div>
                                 </div>
-                              </div>
-                            </label>
+                              </label>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}>
+                                    {busy ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel className="text-xs">Массовые действия</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => bulkAdd(panel, ib.id, ib.remark || `#${ib.id}`)}>
+                                    <UserPlus className="size-3.5 mr-2 text-green-500" /> Добавить всем
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => bulkRemove(panel, ib.id, ib.remark || `#${ib.id}`)} className="text-destructive focus:text-destructive">
+                                    <UserMinus className="size-3.5 mr-2" /> Убрать у всех
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
                           );
                         })}
                       </div>
