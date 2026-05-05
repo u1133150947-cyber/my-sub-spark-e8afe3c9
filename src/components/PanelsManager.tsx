@@ -5,60 +5,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, RefreshCw, CheckCircle2, AlertCircle } from "lucide-react";
+import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle } from "lucide-react";
 
 type Panel = {
   id: string;
   name: string;
-  host: string;
-  public_host: string;
   panel_url: string;
   username: string;
   password: string;
-  template: string;
-  readiness: string;
-  ssh_user: string;
-  ssh_port: number;
-  ssh_auth_type: string;
-  ssh_password: string;
-  ssh_key_passphrase: string;
   status: string;
   status_message: string;
   last_checked_at: string | null;
 };
 
-const TEMPLATES = [
-  { value: "cascade_yandex", label: "Каскад через Яндекс" },
-  { value: "cascade_youtube", label: "Каскад через YouTube-фронт" },
-  { value: "direct", label: "Только прямой" },
-];
-
-const READINESS = [
-  { value: "auto", label: "Определи сам" },
-  { value: "empty", label: "Пустой сервер" },
-  { value: "ready", label: "Панель уже стоит" },
-];
-
-const SSH_AUTH = [
-  { value: "password", label: "Пароль" },
-  { value: "key", label: "Ключ" },
-];
-
-const empty = {
-  name: "",
-  host: "",
-  public_host: "",
-  panel_url: "",
-  username: "",
-  password: "",
-  template: "cascade_yandex",
-  readiness: "auto",
-  ssh_user: "root",
-  ssh_port: 22,
-  ssh_auth_type: "password",
-  ssh_password: "",
-  ssh_key_passphrase: "",
-};
+const empty = { name: "", panel_url: "", username: "", password: "" };
 
 export const PanelsManager = () => {
   const [panels, setPanels] = useState<Panel[]>([]);
@@ -69,9 +29,9 @@ export const PanelsManager = () => {
   const load = async () => {
     const { data, error } = await supabase
       .from("panels")
-      .select("*")
+      .select("id, name, panel_url, username, password, status, status_message, last_checked_at")
       .order("created_at", { ascending: true });
-    if (error) return toast.error("Не удалось загрузить серверы");
+    if (error) return toast.error("Не удалось загрузить панели");
     setPanels((data ?? []) as Panel[]);
   };
 
@@ -79,29 +39,36 @@ export const PanelsManager = () => {
     load();
   }, []);
 
-  const update = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  const update = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
-  const add = async (alsoSetup: boolean) => {
-    if (!form.name.trim() || !form.host.trim() || !form.panel_url.trim()) {
-      return toast.error("Заполните Название, IP/хост и URL панели");
-    }
-    if (!form.username.trim() || !form.password.trim()) {
-      return toast.error("Логин и пароль панели обязательны");
+  const add = async () => {
+    if (!form.name.trim() || !form.panel_url.trim() || !form.username.trim() || !form.password.trim()) {
+      return toast.error("Заполните название, URL панели, логин и пароль");
     }
     setSaving(true);
+    let host = "";
+    try {
+      host = new URL(form.panel_url).hostname;
+    } catch {
+      host = form.panel_url;
+    }
     const { error } = await supabase.from("panels").insert({
-      ...form,
-      public_host: form.public_host || form.host,
+      name: form.name.trim(),
+      panel_url: form.panel_url.trim(),
+      username: form.username.trim(),
+      password: form.password,
+      host,
+      public_host: host,
     });
     setSaving(false);
     if (error) return toast.error("Ошибка: " + error.message);
-    toast.success(alsoSetup ? "Сервер добавлен (автонастройка появится позже)" : "Сервер добавлен");
+    toast.success("Панель добавлена");
     setForm({ ...empty });
     load();
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Удалить сервер?")) return;
+    if (!confirm("Удалить панель?")) return;
     const { error } = await supabase.from("panels").delete().eq("id", id);
     if (error) return toast.error("Ошибка удаления");
     toast.success("Удалено");
@@ -135,89 +102,22 @@ export const PanelsManager = () => {
     }
   };
 
-  const Sel = (props: {
-    label: string;
-    value: string;
-    onChange: (v: string) => void;
-    options: { value: string; label: string }[];
-  }) => (
-    <div>
-      <Label className="text-xs text-muted-foreground">{props.label}</Label>
-      <select
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {props.options.map((o) => (
-          <option key={o.value} value={o.value}>
-            {o.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-
   return (
     <div className="space-y-6">
       <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
         <h2 className="text-lg font-semibold flex items-center gap-2 mb-1">
-          <Plus className="size-4 text-primary" /> Добавить сервер
+          <Plus className="size-4 text-primary" /> Добавить панель
         </h2>
         <p className="text-sm text-muted-foreground mb-4">
-          После добавления сервер можно сразу отправить в задачу автоматической настройки.
+          Подключаем существующую 3X-UI панель — укажи URL, логин и пароль, остальное подтянется автоматически.
         </p>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          <div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div className="md:col-span-2">
             <Label className="text-xs text-muted-foreground">Название</Label>
             <Input value={form.name} onChange={(e) => update("name", e.target.value)} placeholder="🇨🇿 Чехия #1" />
           </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">IP / хост</Label>
-            <Input value={form.host} onChange={(e) => update("host", e.target.value)} placeholder="1.2.3.4" />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground">Публичный хост</Label>
-            <Input
-              value={form.public_host}
-              onChange={(e) => update("public_host", e.target.value)}
-              placeholder="vpn.example.com"
-            />
-          </div>
-
-          <Sel label="Шаблон" value={form.template} onChange={(v) => update("template", v)} options={TEMPLATES} />
-          <Sel label="Готовность сервера" value={form.readiness} onChange={(v) => update("readiness", v)} options={READINESS} />
-          <div>
-            <Label className="text-xs text-muted-foreground">SSH пользователь</Label>
-            <Input value={form.ssh_user} onChange={(e) => update("ssh_user", e.target.value)} />
-          </div>
-
-          <div>
-            <Label className="text-xs text-muted-foreground">SSH порт</Label>
-            <Input
-              type="number"
-              value={form.ssh_port}
-              onChange={(e) => update("ssh_port", parseInt(e.target.value || "22", 10))}
-            />
-          </div>
-          <Sel label="Тип SSH" value={form.ssh_auth_type} onChange={(v) => update("ssh_auth_type", v)} options={SSH_AUTH} />
-          <div>
-            <Label className="text-xs text-muted-foreground">
-              {form.ssh_auth_type === "key" ? "Пароль ключа" : "SSH пароль"}
-            </Label>
-            <Input
-              type="password"
-              value={form.ssh_auth_type === "key" ? form.ssh_key_passphrase : form.ssh_password}
-              onChange={(e) =>
-                update(form.ssh_auth_type === "key" ? "ssh_key_passphrase" : "ssh_password", e.target.value)
-              }
-            />
-          </div>
-
-          <div className="md:col-span-3 border-t border-border pt-4 mt-2">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Доступ к 3X-UI панели</Label>
-          </div>
-          <div className="md:col-span-3">
+          <div className="md:col-span-2">
             <Label className="text-xs text-muted-foreground">URL панели</Label>
             <Input
               value={form.panel_url}
@@ -231,36 +131,24 @@ export const PanelsManager = () => {
           </div>
           <div>
             <Label className="text-xs text-muted-foreground">Пароль панели</Label>
-            <Input
-              type="password"
-              value={form.password}
-              onChange={(e) => update("password", e.target.value)}
-            />
+            <Input type="password" value={form.password} onChange={(e) => update("password", e.target.value)} />
           </div>
         </div>
 
-        <div className="mt-4 p-3 rounded-lg bg-secondary/50 text-sm text-muted-foreground">
-          Панель сама проверит, что уже установлено на сервере, и докачает только недостающее.
-        </div>
-
-        <div className="flex gap-2 mt-4">
-          <Button
-            onClick={() => add(true)}
-            disabled={saving}
-            style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
-          >
-            {saving ? <Loader2 className="size-4 animate-spin" /> : "Добавить и настроить"}
-          </Button>
-          <Button variant="outline" onClick={() => add(false)} disabled={saving}>
-            Только добавить
-          </Button>
-        </div>
+        <Button
+          onClick={add}
+          disabled={saving}
+          className="mt-4"
+          style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
+        >
+          {saving ? <Loader2 className="size-4 animate-spin" /> : (<><Plus className="size-4 mr-1" /> Добавить панель</>)}
+        </Button>
       </Card>
 
       <section>
-        <h2 className="text-lg font-semibold mb-4">Серверы ({panels.length})</h2>
+        <h2 className="text-lg font-semibold mb-4">Панели ({panels.length})</h2>
         {panels.length === 0 ? (
-          <Card className="p-10 text-center text-muted-foreground border-dashed">Серверов пока нет.</Card>
+          <Card className="p-10 text-center text-muted-foreground border-dashed">Панелей пока нет.</Card>
         ) : (
           <div className="grid gap-3">
             {panels.map((p) => (
@@ -280,16 +168,11 @@ export const PanelsManager = () => {
                         </span>
                       ) : (
                         <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
-                          не проверен
+                          не проверена
                         </span>
                       )}
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
-                        {TEMPLATES.find((t) => t.value === p.template)?.label ?? p.template}
-                      </span>
                     </div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      {p.host} → <code>{p.panel_url}</code>
-                    </div>
+                    <code className="text-xs text-muted-foreground truncate block">{p.panel_url || "URL не задан"}</code>
                     {p.status === "error" && p.status_message && (
                       <div className="text-xs text-destructive mt-1 truncate">{p.status_message}</div>
                     )}
@@ -299,7 +182,7 @@ export const PanelsManager = () => {
                       variant="outline"
                       size="sm"
                       onClick={() => testConnection(p)}
-                      disabled={testingId === p.id}
+                      disabled={testingId === p.id || !p.panel_url}
                     >
                       {testingId === p.id ? (
                         <Loader2 className="size-3.5 mr-1 animate-spin" />

@@ -333,7 +333,7 @@ const Index = () => {
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
             <TabsTrigger value="create">➕ Новый</TabsTrigger>
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
-            <TabsTrigger value="servers">🖥️ Серверы</TabsTrigger>
+            <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
           </TabsList>
 
           <TabsContent value="stats" className="mt-0">
