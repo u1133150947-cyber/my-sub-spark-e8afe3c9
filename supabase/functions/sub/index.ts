@@ -155,7 +155,7 @@ Deno.serve(async (req) => {
         status: 200,
         headers: {
           ...corsHeaders,
-          "Content-Type": "text/html; charset=utf-8",
+          "content-type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
           "X-Content-Type-Options": "nosniff",
         },
