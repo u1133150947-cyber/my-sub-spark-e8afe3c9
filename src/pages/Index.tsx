@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { StatsDashboard } from "@/components/StatsDashboard";
 
 type Subscription = {
   id: string;
@@ -284,6 +285,8 @@ const Index = () => {
       </header>
 
       <main className="container py-8 space-y-8">
+        <StatsDashboard />
+
         <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold flex items-center gap-2">
