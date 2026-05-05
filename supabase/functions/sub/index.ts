@@ -73,7 +73,7 @@ function buildVless(
 // Friendly remark overrides for subscription display
 function mapRemark(remark: string): string {
   const map: Record<string, string> = {
-    YouTubeRU: "▶️ YouTube без рекламы",
+    YouTubeRU: "🇷🇺 YouTube без рекламы",
     dpBeget_ru: "🇨🇿 Чехия",
   };
   return map[remark] ?? remark;
