@@ -230,6 +230,116 @@ function hostFromUrl(u: string) {
   }
 }
 
+function randomPort(): number {
+  return 20000 + Math.floor(Math.random() * 40000);
+}
+function randomHex(len: number): string {
+  const a = "0123456789abcdef";
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (n) => a[n % 16]).join("");
+}
+
+const DEFAULT_SNI_POOL = [
+  "www.microsoft.com",
+  "www.apple.com",
+  "www.cloudflare.com",
+  "www.amazon.com",
+  "www.icloud.com",
+  "www.bing.com",
+];
+
+async function getRealityKeypair(panel: PanelKey): Promise<{ privateKey: string; publicKey: string }> {
+  const res = await panelFetch(panel, "/server/getNewX25519Cert", { method: "POST" });
+  let j: any = {};
+  try { j = JSON.parse(res.body); } catch { throw new Error(`getNewX25519Cert: ${res.body.slice(0, 200)}`); }
+  if (!j.success) throw new Error(`getNewX25519Cert: ${j.msg}`);
+  return { privateKey: j.obj.privateKey, publicKey: j.obj.publicKey };
+}
+
+function buildRealityInbound(opts: {
+  remark: string;
+  network: "tcp" | "xhttp" | "grpc" | "ws";
+  port: number;
+  sni: string;
+  privateKey: string;
+  publicKey: string;
+  shortId: string;
+}): { remark: string; protocol: string; port: number; settings: string; streamSettings: string; sniffing: string } {
+  const settings = {
+    clients: [],
+    decryption: "none",
+    fallbacks: [],
+  };
+  const realitySettings = {
+    show: false,
+    xver: 0,
+    dest: `${opts.sni}:443`,
+    serverNames: [opts.sni],
+    privateKey: opts.privateKey,
+    minClient: "",
+    maxClient: "",
+    maxTimediff: 0,
+    shortIds: [opts.shortId],
+    settings: {
+      publicKey: opts.publicKey,
+      fingerprint: "chrome",
+      serverName: "",
+      spiderX: "/",
+    },
+  };
+  const stream: any = {
+    network: opts.network,
+    security: "reality",
+    realitySettings,
+  };
+  if (opts.network === "tcp") {
+    stream.tcpSettings = { acceptProxyProtocol: false, header: { type: "none" } };
+  } else if (opts.network === "ws") {
+    stream.wsSettings = { acceptProxyProtocol: false, path: "/", host: "", headers: {} };
+  } else if (opts.network === "grpc") {
+    stream.grpcSettings = { serviceName: randomHex(8), multiMode: false };
+  } else if (opts.network === "xhttp") {
+    stream.xhttpSettings = { path: "/", host: "", headers: {}, scMaxBufferedPosts: 30, scMaxEachPostBytes: "1000000", scStreamUpServerSecs: "20-80" };
+  }
+  const sniffing = { enabled: true, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false };
+  return {
+    remark: opts.remark,
+    protocol: "vless",
+    port: opts.port,
+    settings: JSON.stringify(settings),
+    streamSettings: JSON.stringify(stream),
+    sniffing: JSON.stringify(sniffing),
+  };
+}
+
+async function createInboundOnPanel(panel: PanelKey, ib: ReturnType<typeof buildRealityInbound>): Promise<number> {
+  const body = {
+    up: 0,
+    down: 0,
+    total: 0,
+    remark: ib.remark,
+    enable: true,
+    expiryTime: 0,
+    listen: "",
+    port: ib.port,
+    protocol: ib.protocol,
+    settings: ib.settings,
+    streamSettings: ib.streamSettings,
+    sniffing: ib.sniffing,
+    allocate: JSON.stringify({ strategy: "always", refresh: 5, concurrency: 3 }),
+  };
+  const res = await panelFetch(panel, "/panel/api/inbounds/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let j: any = {};
+  try { j = JSON.parse(res.body); } catch { throw new Error(`addInbound: ${res.body.slice(0, 200)}`); }
+  if (!j.success) throw new Error(`addInbound: ${j.msg}`);
+  return Number(j.obj?.id ?? 0);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
