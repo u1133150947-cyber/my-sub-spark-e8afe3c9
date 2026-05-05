@@ -69,8 +69,8 @@ async function loginPanel(key: PanelKey): Promise<string> {
   const res = await nodeRequest(`${cfg.url}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ username: cfg.username, password: cfg.password }),
-  } as any);
+    body: new URLSearchParams({ username: cfg.username, password: cfg.password }).toString(),
+  });
   if (res.status < 200 || res.status >= 300) {
     throw new Error(`Login failed [${key}] ${res.status}: ${res.body}`);
   }
