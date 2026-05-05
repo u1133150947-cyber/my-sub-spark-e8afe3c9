@@ -230,6 +230,116 @@ function hostFromUrl(u: string) {
   }
 }
 
+function randomPort(): number {
+  return 20000 + Math.floor(Math.random() * 40000);
+}
+function randomHex(len: number): string {
+  const a = "0123456789abcdef";
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (n) => a[n % 16]).join("");
+}
+
+const DEFAULT_SNI_POOL = [
+  "www.microsoft.com",
+  "www.apple.com",
+  "www.cloudflare.com",
+  "www.amazon.com",
+  "www.icloud.com",
+  "www.bing.com",
+];
+
+async function getRealityKeypair(panel: PanelKey): Promise<{ privateKey: string; publicKey: string }> {
+  const res = await panelFetch(panel, "/server/getNewX25519Cert", { method: "POST" });
+  let j: any = {};
+  try { j = JSON.parse(res.body); } catch { throw new Error(`getNewX25519Cert: ${res.body.slice(0, 200)}`); }
+  if (!j.success) throw new Error(`getNewX25519Cert: ${j.msg}`);
+  return { privateKey: j.obj.privateKey, publicKey: j.obj.publicKey };
+}
+
+function buildRealityInbound(opts: {
+  remark: string;
+  network: "tcp" | "xhttp" | "grpc" | "ws";
+  port: number;
+  sni: string;
+  privateKey: string;
+  publicKey: string;
+  shortId: string;
+}): { remark: string; protocol: string; port: number; settings: string; streamSettings: string; sniffing: string } {
+  const settings = {
+    clients: [],
+    decryption: "none",
+    fallbacks: [],
+  };
+  const realitySettings = {
+    show: false,
+    xver: 0,
+    dest: `${opts.sni}:443`,
+    serverNames: [opts.sni],
+    privateKey: opts.privateKey,
+    minClient: "",
+    maxClient: "",
+    maxTimediff: 0,
+    shortIds: [opts.shortId],
+    settings: {
+      publicKey: opts.publicKey,
+      fingerprint: "chrome",
+      serverName: "",
+      spiderX: "/",
+    },
+  };
+  const stream: any = {
+    network: opts.network,
+    security: "reality",
+    realitySettings,
+  };
+  if (opts.network === "tcp") {
+    stream.tcpSettings = { acceptProxyProtocol: false, header: { type: "none" } };
+  } else if (opts.network === "ws") {
+    stream.wsSettings = { acceptProxyProtocol: false, path: "/", host: "", headers: {} };
+  } else if (opts.network === "grpc") {
+    stream.grpcSettings = { serviceName: randomHex(8), multiMode: false };
+  } else if (opts.network === "xhttp") {
+    stream.xhttpSettings = { path: "/", host: "", headers: {}, scMaxBufferedPosts: 30, scMaxEachPostBytes: "1000000", scStreamUpServerSecs: "20-80" };
+  }
+  const sniffing = { enabled: true, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false };
+  return {
+    remark: opts.remark,
+    protocol: "vless",
+    port: opts.port,
+    settings: JSON.stringify(settings),
+    streamSettings: JSON.stringify(stream),
+    sniffing: JSON.stringify(sniffing),
+  };
+}
+
+async function createInboundOnPanel(panel: PanelKey, ib: ReturnType<typeof buildRealityInbound>): Promise<number> {
+  const body = {
+    up: 0,
+    down: 0,
+    total: 0,
+    remark: ib.remark,
+    enable: true,
+    expiryTime: 0,
+    listen: "",
+    port: ib.port,
+    protocol: ib.protocol,
+    settings: ib.settings,
+    streamSettings: ib.streamSettings,
+    sniffing: ib.sniffing,
+    allocate: JSON.stringify({ strategy: "always", refresh: 5, concurrency: 3 }),
+  };
+  const res = await panelFetch(panel, "/panel/api/inbounds/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let j: any = {};
+  try { j = JSON.parse(res.body); } catch { throw new Error(`addInbound: ${res.body.slice(0, 200)}`); }
+  if (!j.success) throw new Error(`addInbound: ${j.msg}`);
+  return Number(j.obj?.id ?? 0);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
@@ -813,6 +923,84 @@ Deno.serve(async (req) => {
       }
 
       return new Response(JSON.stringify({ ok: true, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (action === "generateInboundSet" && req.method === "POST") {
+      const body = await req.json();
+      const subId: string = body.id;
+      const panel: PanelKey = body.panel;
+      const networks: Array<"tcp" | "xhttp" | "grpc" | "ws"> = Array.isArray(body.networks) ? body.networks : ["tcp"];
+      if (!subId || !panel || !networks.length) {
+        return new Response(JSON.stringify({ error: "id, panel, networks required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("id, slug, name, client_uuid, client_email, expiry_ms, total_bytes, sni_whitelist")
+        .eq("id", subId)
+        .maybeSingle();
+      if (!sub) return new Response(JSON.stringify({ error: "subscription not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+
+      const cfg = getPanelConfig(panel);
+      const sniPool: string[] = (Array.isArray((sub as any).sni_whitelist) && (sub as any).sni_whitelist.length > 0)
+        ? (sub as any).sni_whitelist
+        : DEFAULT_SNI_POOL;
+
+      const subIdShort = sub.slug.slice(0, 16);
+      const created: any[] = [];
+      const errors: any[] = [];
+
+      for (const network of networks) {
+        try {
+          const { privateKey, publicKey } = await getRealityKeypair(panel);
+          const sni = sniPool[Math.floor(Math.random() * sniPool.length)];
+          const port = randomPort();
+          const remark = `vless-reality-${network}-${randomHex(4)}`;
+          const ib = buildRealityInbound({
+            remark,
+            network,
+            port,
+            sni,
+            privateKey,
+            publicKey,
+            shortId: randomHex(8),
+          });
+          const inboundId = await createInboundOnPanel(panel, ib);
+          if (!inboundId) throw new Error("panel returned no inbound id");
+
+          // Add subscription's client into the new inbound
+          const email = `${sub.client_email}_${panel}${inboundId}`;
+          await addClient(panel, inboundId, {
+            id: sub.client_uuid,
+            email,
+            expiryTime: sub.expiry_ms,
+            totalGB: sub.total_bytes,
+            subId: subIdShort,
+            flow: "xtls-rprx-vision",
+          });
+
+          const stream = JSON.parse(ib.streamSettings);
+          const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
+            subscription_id: sub.id,
+            panel,
+            inbound_id: inboundId,
+            remark,
+            protocol: "vless",
+            port,
+            host: hostFromUrl(cfg.url),
+            stream_settings: stream,
+            client_email: email,
+          });
+          if (ibErr) throw new Error(`db insert: ${ibErr.message}`);
+
+          created.push({ network, inboundId, port, sni, remark });
+        } catch (e) {
+          errors.push({ network, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+
+      return new Response(JSON.stringify({ created, errors }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
