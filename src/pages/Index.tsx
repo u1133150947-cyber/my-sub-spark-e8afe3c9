@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -370,6 +370,22 @@ const Index = () => {
             <Zap className="size-4 text-primary-foreground" />
           </div>
           <span className="font-semibold">3X-UI Sub Manager</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            onClick={async () => {
+              const token = localStorage.getItem("admin_session_token");
+              try {
+                await supabase.functions.invoke("admin-auth?action=logout", { method: "POST", body: { token } });
+              } catch {}
+              localStorage.removeItem("admin_session_token");
+              window.location.href = "/login";
+            }}
+          >
+            <LogOut className="size-4 mr-2" />
+            Выйти
+          </Button>
         </div>
       </header>
 
