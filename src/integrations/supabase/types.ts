@@ -14,30 +14,89 @@ export type Database = {
   }
   public: {
     Tables: {
-      subscriptions: {
+      subscription_inbounds: {
         Row: {
           created_at: string
+          host: string
+          id: string
+          inbound_id: number
+          panel: string
+          port: number
+          protocol: string
+          remark: string
+          stream_settings: Json
+          subscription_id: string
+        }
+        Insert: {
+          created_at?: string
+          host: string
+          id?: string
+          inbound_id: number
+          panel: string
+          port: number
+          protocol: string
+          remark: string
+          stream_settings?: Json
+          subscription_id: string
+        }
+        Update: {
+          created_at?: string
+          host?: string
+          id?: string
+          inbound_id?: number
+          panel?: string
+          port?: number
+          protocol?: string
+          remark?: string
+          stream_settings?: Json
+          subscription_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subscription_inbounds_subscription_id_fkey"
+            columns: ["subscription_id"]
+            isOneToOne: false
+            referencedRelation: "subscriptions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subscriptions: {
+        Row: {
+          client_email: string
+          client_uuid: string
+          created_at: string
+          expiry_ms: number
           hits: number
           id: string
           last_accessed_at: string | null
           name: string
           slug: string
+          total_bytes: number
         }
         Insert: {
+          client_email: string
+          client_uuid: string
           created_at?: string
+          expiry_ms?: number
           hits?: number
           id?: string
           last_accessed_at?: string | null
           name: string
           slug: string
+          total_bytes?: number
         }
         Update: {
+          client_email?: string
+          client_uuid?: string
           created_at?: string
+          expiry_ms?: number
           hits?: number
           id?: string
           last_accessed_at?: string | null
           name?: string
           slug?: string
+          total_bytes?: number
         }
         Relationships: []
       }

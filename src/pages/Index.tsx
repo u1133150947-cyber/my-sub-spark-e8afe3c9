@@ -1,91 +1,131 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2 } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 type Subscription = {
   id: string;
   slug: string;
   name: string;
+  client_email: string;
+  expiry_ms: number;
+  total_bytes: number;
   hits: number;
-  last_accessed_at: string | null;
   created_at: string;
 };
 
+type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean };
+type PanelKey = "cz" | "ru";
+type InboundsResp = Record<PanelKey, InboundInfo[] | { error: string }>;
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-
 const subUrl = (slug: string) => `${SUPABASE_URL}/functions/v1/sub/${slug}`;
-const happUrl = (slug: string) =>
-  `happ://add/${encodeURIComponent(subUrl(slug))}`;
+const happUrl = (slug: string) => `happ://add/${encodeURIComponent(subUrl(slug))}`;
 
-function randomSlug(len = 10) {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const arr = new Uint32Array(len);
-  crypto.getRandomValues(arr);
-  return Array.from(arr, (n) => alphabet[n % alphabet.length]).join("");
-}
+const PANEL_LABEL: Record<PanelKey, string> = { cz: "🇨🇿 Чехия", ru: "🇷🇺 Россия" };
 
 const Index = () => {
   const [subs, setSubs] = useState<Subscription[]>([]);
+  const [inbounds, setInbounds] = useState<InboundsResp | null>(null);
+  const [loadingInbounds, setLoadingInbounds] = useState(false);
   const [name, setName] = useState("");
-  const [count, setCount] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [days, setDays] = useState(30);
+  const [totalGB, setTotalGB] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [creating, setCreating] = useState(false);
   const [activeQr, setActiveQr] = useState<string | null>(null);
 
-  const load = async () => {
+  const loadSubs = async () => {
     const { data, error } = await supabase
       .from("subscriptions")
-      .select("*")
+      .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at")
       .order("created_at", { ascending: false });
-    if (error) {
-      toast.error("Не удалось загрузить подписки");
-      return;
-    }
+    if (error) return toast.error("Не удалось загрузить подписки");
     setSubs(data ?? []);
   };
 
+  const loadInbounds = async () => {
+    setLoadingInbounds(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=inbounds", {
+        method: "GET",
+      });
+      if (error) throw error;
+      setInbounds(data);
+    } catch (e: any) {
+      toast.error("Ошибка загрузки inbound'ов: " + (e?.message ?? e));
+    } finally {
+      setLoadingInbounds(false);
+    }
+  };
+
   useEffect(() => {
-    load();
+    loadSubs();
+    loadInbounds();
   }, []);
 
-  const generate = async () => {
-    if (!name.trim()) {
-      toast.error("Введите имя/метку");
-      return;
+  const toggle = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const create = async () => {
+    if (!name.trim()) return toast.error("Введите имя клиента");
+    if (selected.size === 0) return toast.error("Выберите хотя бы один inbound");
+
+    const selections = Array.from(selected).map((s) => {
+      const [panel, id] = s.split(":");
+      return { panel: panel as PanelKey, inboundId: Number(id) };
+    });
+
+    setCreating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=create", {
+        method: "POST",
+        body: { name: name.trim(), days, totalGB, selections },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success(`Создано на ${data.created.length} серверах`);
+      if (data.errors?.length) {
+        toast.warning(`Ошибки: ${data.errors.length}`, {
+          description: data.errors.map((e: any) => `${e.panel}#${e.inboundId}: ${e.error}`).join("\n"),
+        });
+      }
+      setName("");
+      setSelected(new Set());
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setCreating(false);
     }
-    if (count < 1 || count > 50) {
-      toast.error("Количество от 1 до 50");
-      return;
-    }
-    setLoading(true);
-    const rows = Array.from({ length: count }, (_, i) => ({
-      slug: randomSlug(10),
-      name: count > 1 ? `${name.trim()} #${i + 1}` : name.trim(),
-    }));
-    const { error } = await supabase.from("subscriptions").insert(rows);
-    setLoading(false);
-    if (error) {
-      toast.error("Ошибка создания: " + error.message);
-      return;
-    }
-    toast.success(`Создано: ${count}`);
-    setName("");
-    setCount(1);
-    load();
   };
 
   const remove = async (id: string) => {
-    const { error } = await supabase.from("subscriptions").delete().eq("id", id);
-    if (error) {
-      toast.error("Не удалось удалить");
-      return;
+    if (!confirm("Удалить подписку и клиента из всех панелей?")) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=delete", {
+        method: "POST",
+        body: { id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success("Удалено");
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка удаления: " + (e?.message ?? e));
     }
-    toast.success("Удалено");
-    load();
   };
 
   const copy = async (text: string) => {
@@ -93,16 +133,22 @@ const Index = () => {
     toast.success("Скопировано");
   };
 
+  const fmtExpire = (ms: number) => {
+    if (!ms) return "∞";
+    const d = new Date(ms);
+    return d.toLocaleDateString("ru-RU");
+  };
+  const fmtGB = (b: number) => (b ? `${(b / 1024 / 1024 / 1024).toFixed(0)} GB` : "∞");
+
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Hero */}
       <header className="relative overflow-hidden border-b border-border">
         <div
           className="absolute inset-0 opacity-20"
           style={{ background: "var(--gradient-hero)" }}
           aria-hidden
         />
-        <div className="container relative py-12 md:py-16">
+        <div className="container relative py-10 md:py-14">
           <div className="flex items-center gap-3 mb-4">
             <div
               className="size-10 rounded-xl flex items-center justify-center"
@@ -111,77 +157,109 @@ const Index = () => {
               <Zap className="size-5 text-primary-foreground" />
             </div>
             <span className="text-sm uppercase tracking-widest text-muted-foreground">
-              Sub Generator
+              3X-UI Sub Manager
             </span>
           </div>
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight max-w-2xl">
-            Генератор подписок для{" "}
+            Создавайте подписки для{" "}
             <span
               className="bg-clip-text text-transparent"
               style={{ backgroundImage: "var(--gradient-hero)" }}
             >
               Happ
-            </span>
+            </span>{" "}
+            одной кнопкой
           </h1>
           <p className="mt-3 text-muted-foreground max-w-xl">
-            Создавайте уникальные ссылки-обёртки над вашей подпиской ExtraVPN и
-            раздавайте их клиентам.
+            Подключено к вашим панелям 3X-UI. Создание клиентов, генерация ссылок и удаление — без входа в админки.
           </p>
         </div>
       </header>
 
       <main className="container py-8 space-y-8">
-        {/* Generator */}
-        <Card
-          className="p-6 border-border"
-          style={{ background: "var(--gradient-card)" }}
-        >
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Plus className="size-4 text-primary" />
-            Создать подписки
-          </h2>
-          <div className="grid gap-4 md:grid-cols-[1fr_140px_auto]">
-            <Input
-              placeholder="Имя клиента или метка"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              maxLength={64}
-            />
-            <Input
-              type="number"
-              min={1}
-              max={50}
-              value={count}
-              onChange={(e) => setCount(parseInt(e.target.value || "1", 10))}
-              placeholder="Кол-во"
-            />
-            <Button
-              onClick={generate}
-              disabled={loading}
-              className="font-semibold"
-              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
-            >
-              {loading ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <>
-                  <Zap className="size-4 mr-1" />
-                  Сгенерировать
-                </>
-              )}
+        <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Plus className="size-4 text-primary" /> Новый клиент
+            </h2>
+            <Button variant="ghost" size="sm" onClick={loadInbounds} disabled={loadingInbounds}>
+              <RefreshCw className={`size-4 mr-1 ${loadingInbounds ? "animate-spin" : ""}`} />
+              Обновить
             </Button>
           </div>
-        </Card>
 
-        {/* List */}
-        <section>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-semibold">Подписки ({subs.length})</h2>
+          <div className="grid gap-4 md:grid-cols-3 mb-4">
+            <div>
+              <Label className="text-xs text-muted-foreground">Имя клиента</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Иван" maxLength={64} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Срок (дней, 0 = безлимит)</Label>
+              <Input type="number" min={0} value={days} onChange={(e) => setDays(parseInt(e.target.value || "0", 10))} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Трафик GB (0 = безлимит)</Label>
+              <Input type="number" min={0} value={totalGB} onChange={(e) => setTotalGB(parseInt(e.target.value || "0", 10))} />
+            </div>
           </div>
 
+          <Label className="text-xs text-muted-foreground mb-2 block">Inbound'ы (на каких серверах создать)</Label>
+          <div className="grid gap-3 md:grid-cols-2 mb-4">
+            {(["cz", "ru"] as PanelKey[]).map((panel) => {
+              const list = inbounds?.[panel];
+              return (
+                <Card key={panel} className="p-4 bg-secondary/40 border-border">
+                  <div className="flex items-center gap-2 mb-3 font-semibold">
+                    <Server className="size-4 text-primary" />
+                    {PANEL_LABEL[panel]}
+                  </div>
+                  {!inbounds && <div className="text-sm text-muted-foreground">Загрузка…</div>}
+                  {Array.isArray(list) ? (
+                    list.length === 0 ? (
+                      <div className="text-sm text-muted-foreground">Нет inbound'ов</div>
+                    ) : (
+                      <div className="space-y-2">
+                        {list.map((ib) => {
+                          const key = `${panel}:${ib.id}`;
+                          return (
+                            <label key={key} className="flex items-center gap-3 cursor-pointer">
+                              <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm truncate">{ib.remark || `inbound #${ib.id}`}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {ib.protocol.toUpperCase()} · :{ib.port}
+                                </div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )
+                  ) : list && "error" in list ? (
+                    <div className="text-xs text-destructive">{list.error}</div>
+                  ) : null}
+                </Card>
+              );
+            })}
+          </div>
+
+          <Button
+            onClick={create}
+            disabled={creating}
+            className="w-full font-semibold"
+            style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
+          >
+            {creating ? <Loader2 className="size-4 animate-spin" /> : (
+              <><Zap className="size-4 mr-1" /> Создать подписку</>
+            )}
+          </Button>
+        </Card>
+
+        <section>
+          <h2 className="text-lg font-semibold mb-4">Подписки ({subs.length})</h2>
           {subs.length === 0 ? (
             <Card className="p-10 text-center text-muted-foreground border-dashed">
-              Подписок пока нет. Создайте первую выше.
+              Подписок пока нет.
             </Card>
           ) : (
             <div className="grid gap-3">
@@ -189,17 +267,19 @@ const Index = () => {
                 const url = subUrl(s.slug);
                 const happ = happUrl(s.slug);
                 return (
-                  <Card
-                    key={s.id}
-                    className="p-4 border-border"
-                    style={{ background: "var(--gradient-card)" }}
-                  >
+                  <Card key={s.id} className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="font-semibold truncate">{s.name}</span>
                           <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
                             {s.hits} hits
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+                            до {fmtExpire(s.expiry_ms)}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">
+                            {fmtGB(s.total_bytes)}
                           </span>
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -208,35 +288,20 @@ const Index = () => {
                         </div>
                       </div>
                       <div className="flex gap-2 flex-wrap">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => copy(url)}
-                        >
+                        <Button variant="secondary" size="sm" onClick={() => copy(url)}>
                           <Copy className="size-3.5 mr-1" /> URL
                         </Button>
                         <Button
                           size="sm"
                           onClick={() => copy(happ)}
-                          style={{
-                            background: "var(--gradient-hero)",
-                            color: "hsl(var(--primary-foreground))",
-                          }}
+                          style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
                         >
                           <Smartphone className="size-3.5 mr-1" /> Happ
                         </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setActiveQr(activeQr === s.id ? null : s.id)}
-                        >
+                        <Button variant="outline" size="sm" onClick={() => setActiveQr(activeQr === s.id ? null : s.id)}>
                           QR
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => remove(s.id)}
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => remove(s.id)}>
                           <Trash2 className="size-3.5 text-destructive" />
                         </Button>
                       </div>
@@ -246,9 +311,7 @@ const Index = () => {
                         <div className="bg-white p-3 rounded">
                           <QRCodeSVG value={happ} size={180} />
                         </div>
-                        <p className="text-xs text-muted-foreground break-all text-center max-w-xs">
-                          {happ}
-                        </p>
+                        <p className="text-xs text-muted-foreground break-all text-center max-w-xs">{happ}</p>
                       </div>
                     )}
                   </Card>
@@ -257,10 +320,6 @@ const Index = () => {
             </div>
           )}
         </section>
-
-        <footer className="text-center text-xs text-muted-foreground py-6">
-          Подписки проксируются через защищённый бэкенд и ведут на ваш ExtraVPN.
-        </footer>
       </main>
     </div>
   );
