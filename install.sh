@@ -77,7 +77,10 @@ log "node $(node -v), npm $(npm -v)"
 
 # ---------- сборка ----------
 log "npm ci…"
-npm ci --no-audit --no-fund
+if ! npm ci --no-audit --no-fund; then
+  warn "npm ci не прошёл (lock рассинхронизирован) — переключаюсь на npm install"
+  npm install --no-audit --no-fund
+fi
 log "npm run build…"
 npm run build
 [[ -d dist ]] || die "Сборка не создала dist/"
