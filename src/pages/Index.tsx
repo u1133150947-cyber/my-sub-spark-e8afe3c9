@@ -92,9 +92,32 @@ const Index = () => {
   const [editSniText, setEditSniText] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("subs");
+  const [emailToSubId, setEmailToSubId] = useState<Record<string, string>>({});
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
+
+  const loadEmailMap = async () => {
+    const { data } = await supabase
+      .from("subscription_inbounds")
+      .select("client_email, subscription_id");
+    const map: Record<string, string> = {};
+    (data ?? []).forEach((r: any) => { if (r.client_email && r.subscription_id) map[r.client_email] = r.subscription_id; });
+    setEmailToSubId(map);
+  };
+
+  const openClientEdit = async (email: string) => {
+    const subId = emailToSubId[email];
+    if (!subId) return toast.error("Клиент не привязан к подписке в базе");
+    const sub = subs.find((s) => s.id === subId);
+    if (!sub) return toast.error("Подписка не найдена");
+    setActiveTab("subs");
+    await openEdit(sub);
+    setTimeout(() => {
+      document.getElementById(`sub-${sub.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  };
 
   const bulkAdd = async (panel: PanelKey, inboundId: number, remark: string) => {
     if (!confirm(`Добавить «${remark}» ВСЕМ существующим клиентам?`)) return;
@@ -163,6 +186,7 @@ const Index = () => {
   useEffect(() => {
     loadSubs();
     loadInbounds();
+    loadEmailMap();
   }, []);
 
   const toggle = (key: string) => {
@@ -388,7 +412,7 @@ const Index = () => {
       </header>
 
       <main className="container py-8">
-        <Tabs defaultValue="subs" className="space-y-6" onValueChange={(v) => { if (v === "create" || v === "stats" || v === "online") loadInbounds(); }}>
+        <Tabs value={activeTab} className="space-y-6" onValueChange={(v) => { setActiveTab(v); if (v === "create" || v === "stats" || v === "online") loadInbounds(); if (v === "create") loadEmailMap(); }}>
           <TabsList className="grid w-full max-w-3xl grid-cols-5">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
             <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
@@ -505,10 +529,17 @@ const Index = () => {
                             {ib.clients && ib.clients.length > 0 && (
                               <div className="ml-7 mt-1 mb-2 space-y-0.5">
                                 {ib.clients.map((c) => (
-                                  <div key={c.email} className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
-                                    <span className={`size-1.5 rounded-full ${c.enable === false ? "bg-muted-foreground/40" : "bg-green-500"}`} />
-                                    {c.email}
-                                  </div>
+                                  <button
+                                    key={c.email}
+                                    type="button"
+                                    onClick={() => openClientEdit(c.email)}
+                                    className="w-full text-left text-xs text-muted-foreground hover:text-foreground truncate flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-secondary/60 transition-colors"
+                                    title={emailToSubId[c.email] ? "Открыть редактирование подписки" : "Клиент не привязан к подписке"}
+                                  >
+                                    <span className={`size-1.5 rounded-full shrink-0 ${c.enable === false ? "bg-muted-foreground/40" : "bg-green-500"}`} />
+                                    <span className="truncate">{c.email}</span>
+                                    {emailToSubId[c.email] && <Pencil className="size-3 ml-auto opacity-60 shrink-0" />}
+                                  </button>
                                 ))}
                               </div>
                             )}
@@ -552,7 +583,7 @@ const Index = () => {
                 const happ = happUrl(s.slug);
                 const status = expiryStatus(s);
                 return (
-                  <Card key={s.id} className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
+                  <Card key={s.id} id={`sub-${s.id}`} className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
