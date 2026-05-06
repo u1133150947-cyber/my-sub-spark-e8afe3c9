@@ -157,6 +157,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
     toast.success("Название обновлено — изменится во всех подписках");
     setEditingId(null);
     load();
+    onChanged?.();
   };
 
   const testConnection = async (p: Panel) => {
