@@ -388,6 +388,7 @@ Deno.serve(async (req) => {
     }
 
     if (action === "create" && req.method === "POST") {
+      panelsCache.ts = 0;
       const body = await req.json();
       const name: string = String(body.name ?? "").trim();
       const days: number = Number(body.days ?? 30);
