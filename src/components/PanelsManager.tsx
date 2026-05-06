@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +82,10 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [testingId, setTestingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [credsPanel, setCredsPanel] = useState<Panel | null>(null);
+  const [credsForm, setCredsForm] = useState({ panel_url: "", username: "", password: "" });
+  const [credsSaving, setCredsSaving] = useState(false);
+  const [credsTesting, setCredsTesting] = useState(false);
 
   const load = async () => {
     const { data, error } = await supabase
@@ -156,6 +161,54 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
     if (error) return toast.error("Ошибка: " + error.message);
     toast.success("Название обновлено — изменится во всех подписках");
     setEditingId(null);
+    load();
+    onChanged?.();
+  };
+
+  const openCreds = (p: Panel) => {
+    setCredsPanel(p);
+    setCredsForm({ panel_url: p.panel_url, username: p.username, password: p.password });
+  };
+
+  const testCreds = async () => {
+    setCredsTesting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=testPanel", {
+        method: "POST",
+        body: credsForm,
+      });
+      if (error) throw error;
+      data?.ok ? toast.success("Подключение работает") : toast.error(data?.error ?? "Не удалось подключиться");
+    } catch (e: any) {
+      toast.error("Ошибка проверки: " + (e?.message ?? e));
+    } finally {
+      setCredsTesting(false);
+    }
+  };
+
+  const saveCreds = async () => {
+    if (!credsPanel) return;
+    if (!credsForm.panel_url.trim() || !credsForm.username.trim() || !credsForm.password) {
+      return toast.error("Заполните URL, логин и пароль");
+    }
+    setCredsSaving(true);
+    let host = credsPanel.panel_url;
+    try { host = new URL(credsForm.panel_url).hostname; } catch { host = credsForm.panel_url; }
+    const { error } = await supabase
+      .from("panels")
+      .update({
+        panel_url: credsForm.panel_url.trim(),
+        username: credsForm.username.trim(),
+        password: credsForm.password,
+        host,
+        status: "unknown",
+        status_message: "",
+      })
+      .eq("id", credsPanel.id);
+    setCredsSaving(false);
+    if (error) return toast.error("Ошибка: " + error.message);
+    toast.success("Доступы обновлены — slug сохранён, подписки продолжат работать");
+    setCredsPanel(null);
     load();
     onChanged?.();
   };
@@ -332,6 +385,9 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                       )}
                       Проверить
                     </Button>
+                    <Button variant="outline" size="sm" onClick={() => openCreds(p)}>
+                      <Pencil className="size-3.5 mr-1" /> Доступы
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => remove(p.id)}>
                       <Trash2 className="size-3.5 text-destructive" />
                     </Button>
@@ -342,6 +398,52 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
           </div>
         )}
       </section>
+
+      <Dialog open={!!credsPanel} onOpenChange={(o) => !o && setCredsPanel(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Изменить доступы — {credsPanel?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">URL панели</Label>
+              <Input
+                value={credsForm.panel_url}
+                onChange={(e) => setCredsForm((f) => ({ ...f, panel_url: e.target.value }))}
+                placeholder="https://1.2.3.4:54321/secret-path"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Логин</Label>
+              <Input
+                value={credsForm.username}
+                onChange={(e) => setCredsForm((f) => ({ ...f, username: e.target.value }))}
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Пароль</Label>
+              <Input
+                type="password"
+                value={credsForm.password}
+                onChange={(e) => setCredsForm((f) => ({ ...f, password: e.target.value }))}
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Slug панели не меняется — все существующие подписки и инбаунды продолжат работать.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={testCreds} disabled={credsTesting || credsSaving}>
+              {credsTesting ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Wifi className="size-4 mr-1" />}
+              Проверить
+            </Button>
+            <Button onClick={saveCreds} disabled={credsSaving}>
+              {credsSaving ? <Loader2 className="size-4 mr-1 animate-spin" /> : <Check className="size-4 mr-1" />}
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
