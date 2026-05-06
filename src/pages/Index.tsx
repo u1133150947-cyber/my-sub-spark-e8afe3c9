@@ -583,7 +583,7 @@ const Index = () => {
                 const happ = happUrl(s.slug);
                 const status = expiryStatus(s);
                 return (
-                  <Card key={s.id} className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
+                  <Card key={s.id} id={`sub-${s.id}`} className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
