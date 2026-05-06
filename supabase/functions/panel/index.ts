@@ -241,7 +241,14 @@ Deno.serve(async (req) => {
         meta.push({ slug: p.slug, name: p.name });
         try {
           const inbounds = await listInbounds(p.slug);
-          result[p.slug] = inbounds.map((ib) => ({ id: ib.id, remark: ib.remark, protocol: ib.protocol, port: ib.port, enable: ib.enable }));
+          result[p.slug] = inbounds.map((ib) => {
+            let clients: { email: string; id?: string; enable?: boolean }[] = [];
+            try {
+              const s = JSON.parse(ib.settings ?? "{}");
+              clients = (s.clients ?? []).map((c: any) => ({ email: c.email, id: c.id, enable: c.enable !== false }));
+            } catch {}
+            return { id: ib.id, remark: ib.remark, protocol: ib.protocol, port: ib.port, enable: ib.enable, clients };
+          });
         } catch (e) {
           result[p.slug] = { error: e instanceof Error ? e.message : String(e) };
         }

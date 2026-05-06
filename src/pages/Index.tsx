@@ -32,7 +32,8 @@ type Subscription = {
   created_at: string;
 };
 
-type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean };
+type InboundClient = { email: string; id?: string; enable?: boolean };
+type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean; clients?: InboundClient[] };
 type PanelKey = string;
 type PanelMeta = { slug: string; name: string };
 type InboundsResp = Record<string, InboundInfo[] | { error: string } | PanelMeta[]> & { _panels?: PanelMeta[] };
@@ -472,7 +473,8 @@ const Index = () => {
                           const key = `${panel}:${ib.id}`;
                           const busy = bulkBusy === `add:${key}` || bulkBusy === `rm:${key}`;
                           return (
-                            <div key={key} className="flex items-center gap-2">
+                            <div key={key}>
+                            <div className="flex items-center gap-2">
                               <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
                                 <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
                                 <div className="flex-1 min-w-0">
@@ -499,6 +501,17 @@ const Index = () => {
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
+                            </div>
+                            {ib.clients && ib.clients.length > 0 && (
+                              <div className="ml-7 mt-1 mb-2 space-y-0.5">
+                                {ib.clients.map((c) => (
+                                  <div key={c.email} className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
+                                    <span className={`size-1.5 rounded-full ${c.enable === false ? "bg-muted-foreground/40" : "bg-green-500"}`} />
+                                    {c.email}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                             </div>
                           );
                         })}
