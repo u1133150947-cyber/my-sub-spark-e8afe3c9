@@ -32,7 +32,8 @@ type Subscription = {
   created_at: string;
 };
 
-type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean };
+type InboundClient = { email: string; id?: string; enable?: boolean };
+type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean; clients?: InboundClient[] };
 type PanelKey = string;
 type PanelMeta = { slug: string; name: string };
 type InboundsResp = Record<string, InboundInfo[] | { error: string } | PanelMeta[]> & { _panels?: PanelMeta[] };
