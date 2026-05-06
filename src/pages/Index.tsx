@@ -38,7 +38,16 @@ type InboundsResp = Record<PanelKey, InboundInfo[] | { error: string }>;
 type SubInbound = { panel: PanelKey; inbound_id: number; remark: string };
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const subUrl = (slug: string) => `${SUPABASE_URL}/functions/v1/sub/${slug}`;
+const ENV_SUB_BASE = (import.meta.env.VITE_SUB_BASE_URL as string | undefined)?.replace(/\/+$/, "");
+const getSubBase = () => {
+  if (typeof window !== "undefined") {
+    const ls = window.localStorage.getItem("sub_base_url");
+    if (ls) return ls.replace(/\/+$/, "");
+  }
+  if (ENV_SUB_BASE) return ENV_SUB_BASE;
+  return `${SUPABASE_URL}/functions/v1/sub`;
+};
+const subUrl = (slug: string) => `${getSubBase()}/${slug}`;
 const happUrl = (slug: string) => `happ://add/${encodeURIComponent(subUrl(slug))}`;
 
 const PANEL_LABEL: Record<PanelKey, string> = { cz: "🇨🇿 Чехия", ru: "🇷🇺 Россия" };
@@ -515,6 +524,35 @@ const Index = () => {
           <TabsContent value="subs" className="mt-0">
         <section>
           <h2 className="text-lg font-semibold mb-4">Подписки ({subs.length})</h2>
+          <Card className="p-4 mb-4 border-border" style={{ background: "var(--gradient-card)" }}>
+            <div className="flex flex-col gap-2">
+              <Label className="text-sm">Домен подписки (базовый URL)</Label>
+              <div className="flex gap-2">
+                <Input
+                  defaultValue={getSubBase()}
+                  placeholder="https://your-domain.com/sub"
+                  onBlur={(e) => {
+                    const v = e.target.value.trim().replace(/\/+$/, "");
+                    if (v) localStorage.setItem("sub_base_url", v);
+                    else localStorage.removeItem("sub_base_url");
+                    setSubs((x) => [...x]);
+                  }}
+                />
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    localStorage.removeItem("sub_base_url");
+                    location.reload();
+                  }}
+                >
+                  Сброс
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Ссылки на подписки будут формироваться от этого URL. Например: <code>https://panel.example.com/sub</code> → <code>/sub/&lt;slug&gt;</code>. По умолчанию используется Lovable Cloud.
+              </p>
+            </div>
+          </Card>
           {subs.length === 0 ? (
             <Card className="p-10 text-center text-muted-foreground border-dashed">
               Подписок пока нет.
