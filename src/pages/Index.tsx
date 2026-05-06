@@ -43,8 +43,9 @@ const getSubBase = () => {
   if (typeof window !== "undefined") {
     const ls = window.localStorage.getItem("sub_base_url");
     if (ls) return ls.replace(/\/+$/, "");
+    if (ENV_SUB_BASE) return ENV_SUB_BASE;
+    return `${window.location.origin}/sub`;
   }
-  if (ENV_SUB_BASE) return ENV_SUB_BASE;
   return `${SUPABASE_URL}/functions/v1/sub`;
 };
 const subUrl = (slug: string) => `${getSubBase()}/${slug}`;
