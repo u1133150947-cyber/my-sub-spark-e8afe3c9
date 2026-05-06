@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 
 type Online = {
-  panel: "cz" | "ru";
+  panel: string;
   email: string;
   subscription_id: string | null;
   sub_name: string | null;
@@ -28,8 +28,7 @@ type Online = {
 };
 
 type Sub = { id: string; name: string };
-
-const PANEL_LABEL: Record<string, string> = { cz: "🇨🇿 Чехия", ru: "🇷🇺 Россия" };
+type PanelMeta = { id: string; slug: string; name: string };
 
 export const OnlineClients = () => {
   const [items, setItems] = useState<Online[]>([]);
@@ -39,6 +38,8 @@ export const OnlineClients = () => {
   const [linkTarget, setLinkTarget] = useState<Online | null>(null);
   const [selectedSub, setSelectedSub] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  const [panels, setPanels] = useState<PanelMeta[]>([]);
+  const PANEL_LABEL = (slug: string) => panels.find((p) => p.slug === slug)?.name ?? slug;
 
   const load = async () => {
     setLoading(true);
@@ -57,6 +58,11 @@ export const OnlineClients = () => {
   const loadSubs = async () => {
     const { data } = await supabase.from("subscriptions").select("id, name").order("name");
     setSubs(data ?? []);
+  };
+
+  const loadPanels = async () => {
+    const { data } = await supabase.from("panels").select("id, slug, name").order("created_at");
+    setPanels((data ?? []) as PanelMeta[]);
   };
 
   useEffect(() => {
@@ -117,7 +123,7 @@ export const OnlineClients = () => {
 
         {Object.keys(errors).length > 0 && (
           <div className="text-xs text-destructive mb-3">
-            {Object.entries(errors).map(([k, v]) => <div key={k}>{PANEL_LABEL[k] || k}: {v}</div>)}
+            {Object.entries(errors).map(([k, v]) => <div key={k}>{PANEL_LABEL(k)}: {v}</div>)}
           </div>
         )}
 
@@ -128,7 +134,7 @@ export const OnlineClients = () => {
             {Object.entries(grouped).map(([panel, list]) => (
               <Card key={panel} className="p-4 bg-secondary/40 border-border">
                 <div className="font-semibold mb-3 flex items-center justify-between">
-                  <span>{PANEL_LABEL[panel] || panel}</span>
+                  <span>{PANEL_LABEL(panel)}</span>
                   <span className="text-xs text-muted-foreground">{list.length}</span>
                 </div>
                 <div className="space-y-2">
@@ -167,7 +173,7 @@ export const OnlineClients = () => {
           <div className="space-y-3 text-sm">
             <div>
               <div className="text-muted-foreground text-xs mb-1">Сервер / email</div>
-              <div className="font-mono">{linkTarget && PANEL_LABEL[linkTarget.panel]} · {linkTarget?.email}</div>
+              <div className="font-mono">{linkTarget && PANEL_LABEL(linkTarget.panel)} · {linkTarget?.email}</div>
             </div>
             <div>
               <div className="text-muted-foreground text-xs mb-1">Подписка</div>
