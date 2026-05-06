@@ -38,7 +38,16 @@ type InboundsResp = Record<PanelKey, InboundInfo[] | { error: string }>;
 type SubInbound = { panel: PanelKey; inbound_id: number; remark: string };
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const subUrl = (slug: string) => `${SUPABASE_URL}/functions/v1/sub/${slug}`;
+const ENV_SUB_BASE = (import.meta.env.VITE_SUB_BASE_URL as string | undefined)?.replace(/\/+$/, "");
+const getSubBase = () => {
+  if (typeof window !== "undefined") {
+    const ls = window.localStorage.getItem("sub_base_url");
+    if (ls) return ls.replace(/\/+$/, "");
+  }
+  if (ENV_SUB_BASE) return ENV_SUB_BASE;
+  return `${SUPABASE_URL}/functions/v1/sub`;
+};
+const subUrl = (slug: string) => `${getSubBase()}/${slug}`;
 const happUrl = (slug: string) => `happ://add/${encodeURIComponent(subUrl(slug))}`;
 
 const PANEL_LABEL: Record<PanelKey, string> = { cz: "🇨🇿 Чехия", ru: "🇷🇺 Россия" };
