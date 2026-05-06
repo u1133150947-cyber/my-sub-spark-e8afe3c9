@@ -33,8 +33,9 @@ type Subscription = {
 };
 
 type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean };
-type PanelKey = "cz" | "ru";
-type InboundsResp = Record<PanelKey, InboundInfo[] | { error: string }>;
+type PanelKey = string;
+type PanelMeta = { slug: string; name: string };
+type InboundsResp = Record<string, InboundInfo[] | { error: string } | PanelMeta[]> & { _panels?: PanelMeta[] };
 type SubInbound = { panel: PanelKey; inbound_id: number; remark: string };
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -51,7 +52,6 @@ const getSubBase = () => {
 const subUrl = (slug: string) => `${getSubBase()}/${slug}`;
 const happUrl = (slug: string) => `happ://add/${encodeURIComponent(subUrl(slug))}`;
 
-const PANEL_LABEL: Record<PanelKey, string> = { cz: "🇨🇿 Чехия", ru: "🇷🇺 Россия" };
 
 const PRESETS: { label: string; days: number; gb: number }[] = [
   { label: "Trial 3 дня", days: 3, gb: 5 },
@@ -91,6 +91,9 @@ const Index = () => {
   const [editSniText, setEditSniText] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+
+  const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
+  const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
 
   const bulkAdd = async (panel: PanelKey, inboundId: number, remark: string) => {
     if (!confirm(`Добавить «${remark}» ВСЕМ существующим клиентам?`)) return;
@@ -451,13 +454,13 @@ const Index = () => {
 
           <Label className="text-xs text-muted-foreground mb-2 block">Inbound'ы (на каких серверах создать)</Label>
           <div className="grid gap-3 md:grid-cols-2 mb-4">
-            {(["cz", "ru"] as PanelKey[]).map((panel) => {
-              const list = inbounds?.[panel];
+            {panelMeta.map(({ slug: panel }) => {
+              const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
               return (
                 <Card key={panel} className="p-4 bg-secondary/40 border-border">
                   <div className="flex items-center gap-2 mb-3 font-semibold">
                     <Server className="size-4 text-primary" />
-                    {PANEL_LABEL[panel]}
+                    {panelLabel(panel)}
                   </div>
                   {!inbounds && <div className="text-sm text-muted-foreground">Загрузка…</div>}
                   {Array.isArray(list) ? (
@@ -643,13 +646,13 @@ const Index = () => {
                         <div>
                           <Label className="text-xs text-muted-foreground mb-2 block">Подключения</Label>
                           <div className="grid gap-3 md:grid-cols-2">
-                            {(["cz", "ru"] as PanelKey[]).map((panel) => {
-                              const list = inbounds?.[panel];
+                            {panelMeta.map(({ slug: panel }) => {
+                              const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
                               return (
                                 <Card key={panel} className="p-3 bg-background border-border">
                                   <div className="flex items-center gap-2 mb-2 text-sm font-semibold">
                                     <Server className="size-3.5 text-primary" />
-                                    {PANEL_LABEL[panel]}
+                                    {panelLabel(panel)}
                                   </div>
                                   {Array.isArray(list) && list.length > 0 ? (
                                     <div className="space-y-2">
