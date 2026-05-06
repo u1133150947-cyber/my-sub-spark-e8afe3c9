@@ -102,7 +102,7 @@ export type Database = {
           password: string
           public_host: string
           readiness: string
-          slug: string
+          slug: string | null
           ssh_auth_type: string
           ssh_key_passphrase: string
           ssh_password: string
@@ -124,7 +124,7 @@ export type Database = {
           password: string
           public_host?: string
           readiness?: string
-          slug: string
+          slug?: string | null
           ssh_auth_type?: string
           ssh_key_passphrase?: string
           ssh_password?: string
@@ -146,7 +146,7 @@ export type Database = {
           password?: string
           public_host?: string
           readiness?: string
-          slug?: string
+          slug?: string | null
           ssh_auth_type?: string
           ssh_key_passphrase?: string
           ssh_password?: string
