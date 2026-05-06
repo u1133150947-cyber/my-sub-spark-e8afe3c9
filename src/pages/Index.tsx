@@ -526,23 +526,6 @@ const Index = () => {
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </div>
-                            {ib.clients && ib.clients.length > 0 && (
-                              <div className="ml-7 mt-1 mb-2 space-y-0.5">
-                                {ib.clients.map((c) => (
-                                  <button
-                                    key={c.email}
-                                    type="button"
-                                    onClick={() => openClientEdit(c.email)}
-                                    className="w-full text-left text-xs text-muted-foreground hover:text-foreground truncate flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-secondary/60 transition-colors"
-                                    title={emailToSubId[c.email] ? "Открыть редактирование подписки" : "Клиент не привязан к подписке"}
-                                  >
-                                    <span className={`size-1.5 rounded-full shrink-0 ${c.enable === false ? "bg-muted-foreground/40" : "bg-green-500"}`} />
-                                    <span className="truncate">{c.email}</span>
-                                    {emailToSubId[c.email] && <Pencil className="size-3 ml-auto opacity-60 shrink-0" />}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
                             </div>
                           );
                         })}
