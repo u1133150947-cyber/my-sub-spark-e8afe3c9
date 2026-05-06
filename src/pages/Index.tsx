@@ -501,6 +501,16 @@ const Index = () => {
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </div>
+                            {ib.clients && ib.clients.length > 0 && (
+                              <div className="ml-7 mt-1 mb-2 space-y-0.5">
+                                {ib.clients.map((c) => (
+                                  <div key={c.email} className="text-xs text-muted-foreground truncate flex items-center gap-1.5">
+                                    <span className={`size-1.5 rounded-full ${c.enable === false ? "bg-muted-foreground/40" : "bg-green-500"}`} />
+                                    {c.email}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           );
                         })}
                       </div>
