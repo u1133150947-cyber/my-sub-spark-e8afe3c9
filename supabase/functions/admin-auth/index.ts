@@ -27,10 +27,13 @@ Deno.serve(async (req) => {
   const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   const TELEGRAM_API_KEY = Deno.env.get("TELEGRAM_API_KEY");
+  const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
   const ADMIN_TG_ID = Deno.env.get("ADMIN_TELEGRAM_ID");
 
   if (!ADMIN_TG_ID) return json({ error: "ADMIN_TELEGRAM_ID не настроен" }, 500);
-  if (!LOVABLE_API_KEY || !TELEGRAM_API_KEY) return json({ error: "Telegram коннектор не настроен" }, 500);
+  if (!TELEGRAM_BOT_TOKEN && !(LOVABLE_API_KEY && TELEGRAM_API_KEY)) {
+    return json({ error: "Telegram не настроен (нужен TELEGRAM_BOT_TOKEN или коннектор)" }, 500);
+  }
 
   const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
   const url = new URL(req.url);
@@ -52,19 +55,26 @@ Deno.serve(async (req) => {
       });
       if (insErr) return json({ error: insErr.message }, 500);
 
-      const tgRes = await fetch(`${TG_GATEWAY}/sendMessage`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "X-Connection-Api-Key": TELEGRAM_API_KEY,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          chat_id: ADMIN_TG_ID,
-          text: `🔐 Код для входа в панель: <b>${code}</b>\nДействителен 5 минут.`,
-          parse_mode: "HTML",
-        }),
-      });
+      const payload = {
+        chat_id: ADMIN_TG_ID,
+        text: `🔐 Код для входа в панель: <b>${code}</b>\nДействителен 5 минут.`,
+        parse_mode: "HTML",
+      };
+      const tgRes = TELEGRAM_BOT_TOKEN
+        ? await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+        : await fetch(`${TG_GATEWAY}/sendMessage`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              "X-Connection-Api-Key": TELEGRAM_API_KEY!,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(payload),
+          });
       const tgData = await tgRes.json().catch(() => ({}));
       if (!tgRes.ok) {
         return json({ error: `Telegram: ${tgRes.status} ${JSON.stringify(tgData)}` }, 500);
