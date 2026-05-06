@@ -33,8 +33,9 @@ type Subscription = {
 };
 
 type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean };
-type PanelKey = "cz" | "ru";
-type InboundsResp = Record<PanelKey, InboundInfo[] | { error: string }>;
+type PanelKey = string;
+type PanelMeta = { slug: string; name: string };
+type InboundsResp = Record<string, InboundInfo[] | { error: string } | PanelMeta[]> & { _panels?: PanelMeta[] };
 type SubInbound = { panel: PanelKey; inbound_id: number; remark: string };
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -51,7 +52,6 @@ const getSubBase = () => {
 const subUrl = (slug: string) => `${getSubBase()}/${slug}`;
 const happUrl = (slug: string) => `happ://add/${encodeURIComponent(subUrl(slug))}`;
 
-const PANEL_LABEL: Record<PanelKey, string> = { cz: "🇨🇿 Чехия", ru: "🇷🇺 Россия" };
 
 const PRESETS: { label: string; days: number; gb: number }[] = [
   { label: "Trial 3 дня", days: 3, gb: 5 },
