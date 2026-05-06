@@ -92,9 +92,32 @@ const Index = () => {
   const [editSniText, setEditSniText] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("subs");
+  const [emailToSubId, setEmailToSubId] = useState<Record<string, string>>({});
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
+
+  const loadEmailMap = async () => {
+    const { data } = await supabase
+      .from("subscription_inbounds")
+      .select("client_email, subscription_id");
+    const map: Record<string, string> = {};
+    (data ?? []).forEach((r: any) => { if (r.client_email && r.subscription_id) map[r.client_email] = r.subscription_id; });
+    setEmailToSubId(map);
+  };
+
+  const openClientEdit = async (email: string) => {
+    const subId = emailToSubId[email];
+    if (!subId) return toast.error("Клиент не привязан к подписке в базе");
+    const sub = subs.find((s) => s.id === subId);
+    if (!sub) return toast.error("Подписка не найдена");
+    setActiveTab("subs");
+    await openEdit(sub);
+    setTimeout(() => {
+      document.getElementById(`sub-${sub.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  };
 
   const bulkAdd = async (panel: PanelKey, inboundId: number, remark: string) => {
     if (!confirm(`Добавить «${remark}» ВСЕМ существующим клиентам?`)) return;
