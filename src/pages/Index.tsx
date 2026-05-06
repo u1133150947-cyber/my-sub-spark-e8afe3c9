@@ -473,7 +473,8 @@ const Index = () => {
                           const key = `${panel}:${ib.id}`;
                           const busy = bulkBusy === `add:${key}` || bulkBusy === `rm:${key}`;
                           return (
-                            <div key={key} className="flex items-center gap-2">
+                            <div key={key}>
+                            <div className="flex items-center gap-2">
                               <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
                                 <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
                                 <div className="flex-1 min-w-0">
@@ -511,6 +512,7 @@ const Index = () => {
                                 ))}
                               </div>
                             )}
+                            </div>
                           );
                         })}
                       </div>
