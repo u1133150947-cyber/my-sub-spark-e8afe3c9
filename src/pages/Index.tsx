@@ -387,7 +387,7 @@ const Index = () => {
       </header>
 
       <main className="container py-8">
-        <Tabs defaultValue="subs" className="space-y-6">
+        <Tabs defaultValue="subs" className="space-y-6" onValueChange={(v) => { if (v === "create" || v === "stats" || v === "online") loadInbounds(); }}>
           <TabsList className="grid w-full max-w-3xl grid-cols-5">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
             <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
@@ -706,7 +706,7 @@ const Index = () => {
           </TabsContent>
 
           <TabsContent value="servers" className="mt-0">
-            <PanelsManager />
+            <PanelsManager onChanged={loadInbounds} />
           </TabsContent>
         </Tabs>
       </main>
