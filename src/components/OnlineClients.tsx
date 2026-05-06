@@ -68,6 +68,7 @@ export const OnlineClients = () => {
   useEffect(() => {
     load();
     loadSubs();
+    loadPanels();
     const id = setInterval(load, 15000);
     return () => clearInterval(id);
   }, []);
