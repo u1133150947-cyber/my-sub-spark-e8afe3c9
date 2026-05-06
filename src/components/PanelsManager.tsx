@@ -74,7 +74,7 @@ const withFlag = (name: string) => {
   return f ? `${f} ${name}` : name;
 };
 
-export const PanelsManager = () => {
+export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) => {
   const [panels, setPanels] = useState<Panel[]>([]);
   const [form, setForm] = useState({ ...empty });
   const [saving, setSaving] = useState(false);
@@ -121,6 +121,7 @@ export const PanelsManager = () => {
     toast.success("Панель добавлена");
     setForm({ ...empty });
     load();
+    onChanged?.();
   };
 
   const remove = async (id: string) => {
@@ -137,6 +138,7 @@ export const PanelsManager = () => {
     if (error) return toast.error("Ошибка удаления");
     toast.success(count && count > 0 ? `Удалено. Очищено подписок: ${count}` : "Удалено");
     load();
+    onChanged?.();
   };
 
   const startEdit = (p: Panel) => {
