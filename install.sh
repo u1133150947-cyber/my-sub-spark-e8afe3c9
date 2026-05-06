@@ -53,6 +53,15 @@ WEB_ROOT="/var/www/panel"
 HTPASSWD="/etc/nginx/.panel_htpasswd"
 NGINX_CONF="/etc/nginx/sites-available/panel.conf"
 
+# ---------- читаем SUPABASE_URL из .env (для проксирования /sub/ и /functions/) ----------
+SUPABASE_URL_VAL=""
+if [[ -f .env ]]; then
+  SUPABASE_URL_VAL=$(grep -E '^VITE_SUPABASE_URL=' .env | tail -n1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d '\r')
+fi
+if [[ -z "$SUPABASE_URL_VAL" ]]; then
+  warn "VITE_SUPABASE_URL не найден в .env — /sub/ проксироваться не будет"
+fi
+
 # ---------- системные пакеты ----------
 log "apt update + базовые пакеты…"
 export DEBIAN_FRONTEND=noninteractive
@@ -106,6 +115,16 @@ server {
     # Basic Auth — единая защита всей панели
     auth_basic "Restricted — Admin only";
     auth_basic_user_file ${HTPASSWD};
+
+    # Подписка: /sub/<slug> -> Lovable Cloud edge function (БЕЗ Basic Auth)
+    location /sub/ {
+        auth_basic off;
+        proxy_pass ${SUPABASE_URL_VAL}/functions/v1/sub/;
+        proxy_set_header Host ${SUPABASE_URL_VAL#https://};
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_ssl_server_name on;
+    }
 
     # SPA fallback (React Router)
     location / {
