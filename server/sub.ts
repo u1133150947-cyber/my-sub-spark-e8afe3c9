@@ -24,6 +24,7 @@ const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
 function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, overrides?: Map<string, string>) {
   if (ib.protocol !== "vless") return null;
   const ss = ib.stream_settings ?? {};
+  const effectiveUuid: string = (ss._clientUuid && String(ss._clientUuid)) || uuid;
   const network = ss.network ?? "tcp", security = ss.security ?? "none";
   const params = new URLSearchParams();
   params.set("type", network); params.set("security", security); params.set("encryption", "none");
@@ -65,7 +66,7 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
     const ci = country ? COUNTRY_INFO[country] : undefined;
     display = ci ? `${ci.flag} ${ci.name}` : String(ib.panel_name ?? "").trim() || ib.remark;
   }
-  return `vless://${uuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(display)}`;
+  return `vless://${effectiveUuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 
 export async function handleSub(req: Request, url: URL): Promise<Response> {
