@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS panels (
   status TEXT NOT NULL DEFAULT 'unknown',
   status_message TEXT NOT NULL DEFAULT '',
   last_checked_at TEXT,
+  country TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
