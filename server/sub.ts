@@ -43,7 +43,9 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
   // Strip emoji/punctuation for dedupe so "🇨🇿 Чехия" vs "Чехия" matches.
   const normalize = (s: string) =>
     s.toLowerCase().replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\p{P}\p{S}]/gu, "").replace(/\s+/g, " ").trim();
-  const cleanRemark = rawRemark.replace(/^[\s\-—–:|]+/, "").trim();
+  // Strip leading country code (cz, ru, de, ...) and separators from the remark.
+  let cleanRemark = rawRemark.replace(/^[\s\-—–:|]+/, "").trim();
+  cleanRemark = cleanRemark.replace(/^[a-z]{2}[\s\-—–:|]+/i, "").trim();
   let finalRemark = cleanRemark || rawRemark;
   if (panelName) {
     const np = normalize(panelName), nr = normalize(cleanRemark);
