@@ -945,6 +945,7 @@ const Index = () => {
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
             <TabsTrigger value="update">🔄 Обновление</TabsTrigger>
+            <TabsTrigger value="logs">🪵 Логи{appLogs.some(l=>l.level==="error") ? ` (${appLogs.filter(l=>l.level==="error").length})` : ""}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="stats" className="mt-0">
