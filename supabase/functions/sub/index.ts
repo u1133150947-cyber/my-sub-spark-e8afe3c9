@@ -150,11 +150,7 @@ Deno.serve(async (req) => {
 
     const upload = 0;
     const download = used;
-    // If total_bytes == 0 (unlimited), many clients require a non-zero total.
-    // Use a large value so used/total renders correctly.
-    const total = sub.total_bytes && sub.total_bytes > 0
-      ? sub.total_bytes
-      : 1099511627776 * 1024; // 1 PiB as "unlimited"
+    const total = sub.total_bytes ?? 0; // 0 = unlimited
     const expire = sub.expiry_ms ? Math.floor(sub.expiry_ms / 1000) : 0;
 
     const profileTitle = "base64:" + btoa(unescape(encodeURIComponent(sub.name)));
