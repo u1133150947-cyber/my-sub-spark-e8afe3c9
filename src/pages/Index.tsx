@@ -1534,7 +1534,8 @@ const Index = () => {
                     )}
                   </Card>
                 );
-              })}
+              });
+              })()}
             </div>
           )}
         </section>
