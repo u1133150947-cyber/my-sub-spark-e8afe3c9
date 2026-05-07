@@ -96,7 +96,7 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
 
     let total: number | null = null;
     if (wantCount) {
-      const cnt = db.query(`SELECT COUNT(*) FROM ${table}${where.sql}`, where.args)[0][0] as number;
+      const cnt = db.query(`SELECT COUNT(*) FROM ${table}${where.sql}`, where.args as any)[0][0] as number;
       total = cnt;
     }
 
@@ -105,7 +105,7 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
     }
 
     const colNames = cols === "*" ? tableColumns(table) : cols.split(",");
-    const rows = db.query(sql, where.args).map((r) => {
+    const rows = db.query(sql, where.args as any).map((r) => {
       const o: Record<string, unknown> = {};
       colNames.forEach((c, i) => { o[c] = r[i]; });
       return decodeRow(table, o);
@@ -131,7 +131,7 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
         sql += ` ON CONFLICT(${conflictCols.join(",")}) DO UPDATE SET ${updates || conflictCols[0] + "=" + conflictCols[0]}`;
       }
       try {
-        db.query(sql, values as unknown[]);
+        db.query(sql, values as any);
       } catch (e) {
         return jsonResponse({ message: (e as Error).message, code: "23505" }, { status: 409 });
       }
@@ -154,9 +154,9 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
     const filters = parseFilters(table, url.searchParams);
     const where = whereFromFilters(filters);
     const set = keys.map((k) => `${k}=?`).join(",");
-    db.query(`UPDATE ${table} SET ${set}${where.sql}`, [...keys.map((k) => row[k]), ...where.args] as unknown[]);
+    db.query(`UPDATE ${table} SET ${set}${where.sql}`, [...keys.map((k) => row[k]), ...where.args] as any);
     if (/return=representation/.test(prefer)) {
-      const rows = db.queryEntries(`SELECT * FROM ${table}${where.sql}`, where.args);
+      const rows = db.queryEntries(`SELECT * FROM ${table}${where.sql}`, where.args as any);
       return jsonResponse(rows.map((r) => decodeRow(table, r as Record<string, unknown>)));
     }
     return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*" } });
@@ -165,7 +165,7 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
   if (req.method === "DELETE") {
     const filters = parseFilters(table, url.searchParams);
     const where = whereFromFilters(filters);
-    db.query(`DELETE FROM ${table}${where.sql}`, where.args);
+    db.query(`DELETE FROM ${table}${where.sql}`, where.args as any);
     return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*" } });
   }
 
