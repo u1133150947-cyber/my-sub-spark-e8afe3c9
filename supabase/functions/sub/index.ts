@@ -82,7 +82,7 @@ function buildVless(
     const np = norm(panelName), nr = norm(cleanRemark);
     if (!nr) display = panelName;
     else if (nr === np || nr.startsWith(np)) display = cleanRemark;
-    else display = `${panelName} — ${cleanRemark}`;
+    else display = `${panelName}\n⤷ ${cleanRemark}`;
   }
   return `vless://${uuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
