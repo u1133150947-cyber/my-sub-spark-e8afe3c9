@@ -27,12 +27,24 @@ import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 
 // ===== Глобальный лог ошибок/событий =====
 type AppLog = { ts: number; level: "error" | "warn" | "info"; source: string; message: string };
-const APP_LOGS: AppLog[] = [];
+const LS_KEY = "app_logs_v1";
+const APP_LOGS: AppLog[] = (() => {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
+})();
 const APP_LOG_LISTENERS = new Set<() => void>();
-const APP_LOG_MAX = 500;
+const APP_LOG_MAX = 2000;
+let saveTimer: any = null;
+function persistLogs() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try { localStorage.setItem(LS_KEY, JSON.stringify(APP_LOGS.slice(-APP_LOG_MAX))); } catch {}
+  }, 500);
+}
 function pushLog(level: AppLog["level"], source: string, message: string) {
   APP_LOGS.push({ ts: Date.now(), level, source, message });
   if (APP_LOGS.length > APP_LOG_MAX) APP_LOGS.splice(0, APP_LOGS.length - APP_LOG_MAX);
+  persistLogs();
   APP_LOG_LISTENERS.forEach((fn) => { try { fn(); } catch {} });
 }
 // Перехват toast.error/warning + console.error/warn + window.onerror
