@@ -590,6 +590,9 @@ const Index = () => {
         setImporting(false);
         return;
       }
+      const fallbackAll = confirm(
+        "Если inbound не найден по имени — создать подписку на ВСЕХ доступных inbound'ах текущих панелей?\n\nOK = да (рекомендуется при разных названиях панелей)\nОтмена = пропускать такие подписки"
+      );
       // Загружаем актуальные inbounds для матчинга по remark (т.к. slug панелей и id могут отличаться)
       let live: InboundsResp | null = inbounds;
       if (!live) {
@@ -598,8 +601,17 @@ const Index = () => {
         live = data;
       }
       const livePanels = (live?._panels as PanelMeta[]) ?? [];
+      // Нормализация remark: убираем эмодзи, флаги, пунктуацию, пробелы
+      const norm = (s: string) =>
+        (s || "")
+          .toLowerCase()
+          .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, "")
+          .replace(/[^\p{L}\p{N}]+/gu, "")
+          .trim();
       // Индекс: remark(lower) -> [{panel, inboundId}]
       const byRemark = new Map<string, { panel: string; inboundId: number }[]>();
+      const byNorm = new Map<string, { panel: string; inboundId: number }[]>();
+      const allLive: { panel: string; inboundId: number; remark: string; nrm: string }[] = [];
       const byPanelId = new Map<string, { panel: string; inboundId: number }>();
       for (const pm of livePanels) {
         const ibs = live?.[pm.slug];
@@ -611,6 +623,13 @@ const Index = () => {
               const arr = byRemark.get(key) ?? [];
               arr.push({ panel: pm.slug, inboundId: ib.id });
               byRemark.set(key, arr);
+            }
+            const nk = norm(ib.remark || "");
+            if (nk) {
+              const arr = byNorm.get(nk) ?? [];
+              arr.push({ panel: pm.slug, inboundId: ib.id });
+              byNorm.set(nk, arr);
+              allLive.push({ panel: pm.slug, inboundId: ib.id, remark: ib.remark || "", nrm: nk });
             }
           }
         }
@@ -643,8 +662,33 @@ const Index = () => {
                 const k = `${m.panel}:${m.inboundId}`;
                 if (!seen.has(k)) { seen.add(k); selections.push(m); }
               }
+              continue;
+            }
+            // 3) матчинг по нормализованному remark (без эмодзи/пунктуации)
+            const nk = norm(String(x.remark || ""));
+            let fuzzy = nk ? byNorm.get(nk) : undefined;
+            // 4) substring: ищем live remark, содержащий искомый или наоборот
+            if ((!fuzzy || !fuzzy.length) && nk) {
+              fuzzy = allLive
+                .filter((l) => l.nrm === nk || l.nrm.includes(nk) || nk.includes(l.nrm))
+                .map((l) => ({ panel: l.panel, inboundId: l.inboundId }));
+            }
+            if (fuzzy && fuzzy.length) {
+              for (const m of fuzzy) {
+                const k = `${m.panel}:${m.inboundId}`;
+                if (!seen.has(k)) { seen.add(k); selections.push(m); }
+              }
             } else {
               missing.push(x.remark || `${x.panel}#${x.inbound_id}`);
+            }
+          }
+          if (!selections.length) {
+            if (fallbackAll) {
+              const all = Array.from(byPanelId.values());
+              if (all.length) {
+                for (const m of all) selections.push(m);
+                errors.push(`${name}: использованы все доступные inbound'ы (исходные: ${missing.join(", ")})`);
+              }
             }
           }
           if (!selections.length) {
