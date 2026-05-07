@@ -509,7 +509,19 @@ Deno.serve(async (req) => {
       const domain = String(body.domain ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
       if (!name) return new Response(JSON.stringify({ error: "name required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (!links.length) return new Response(JSON.stringify({ error: "links required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const normalized = links.map((l: string) => domain ? l.replace(/^([a-z0-9+.-]+:\/\/[^@\s]+@)(\[[^\]]+\]|[^:/?#\s]+)(:\d+)?/i, (_m, a, _old, port = "") => `${a}${domain}${port}`) : l);
+      const swapHost = (l: string) => {
+        if (!domain) return l;
+        if (/^vmess:\/\//i.test(l)) {
+          try {
+            const raw = l.slice(l.indexOf("//") + 2).replace(/-/g, "+").replace(/_/g, "/");
+            const cfg = JSON.parse(decodeURIComponent(escape(atob(raw + "===".slice((raw.length + 3) % 4)))));
+            cfg.add = domain;
+            return "vmess://" + btoa(unescape(encodeURIComponent(JSON.stringify(cfg)))).replace(/=+$/, "");
+          } catch { return l; }
+        }
+        return l.replace(/^([a-z0-9+.-]+:\/\/[^@\s]+@)(\[[^\]]+\]|[^:/?#\s]+)(:\d+)?/i, (_m, a, _old, port = "") => `${a}${domain}${port}`);
+      };
+      const normalized = links.map(swapHost);
       const slug = randomSlug(12);
       const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
       const { data: sub, error } = await supabase.from("subscriptions").insert({
