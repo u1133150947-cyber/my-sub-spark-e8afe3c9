@@ -89,13 +89,19 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
   return `vless://${effectiveUuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 
+function withHost(link: string, host: string) {
+  const h = host.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  if (!h) return link;
+  return link.replace(/^([a-z0-9+.-]+:\/\/[^@\s]+@)(\[[^\]]+\]|[^:/?#\s]+)(:\d+)?/i, (_m, a, _old, port = "") => `${a}${h}${port}`);
+}
+
 export async function handleSub(req: Request, url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const parts = url.pathname.split("/").filter(Boolean);
   const slug = parts[parts.length - 1];
   if (!slug || slug === "sub") return new Response("Not found", { status: 404, headers: cors });
 
-  const sub = db.queryEntries(`SELECT id, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist FROM subscriptions WHERE slug = ?`, [slug])[0] as any;
+  const sub = db.queryEntries(`SELECT id, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist, raw_links FROM subscriptions WHERE slug = ?`, [slug])[0] as any;
   if (!sub) return new Response("Subscription not found", { status: 404, headers: cors });
   const subDecoded = decodeRow("subscriptions", sub);
 
@@ -126,6 +132,11 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
 
   const whitelist: string[] = Array.isArray((subDecoded as any).sni_whitelist) ? (subDecoded as any).sni_whitelist.filter((s: string) => typeof s === "string" && s.trim().length > 0) : [];
   const lines: string[] = [];
+  const rawLinks: string[] = Array.isArray((subDecoded as any).raw_links) ? (subDecoded as any).raw_links : [];
+  if (rawLinks.length) {
+    const host = url.searchParams.get("host") || req.headers.get("x-forwarded-host") || url.host;
+    for (const l of rawLinks) lines.push(withHost(String(l), host));
+  }
   for (const ib of inbounds as any[]) {
     const sniOverride = whitelist.length ? whitelist[Math.floor(Math.random() * whitelist.length)] : undefined;
     const link = buildVless(sub.client_uuid, sub.client_email, ib, sniOverride, overridesMap);
