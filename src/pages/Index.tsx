@@ -1436,6 +1436,7 @@ const Index = () => {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Переименовать подключение</DialogTitle>
+            <DialogDescription>Задайте флаг страны и название, которое увидят клиенты.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div className="text-xs text-muted-foreground">
@@ -1497,6 +1498,7 @@ const Index = () => {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Создать подписку из текста</DialogTitle>
+            <DialogDescription>Вставьте готовые ссылки или base64-код подписки.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
@@ -1534,6 +1536,7 @@ const Index = () => {
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Лог импорта подписок</DialogTitle>
+            <DialogDescription>Подробный отчёт по последнему импорту.</DialogDescription>
           </DialogHeader>
           <Textarea
             readOnly
