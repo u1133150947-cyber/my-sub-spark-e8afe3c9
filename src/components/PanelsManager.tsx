@@ -426,6 +426,10 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h2 className="text-lg font-semibold">Панели ({panels.length})</h2>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={runHealthCheck} disabled={healthChecking || panels.length === 0}>
+              {healthChecking ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <Activity className="size-3.5 mr-1" />}
+              Health-check
+            </Button>
             <Button variant="outline" size="sm" onClick={exportPanels} disabled={panels.length === 0}>
               <Download className="size-3.5 mr-1" /> Экспорт
             </Button>
