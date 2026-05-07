@@ -542,6 +542,50 @@ const Index = () => {
   };
   const fmtGB = (b: number) => (b ? `${(b / 1024 / 1024 / 1024).toFixed(0)} GB` : "∞");
 
+  const decodeMaybeBase64 = (text: string) => {
+    const trimmed = text.trim();
+    if (/^(vless|vmess|trojan|ss):\/\//im.test(trimmed)) return trimmed;
+    const compact = trimmed.replace(/\s+/g, "");
+    try {
+      const normalized = compact.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = normalized + "===".slice((normalized.length + 3) % 4);
+      return decodeURIComponent(escape(atob(padded)));
+    } catch {
+      return trimmed;
+    }
+  };
+
+  const extractConfigLinks = (text: string) =>
+    decodeMaybeBase64(text)
+      .split(/[\r\n]+/)
+      .map((x) => x.trim())
+      .filter((x) => /^(vless|vmess|trojan|ss):\/\//i.test(x));
+
+  const importRawSubscription = async () => {
+    const links = extractConfigLinks(rawImportText);
+    if (!links.length) return toast.error("Не нашёл vless/vmess/trojan/ss ссылки в тексте");
+    const name = rawImportName.trim() || `Импорт ${new Date().toLocaleDateString("ru-RU")}`;
+    setRawImporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=importRaw", {
+        method: "POST",
+        body: { name, links, domain: rawImportDomain.trim() },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success("Создана подписка из текста");
+      setRawImportOpen(false);
+      setRawImportText("");
+      setRawImportName("");
+      setRawImportDomain("");
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка импорта текстом: " + (e?.message ?? e));
+    } finally {
+      setRawImporting(false);
+    }
+  };
+
   const exportSubs = async () => {
     try {
       const { data: subsData, error: e1 } = await supabase
