@@ -200,6 +200,10 @@ const Index = () => {
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("subs");
+  const [subsSelected, setSubsSelected] = useState<Set<string>>(new Set());
+  const [subsSearch, setSubsSearch] = useState<string>("");
+  const [subsSort, setSubsSort] = useState<string>("created_desc");
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [emailToSubId, setEmailToSubId] = useState<Record<string, string>>({});
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [renameTarget, setRenameTarget] = useState<{ panel: string; inboundId: number; original: string } | null>(null);
