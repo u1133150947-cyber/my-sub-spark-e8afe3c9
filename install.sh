@@ -121,8 +121,12 @@ if [[ -n "$DOMAIN" ]]; then
   cat >/etc/caddy/Caddyfile <<EOF
 $DOMAIN {
   encode gzip
+  @public path /sub/* /functions/v1/sub*
   basicauth /* {
     $AUTH_USER $AUTH_HASH
+  }
+  handle @public {
+    reverse_proxy 127.0.0.1:$PORT
   }
   reverse_proxy 127.0.0.1:$PORT
 }
@@ -131,8 +135,12 @@ else
   cat >/etc/caddy/Caddyfile <<EOF
 :80 {
   encode gzip
+  @public path /sub/* /functions/v1/sub*
   basicauth /* {
     $AUTH_USER $AUTH_HASH
+  }
+  handle @public {
+    reverse_proxy 127.0.0.1:$PORT
   }
   reverse_proxy 127.0.0.1:$PORT
 }
