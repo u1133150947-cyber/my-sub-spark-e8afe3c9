@@ -149,6 +149,8 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const selections: Array<{ panel: string; inboundId: number }> = body.selections ?? [];
       if (!name) return json({ error: "name required" }, 400);
       if (!selections.length) return json({ error: "selections required" }, 400);
+      const validSelections = selections.filter((s) => s?.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(Number(s.inboundId)));
+      if (!validSelections.length) return json({ error: "Некорректные панели в импорте: panel=null. Установите свежий патч и импортируйте заново.", selections }, 400);
       const clientUuid = uuidv4(), slug = randomSlug(12), subIdShort = randomSlug(16);
       const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
       const expiryMs = days > 0 ? Date.now() + days * 86400000 : 0;
@@ -158,7 +160,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
         [subId, slug, name, baseEmail, clientUuid, expiryMs, totalBytes]);
       const sub = row<any>(`SELECT * FROM subscriptions WHERE id = ?`, [subId]);
       const created: any[] = [], errors: any[] = [];
-      for (const sel of selections) {
+      for (const sel of validSelections) {
         try {
           const cfg = panelCfg(getPanelBySlug(sel.panel));
           const ibs = await listInbounds(sel.panel);

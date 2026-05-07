@@ -455,6 +455,8 @@ Deno.serve(async (req) => {
 
       if (!name) return new Response(JSON.stringify({ error: "name required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       if (!selections.length) return new Response(JSON.stringify({ error: "selections required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const validSelections = selections.filter((s) => s?.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(Number(s.inboundId)));
+      if (!validSelections.length) return new Response(JSON.stringify({ error: "Некорректные панели в импорте: panel=null. Обновите патч и импортируйте заново.", selections }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
       const clientUuid = uuidv4();
       const slug = randomSlug(12);
@@ -470,7 +472,7 @@ Deno.serve(async (req) => {
 
       const created: any[] = [];
       const errors: any[] = [];
-      for (const sel of selections) {
+      for (const sel of validSelections) {
         try {
           const cfg = panelCfg(await getPanelBySlug(sel.panel));
           const inbounds = await listInbounds(sel.panel);

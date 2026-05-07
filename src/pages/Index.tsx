@@ -163,7 +163,8 @@ const Index = () => {
   const [importLog, setImportLog] = useState<string[]>([]);
   const [importLogOpen, setImportLogOpen] = useState(false);
 
-  const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
+  const panelMeta: PanelMeta[] = (((inbounds?._panels as PanelMeta[]) ?? [])
+    .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
   const inboundLabel = (panel: string, id: number, fallback: string) =>
     overrides[`${panel}:${id}`] || fallback || `inbound #${id}`;
@@ -300,7 +301,11 @@ const Index = () => {
         method: "GET",
       });
       if (error) throw error;
-      setInbounds(data);
+      const keys = Object.keys(data ?? {}).filter((k) => k !== "_panels" && Array.isArray((data as any)[k]) && k && k !== "null" && k !== "undefined");
+      const meta = Array.isArray((data as any)?._panels)
+        ? (data as any)._panels.filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined")
+        : [];
+      setInbounds({ ...(data ?? {}), _panels: meta.length ? meta : keys.map((slug) => ({ slug, name: slug })) });
     } catch (e: any) {
       toast.error("Ошибка загрузки inbound'ов: " + (e?.message ?? e));
     } finally {
@@ -663,7 +668,10 @@ const Index = () => {
         if (error) throw error;
         live = data;
       }
-      const livePanels = (live?._panels as PanelMeta[]) ?? [];
+      const responsePanelKeys = Object.keys(live ?? {}).filter((k) => k !== "_panels" && Array.isArray((live as any)[k]) && k && k !== "null" && k !== "undefined");
+      const livePanels = (((live?._panels as PanelMeta[]) ?? [])
+        .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
+      if (!livePanels.length && responsePanelKeys.length) livePanels.push(...responsePanelKeys.map((slug) => ({ slug, name: slug })));
       log(`Панели (${livePanels.length}): ${livePanels.map(p=>p.slug).join(", ")}`);
       // Нормализация remark: убираем эмодзи, флаги, пунктуацию, пробелы
       const norm = (s: string) =>
@@ -772,10 +780,13 @@ const Index = () => {
           const expiryMs = Number(item.expiry_ms || 0);
           const days = expiryMs > 0 ? Math.max(1, Math.ceil((expiryMs - Date.now()) / 86400000)) : 0;
           const totalGB = item.total_bytes ? Math.round(Number(item.total_bytes) / 1024 / 1024 / 1024) : 0;
-          log(`  -> create: days=${days} GB=${totalGB} selections=${selections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
+          const validSelections = selections.filter((s) => s.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(s.inboundId));
+          if (validSelections.length !== selections.length) log(`  FIX: удалены некорректные selections=${selections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
+          if (!validSelections.length) throw new Error("панели загрузились без slug — обновите список inbound'ов и повторите импорт");
+          log(`  -> create: days=${days} GB=${totalGB} selections=${validSelections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
           const { data, error } = await supabase.functions.invoke("panel?action=create", {
             method: "POST",
-            body: { name, days, totalGB, selections },
+            body: { name, days, totalGB, selections: validSelections },
           });
           if (error) {
             log(`  ERROR invoke: ${error.message ?? error}`);
