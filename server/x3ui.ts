@@ -1,0 +1,147 @@
+// 3X-UI HTTP client + helpers shared by the panel/sub handlers.
+import { db, decodeRow } from "./db.ts";
+
+type PanelRow = { id: string; slug: string; name: string; panel_url: string; username: string; password: string };
+
+const cookieCache = new Map<string, { cookie: string; ts: number }>();
+const COOKIE_TTL_MS = 30 * 60 * 1000;
+const panelsCache = { rows: [] as PanelRow[], ts: 0 };
+const PANELS_TTL_MS = 30_000;
+
+export function getAllPanels(force = false): PanelRow[] {
+  if (!force && Date.now() - panelsCache.ts < PANELS_TTL_MS && panelsCache.rows.length) return panelsCache.rows;
+  const rows = db.queryEntries(`SELECT id, slug, name, panel_url, username, password FROM panels ORDER BY created_at ASC`);
+  panelsCache.rows = rows.map((r) => decodeRow("panels", r as Record<string, unknown>) as unknown as PanelRow);
+  panelsCache.ts = Date.now();
+  return panelsCache.rows;
+}
+export function bustPanelsCache() { panelsCache.ts = 0; }
+export function getPanelBySlug(slug: string): PanelRow {
+  const p = getAllPanels().find((x) => x.slug === slug);
+  if (!p) throw new Error(`Panel ${slug} not found`);
+  return p;
+}
+
+export function panelCfg(p: PanelRow) {
+  return { url: (p.panel_url ?? "").replace(/\/+$/, ""), username: p.username, password: p.password };
+}
+
+// Allow self-signed certs on user-provided panel URLs.
+const insecureClient = Deno.createHttpClient ? Deno.createHttpClient({ caCerts: [] }) : undefined;
+// Note: Deno doesn't disable cert validation by default. Most 3X-UI setups now use Let's Encrypt or HTTP. If you need self-signed, enable: --unsafely-ignore-certificate-errors when starting Deno.
+
+export async function rawFetch(url: string, init?: RequestInit) {
+  return await fetch(url, init);
+}
+
+export async function loginPanel(slug: string): Promise<string> {
+  const cached = cookieCache.get(slug);
+  if (cached && Date.now() - cached.ts < COOKIE_TTL_MS) return cached.cookie;
+  const cfg = panelCfg(getPanelBySlug(slug));
+  const res = await rawFetch(`${cfg.url}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ username: cfg.username, password: cfg.password }).toString(),
+  });
+  if (res.status < 200 || res.status >= 300) {
+    const text = await res.text();
+    throw new Error(`Login failed [${slug}] ${res.status}: ${text}`);
+  }
+  await res.text();
+  const sc = res.headers.get("set-cookie");
+  const cookie = (sc ?? "").split(",").map((c) => c.split(";")[0].trim()).filter(Boolean).join("; ");
+  if (!cookie) throw new Error(`No cookie from panel ${slug}`);
+  cookieCache.set(slug, { cookie, ts: Date.now() });
+  return cookie;
+}
+
+export async function panelFetch(slug: string, path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) {
+  const cfg = panelCfg(getPanelBySlug(slug));
+  let cookie = await loginPanel(slug);
+  const doReq = async (ck: string) => {
+    const r = await rawFetch(`${cfg.url}${path}`, {
+      method: init?.method ?? "GET",
+      headers: { ...(init?.headers ?? {}), Cookie: ck, Accept: "application/json" },
+      body: init?.body,
+    });
+    return { status: r.status, body: await r.text() };
+  };
+  let res = await doReq(cookie);
+  if (res.status === 401 || res.status === 403) {
+    cookieCache.delete(slug);
+    cookie = await loginPanel(slug);
+    res = await doReq(cookie);
+  }
+  return res;
+}
+
+export async function listInbounds(slug: string) {
+  const res = await panelFetch(slug, "/panel/api/inbounds/list", { method: "GET" });
+  const json = JSON.parse(res.body);
+  if (!json.success) throw new Error(`list inbounds [${slug}]: ${json.msg}`);
+  return json.obj as any[];
+}
+
+export async function getClientTrafficsByEmail(slug: string) {
+  const inbounds = await listInbounds(slug);
+  const out: Record<string, { up: number; down: number; total: number }> = {};
+  for (const ib of inbounds) {
+    for (const c of (ib.clientStats ?? [])) {
+      const up = Number(c.up ?? 0), down = Number(c.down ?? 0);
+      const prev = out[c.email] ?? { up: 0, down: 0, total: 0 };
+      prev.up += up; prev.down += down; prev.total += up + down;
+      out[c.email] = prev;
+    }
+  }
+  return out;
+}
+
+export async function getClientExpiryByEmail(slug: string) {
+  const inbounds = await listInbounds(slug);
+  const out: Record<string, number> = {};
+  for (const ib of inbounds) {
+    let s: any = {};
+    try { s = JSON.parse(ib.settings ?? "{}"); } catch {}
+    for (const c of (s.clients ?? [])) {
+      const exp = Number(c.expiryTime ?? 0);
+      if (!c.email) continue;
+      if (exp > (out[c.email] ?? 0)) out[c.email] = exp;
+    }
+  }
+  return out;
+}
+
+export async function addClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }) {
+  const settings = JSON.stringify({
+    clients: [{ id: c.id, flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 }],
+  });
+  const res = await panelFetch(slug, "/panel/api/inbounds/addClient", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: inboundId, settings }),
+  });
+  const json = JSON.parse(res.body);
+  if (!json.success) throw new Error(`addClient [${slug}/${inboundId}]: ${json.msg}`);
+  return json;
+}
+
+export async function updateClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }) {
+  const settings = JSON.stringify({
+    clients: [{ id: c.id, flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 }],
+  });
+  const res = await panelFetch(slug, `/panel/api/inbounds/updateClient/${c.id}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: inboundId, settings }),
+  });
+  const json = JSON.parse(res.body);
+  if (!json.success) throw new Error(`updateClient [${slug}/${inboundId}]: ${json.msg}`);
+  return json;
+}
+
+export function uuidv4() { return crypto.randomUUID(); }
+export function randomSlug(len = 12) {
+  const a = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const arr = new Uint32Array(len);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (n) => a[n % a.length]).join("");
+}
+export function hostFromUrl(u: string) { try { return new URL(u).hostname; } catch { return u; } }
