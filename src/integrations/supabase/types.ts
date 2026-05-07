@@ -118,6 +118,33 @@ export type Database = {
         }
         Relationships: []
       }
+      panel_health: {
+        Row: {
+          checked_at: string
+          id: string
+          latency_ms: number | null
+          message: string | null
+          panel_slug: string
+          status: string
+        }
+        Insert: {
+          checked_at?: string
+          id?: string
+          latency_ms?: number | null
+          message?: string | null
+          panel_slug: string
+          status: string
+        }
+        Update: {
+          checked_at?: string
+          id?: string
+          latency_ms?: number | null
+          message?: string | null
+          panel_slug?: string
+          status?: string
+        }
+        Relationships: []
+      }
       panels: {
         Row: {
           country: string
