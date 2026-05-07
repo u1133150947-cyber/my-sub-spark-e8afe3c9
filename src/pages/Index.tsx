@@ -140,6 +140,7 @@ const Index = () => {
   const [editName, setEditName] = useState("");
   const [editDays, setEditDays] = useState<string>("");
   const [editGB, setEditGB] = useState<string>("");
+  const [editSlug, setEditSlug] = useState<string>("");
   const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [editOrder, setEditOrder] = useState<string[]>([]);
@@ -381,6 +382,7 @@ const Index = () => {
     setEditName(s.name);
     setEditDays("");
     setEditGB("");
+    setEditSlug(s.slug);
     // load current whitelist
     const { data: subRow } = await supabase
       .from("subscriptions")
@@ -458,6 +460,11 @@ const Index = () => {
       if (editName.trim() && editName.trim() !== s.name) updateBody.name = editName.trim();
       if (editDays !== "") updateBody.days = Number(editDays);
       if (editGB !== "") updateBody.totalGB = Number(editGB);
+      const newSlug = editSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (newSlug && newSlug !== s.slug) {
+        if (newSlug.length < 4) throw new Error("URL должен быть минимум 4 символа (a-z 0-9)");
+        updateBody.slug = newSlug;
+      }
       if (Object.keys(updateBody).length > 1) {
         const { data, error } = await supabase.functions.invoke("panel?action=update", {
           method: "POST",
@@ -1173,6 +1180,11 @@ const Index = () => {
                             <Label className="text-xs text-muted-foreground">Трафик GB (0 = безлимит)</Label>
                             <Input type="number" min={0} placeholder="не менять" value={editGB} onChange={(e) => setEditGB(e.target.value)} />
                           </div>
+                        </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">URL подписки (slug, a-z 0-9)</Label>
+                          <Input value={editSlug} onChange={(e) => setEditSlug(e.target.value)} maxLength={32} placeholder="например 8ic8nngcvdz7" />
+                          <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${editSlug || s.slug}`}</p>
                         </div>
 
                         <div>

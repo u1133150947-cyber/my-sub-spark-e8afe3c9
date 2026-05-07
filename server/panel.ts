@@ -330,6 +330,14 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (newName !== undefined && newName.length > 0) { sets.push("name = ?"); args.push(newName); }
       if (hasDays) { sets.push("expiry_ms = ?"); args.push(newExpiry); }
       if (hasGB) { sets.push("total_bytes = ?"); args.push(newTotal); }
+      if (typeof body.slug === "string") {
+        const newSlug = body.slug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (newSlug && newSlug.length >= 4 && newSlug !== sub.slug) {
+          const clash = row<any>(`SELECT id FROM subscriptions WHERE slug = ?`, [newSlug]);
+          if (clash) return json({ error: `slug "${newSlug}" уже занят` }, 409);
+          sets.push("slug = ?"); args.push(newSlug);
+        }
+      }
       if (sets.length) { args.push(subId); db.query(`UPDATE subscriptions SET ${sets.join(", ")} WHERE id = ?`, args as any); }
       return json({ ok: true, errors });
     }
