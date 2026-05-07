@@ -251,6 +251,19 @@ function hostFromUrl(u: string) { try { return new URL(u).hostname; } catch { re
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const supabase = supabaseAdmin;
+  const t0 = Date.now();
+  const url0 = new URL(req.url);
+  const action0 = url0.searchParams.get("action") ?? "";
+  const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
+  const writeAudit = async (level: string, status: string, error: string | null, meta: Record<string, unknown> = {}) => {
+    try {
+      await supabase.from("audit_log").insert({
+        level, action: action0, status, error: error ? error.slice(0, 1000) : null,
+        duration_ms: Date.now() - t0, request_id: requestId,
+        meta: { method: req.method, ...meta },
+      });
+    } catch {}
+  };
 
   try {
     const url = new URL(req.url);
@@ -361,6 +374,27 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ history: data ?? [], uptime }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "auditLog") {
+      const level = url.searchParams.get("level"); // info|warn|error
+      const act = url.searchParams.get("act");
+      const panel = url.searchParams.get("panel");
+      const search = url.searchParams.get("q");
+      const hours = Math.min(720, Number(url.searchParams.get("hours") ?? "24"));
+      const limit = Math.min(1000, Number(url.searchParams.get("limit") ?? "300"));
+      const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      let q = supabase.from("audit_log").select("id, ts, level, action, panel_slug, subscription_id, status, duration_ms, error, request_id, meta").gte("ts", since).order("ts", { ascending: false }).limit(limit);
+      if (level) q = q.eq("level", level);
+      if (act) q = q.eq("action", act);
+      if (panel) q = q.eq("panel_slug", panel);
+      if (search) q = q.or(`error.ilike.%${search}%,action.ilike.%${search}%`);
+      const { data, error } = await q;
+      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // GC: keep last 30 days
+      const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      supabase.from("audit_log").delete().lt("ts", cutoff).then(() => {});
+      return new Response(JSON.stringify({ logs: data ?? [] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "onlines") {
       const all = await getAllPanels();
       const result: { panel: string; email: string; subscription_id: string | null; sub_name: string | null; remark: string | null }[] = [];
@@ -431,9 +465,16 @@ Deno.serve(async (req) => {
           });
           created.push(sub.id);
         } catch (e) {
-          errors.push({ sub: sub.id, error: e instanceof Error ? e.message : String(e) });
+          const errMsg = e instanceof Error ? e.message : String(e);
+          errors.push({ sub: sub.id, email: sub.client_email, error: errMsg });
+          await supabase.from("audit_log").insert({
+            level: "error", action: "bulkAddInbound.client", panel_slug: panel,
+            subscription_id: sub.id, status: "error", error: errMsg.slice(0, 1000),
+            request_id: requestId, meta: { inbound_id: inboundId, email: sub.client_email },
+          });
         }
       });
+      await writeAudit(errors.length ? "warn" : "info", "ok", null, { panel, inbound_id: inboundId, created: created.length, errors: errors.length });
       return new Response(JSON.stringify({ created: created.length, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -457,10 +498,17 @@ Deno.serve(async (req) => {
           await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${s.client_uuid}`, { method: "POST" });
           removed++;
         } catch (e) {
-          errors.push({ sub: s.id, error: e instanceof Error ? e.message : String(e) });
+          const errMsg = e instanceof Error ? e.message : String(e);
+          errors.push({ sub: s.id, error: errMsg });
+          await supabase.from("audit_log").insert({
+            level: "error", action: "bulkRemoveInbound.client", panel_slug: panel,
+            subscription_id: s.id, status: "error", error: errMsg.slice(0, 1000),
+            request_id: requestId, meta: { inbound_id: inboundId },
+          });
         }
       });
       await supabase.from("subscription_inbounds").delete().eq("panel", panel).eq("inbound_id", inboundId);
+      await writeAudit(errors.length ? "warn" : "info", "ok", null, { panel, inbound_id: inboundId, removed, errors: errors.length });
       return new Response(JSON.stringify({ removed, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -786,9 +834,11 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    await writeAudit("warn", "unknown", "Unknown action");
     return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
+    await writeAudit("error", "exception", msg, { stack: e instanceof Error ? (e.stack ?? "").slice(0, 500) : undefined });
     return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });

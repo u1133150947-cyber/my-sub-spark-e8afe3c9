@@ -56,6 +56,48 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_log: {
+        Row: {
+          action: string
+          duration_ms: number | null
+          error: string | null
+          id: string
+          level: string
+          meta: Json
+          panel_slug: string | null
+          request_id: string | null
+          status: string | null
+          subscription_id: string | null
+          ts: string
+        }
+        Insert: {
+          action: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          level?: string
+          meta?: Json
+          panel_slug?: string | null
+          request_id?: string | null
+          status?: string | null
+          subscription_id?: string | null
+          ts?: string
+        }
+        Update: {
+          action?: string
+          duration_ms?: number | null
+          error?: string | null
+          id?: string
+          level?: string
+          meta?: Json
+          panel_slug?: string | null
+          request_id?: string | null
+          status?: string | null
+          subscription_id?: string | null
+          ts?: string
+        }
+        Relationships: []
+      }
       client_mappings: {
         Row: {
           client_email: string

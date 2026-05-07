@@ -27,12 +27,24 @@ import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 
 // ===== Глобальный лог ошибок/событий =====
 type AppLog = { ts: number; level: "error" | "warn" | "info"; source: string; message: string };
-const APP_LOGS: AppLog[] = [];
+const LS_KEY = "app_logs_v1";
+const APP_LOGS: AppLog[] = (() => {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
+})();
 const APP_LOG_LISTENERS = new Set<() => void>();
-const APP_LOG_MAX = 500;
+const APP_LOG_MAX = 2000;
+let saveTimer: any = null;
+function persistLogs() {
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    try { localStorage.setItem(LS_KEY, JSON.stringify(APP_LOGS.slice(-APP_LOG_MAX))); } catch {}
+  }, 500);
+}
 function pushLog(level: AppLog["level"], source: string, message: string) {
   APP_LOGS.push({ ts: Date.now(), level, source, message });
   if (APP_LOGS.length > APP_LOG_MAX) APP_LOGS.splice(0, APP_LOGS.length - APP_LOG_MAX);
+  persistLogs();
   APP_LOG_LISTENERS.forEach((fn) => { try { fn(); } catch {} });
 }
 // Перехват toast.error/warning + console.error/warn + window.onerror
@@ -202,6 +214,35 @@ const Index = () => {
     APP_LOG_LISTENERS.add(fn);
     return () => { APP_LOG_LISTENERS.delete(fn); };
   }, []);
+
+  // ===== Logs UI state =====
+  type ServerLog = { id: string; ts: string; level: string; action: string; panel_slug: string | null; subscription_id: string | null; status: string | null; duration_ms: number | null; error: string | null; request_id: string | null; meta: any };
+  const [serverLogs, setServerLogs] = useState<ServerLog[]>([]);
+  const [logSource, setLogSource] = useState<"client" | "server" | "all">("all");
+  const [logLevel, setLogLevel] = useState<"all" | "error" | "warn" | "info">("all");
+  const [logSearch, setLogSearch] = useState("");
+  const [logGroup, setLogGroup] = useState(true);
+  const [logHours, setLogHours] = useState(24);
+  const [serverLogsLoading, setServerLogsLoading] = useState(false);
+  const [lastSeenLogTs, setLastSeenLogTs] = useState<number>(() => {
+    try { return Number(localStorage.getItem("logs_last_seen") || "0"); } catch { return 0; }
+  });
+
+  const loadServerLogs = async () => {
+    setServerLogsLoading(true);
+    try {
+      const params = new URLSearchParams({ hours: String(logHours), limit: "500" });
+      if (logLevel !== "all") params.set("level", logLevel);
+      if (logSearch.trim()) params.set("q", logSearch.trim());
+      const { data, error } = await supabase.functions.invoke(`panel?action=auditLog&${params.toString()}`, { method: "GET" });
+      if (error) throw error;
+      setServerLogs(((data as any)?.logs ?? []) as ServerLog[]);
+    } catch (e: any) {
+      pushLog("error", "auditLog", e?.message ?? String(e));
+    } finally {
+      setServerLogsLoading(false);
+    }
+  };
 
   const panelMeta: PanelMeta[] = (((inbounds?._panels as PanelMeta[]) ?? [])
     .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
@@ -962,6 +1003,7 @@ const Index = () => {
         <Tabs value={activeTab} className="space-y-6" onValueChange={(v) => {
           setActiveTab(v);
           if (v === "create") { loadInbounds(); loadEmailMap(); }
+          if (v === "logs") loadServerLogs();
         }}>
           <TabsList className="grid w-full max-w-4xl grid-cols-7">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
@@ -970,7 +1012,12 @@ const Index = () => {
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
             <TabsTrigger value="update">🔄 Обновление</TabsTrigger>
-            <TabsTrigger value="logs">🪵 Логи{appLogs.some(l=>l.level==="error") ? ` (${appLogs.filter(l=>l.level==="error").length})` : ""}</TabsTrigger>
+            <TabsTrigger value="logs" onClick={() => { const t = Date.now(); setLastSeenLogTs(t); localStorage.setItem("logs_last_seen", String(t)); }}>
+              🪵 Логи{(() => {
+                const unread = appLogs.filter((l) => l.level === "error" && l.ts > lastSeenLogTs).length;
+                return unread ? ` (${unread})` : "";
+              })()}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="stats" className="mt-0">
@@ -1408,47 +1455,117 @@ const Index = () => {
 
           <TabsContent value="logs" className="mt-0">
             <Card className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
-              <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                <h2 className="text-lg font-semibold flex items-center gap-2">
-                  <FileText className="size-4 text-primary" /> Логи ({appLogs.length})
-                </h2>
-                <div className="flex gap-2">
-                  <Button variant="outline" size="sm" onClick={() => {
-                    const text = appLogs.map((l) => `[${new Date(l.ts).toISOString()}] ${l.level.toUpperCase()} ${l.source}: ${l.message}`).join("\n");
-                    navigator.clipboard.writeText(text || "(пусто)");
-                    toast.success("Логи скопированы");
-                  }}>
-                    <Copy className="size-3.5 mr-1" /> Скопировать
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => {
-                    const text = appLogs.map((l) => `[${new Date(l.ts).toISOString()}] ${l.level.toUpperCase()} ${l.source}: ${l.message}`).join("\n");
-                    const blob = new Blob([text], { type: "text/plain" });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url; a.download = `app-logs-${new Date().toISOString().slice(0,19)}.txt`;
-                    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-                  }}>
-                    <Download className="size-3.5 mr-1" /> Скачать
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={() => { APP_LOGS.length = 0; setAppLogs([]); }}>
-                    <Trash className="size-3.5 mr-1" /> Очистить
-                  </Button>
-                </div>
-              </div>
-              {appLogs.length === 0 ? (
-                <div className="text-sm text-muted-foreground py-8 text-center">Пока ошибок нет.</div>
-              ) : (
-                <div className="space-y-1 max-h-[70vh] overflow-auto font-mono text-xs">
-                  {appLogs.slice().reverse().map((l, i) => (
-                    <div key={i} className={`px-2 py-1 rounded ${l.level === "error" ? "bg-destructive/10 text-destructive" : l.level === "warn" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" : "bg-secondary/40 text-muted-foreground"}`}>
-                      <span className="opacity-60">{new Date(l.ts).toLocaleTimeString()}</span>
-                      <span className="ml-2 uppercase opacity-70">{l.level}</span>
-                      <span className="ml-2 opacity-70">{l.source}</span>
-                      <pre className="whitespace-pre-wrap break-all mt-0.5">{l.message}</pre>
+              {(() => {
+                // Merge client + server into one stream
+                const clientItems = appLogs.map((l) => ({
+                  ts: l.ts, level: l.level, source: `client:${l.source}`,
+                  message: l.message, request_id: null as string | null, action: l.source,
+                }));
+                const serverItems = serverLogs.map((s) => ({
+                  ts: new Date(s.ts).getTime(),
+                  level: (s.level as any) || "info",
+                  source: `server:${s.action}${s.panel_slug ? `@${s.panel_slug}` : ""}`,
+                  message: [s.error, s.duration_ms != null ? `(${s.duration_ms}ms)` : "", s.meta && Object.keys(s.meta).length ? JSON.stringify(s.meta) : ""].filter(Boolean).join(" "),
+                  request_id: s.request_id, action: s.action,
+                }));
+                const merged = [
+                  ...(logSource === "server" ? [] : clientItems),
+                  ...(logSource === "client" ? [] : serverItems),
+                ]
+                  .filter((l) => logLevel === "all" || l.level === logLevel)
+                  .filter((l) => !logSearch.trim() || (l.message + " " + l.source).toLowerCase().includes(logSearch.toLowerCase().trim()))
+                  .sort((a, b) => b.ts - a.ts);
+
+                // Group identical messages
+                const grouped: { key: string; first: typeof merged[0]; count: number; ts: number }[] = [];
+                if (logGroup) {
+                  const map = new Map<string, { first: typeof merged[0]; count: number; ts: number }>();
+                  for (const m of merged) {
+                    const key = `${m.level}|${m.source}|${m.message.slice(0, 200)}`;
+                    const ex = map.get(key);
+                    if (ex) { ex.count++; if (m.ts > ex.ts) ex.ts = m.ts; }
+                    else map.set(key, { first: m, count: 1, ts: m.ts });
+                  }
+                  for (const [k, v] of map) grouped.push({ key: k, ...v });
+                  grouped.sort((a, b) => b.ts - a.ts);
+                }
+
+                const display = logGroup ? grouped : merged.map((m, i) => ({ key: String(i), first: m, count: 1, ts: m.ts }));
+                const exportText = merged.map((l) => `[${new Date(l.ts).toISOString()}] ${l.level.toUpperCase()} ${l.source}${l.request_id ? ` rid=${l.request_id.slice(0,8)}` : ""}: ${l.message}`).join("\n");
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                      <h2 className="text-lg font-semibold flex items-center gap-2">
+                        <FileText className="size-4 text-primary" /> Логи ({display.length}{logGroup ? ` групп / ${merged.length}` : ""})
+                      </h2>
+                      <div className="flex gap-2 flex-wrap">
+                        <Button variant="outline" size="sm" onClick={loadServerLogs} disabled={serverLogsLoading}>
+                          {serverLogsLoading ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <RefreshCw className="size-3.5 mr-1" />} Серверные
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(exportText || "(пусто)"); toast.success("Логи скопированы"); }}>
+                          <Copy className="size-3.5 mr-1" /> Скопировать
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => {
+                          const blob = new Blob([JSON.stringify(merged, null, 2)], { type: "application/json" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url; a.download = `app-logs-${new Date().toISOString().slice(0,19)}.json`;
+                          document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+                        }}>
+                          <Download className="size-3.5 mr-1" /> JSON
+                        </Button>
+                        <Button variant="outline" size="sm" onClick={() => { APP_LOGS.length = 0; localStorage.removeItem(LS_KEY); setAppLogs([]); setServerLogs([]); }}>
+                          <Trash className="size-3.5 mr-1" /> Очистить
+                        </Button>
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
+                    <div className="grid gap-2 md:grid-cols-5 mb-3">
+                      <select className="bg-background border border-border rounded px-2 py-1 text-xs" value={logSource} onChange={(e) => setLogSource(e.target.value as any)}>
+                        <option value="all">Все источники</option>
+                        <option value="client">Только клиент</option>
+                        <option value="server">Только сервер</option>
+                      </select>
+                      <select className="bg-background border border-border rounded px-2 py-1 text-xs" value={logLevel} onChange={(e) => setLogLevel(e.target.value as any)}>
+                        <option value="all">Все уровни</option>
+                        <option value="error">Errors</option>
+                        <option value="warn">Warnings</option>
+                        <option value="info">Info</option>
+                      </select>
+                      <select className="bg-background border border-border rounded px-2 py-1 text-xs" value={logHours} onChange={(e) => setLogHours(Number(e.target.value))}>
+                        <option value={1}>1 час</option>
+                        <option value={24}>24 часа</option>
+                        <option value={168}>7 дней</option>
+                        <option value={720}>30 дней</option>
+                      </select>
+                      <Input placeholder="🔍 поиск..." value={logSearch} onChange={(e) => setLogSearch(e.target.value)} className="text-xs h-8" />
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <input type="checkbox" checked={logGroup} onChange={(e) => setLogGroup(e.target.checked)} />
+                        Группировать одинаковые
+                      </label>
+                    </div>
+                    {display.length === 0 ? (
+                      <div className="text-sm text-muted-foreground py-8 text-center">Записей нет. Нажмите «Серверные» чтобы загрузить из БД.</div>
+                    ) : (
+                      <div className="space-y-1 max-h-[65vh] overflow-auto font-mono text-xs">
+                        {display.map((g) => {
+                          const l = g.first;
+                          return (
+                            <div key={g.key} className={`px-2 py-1 rounded ${l.level === "error" ? "bg-destructive/10 text-destructive" : l.level === "warn" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" : "bg-secondary/40 text-muted-foreground"}`}>
+                              <span className="opacity-60">{new Date(g.ts).toLocaleTimeString()}</span>
+                              <span className="ml-2 uppercase opacity-70">{l.level}</span>
+                              <span className="ml-2 opacity-70">{l.source}</span>
+                              {g.count > 1 && <span className="ml-2 px-1.5 py-0.5 rounded bg-foreground/10 text-foreground/80">×{g.count}</span>}
+                              {l.request_id && <span className="ml-2 opacity-50">rid:{l.request_id.slice(0, 8)}</span>}
+                              <pre className="whitespace-pre-wrap break-all mt-0.5">{l.message}</pre>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </Card>
           </TabsContent>
         </Tabs>
