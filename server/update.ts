@@ -13,6 +13,29 @@ const json = (b: unknown, status = 200) =>
 const APP_DIR = Deno.env.get("APP_DIR") ?? "/opt/sub-manager";
 const UPDATE_TOKEN = Deno.env.get("UPDATE_TOKEN") ?? ""; // optional extra check
 
+function publicOrigin(req: Request, url: URL) {
+  const proto = req.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "") ?? "https";
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? url.host;
+  return `${proto}://${host}`.replace(/\/+$/, "");
+}
+
+async function ensureEnv(req: Request, url: URL) {
+  const envPath = join(APP_DIR, ".env");
+  try {
+    const current = await Deno.readTextFile(envPath);
+    if (current.includes("VITE_SUPABASE_URL=") && current.includes("VITE_SUPABASE_PUBLISHABLE_KEY=")) return false;
+  } catch {}
+  const base = publicOrigin(req, url);
+  await Deno.writeTextFile(envPath, [
+    `VITE_SUPABASE_URL=${base}`,
+    "VITE_SUPABASE_PUBLISHABLE_KEY=local-anon-key",
+    "VITE_SUPABASE_PROJECT_ID=local",
+    `VITE_SUB_BASE_URL=${base}/sub`,
+    "",
+  ].join("\n"));
+  return true;
+}
+
 async function run(cmd: string[], cwd?: string): Promise<{ ok: boolean; out: string }> {
   try {
     const p = new Deno.Command(cmd[0], { args: cmd.slice(1), cwd, stdout: "piped", stderr: "piped" });
@@ -24,7 +47,7 @@ async function run(cmd: string[], cwd?: string): Promise<{ ok: boolean; out: str
   }
 }
 
-export async function handleUpdate(req: Request, _url: URL): Promise<Response> {
+export async function handleUpdate(req: Request, url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -87,6 +110,9 @@ export async function handleUpdate(req: Request, _url: URL): Promise<Response> {
     ]);
     push(`rsync: ${sync.ok ? "ok" : "FAIL"}\n${sync.out}`);
     if (!sync.ok) throw new Error("rsync failed");
+
+    const envCreated = await ensureEnv(req, url);
+    push(envCreated ? ".env was missing/broken — recreated" : ".env preserved");
 
     const inst = await run(["bun", "install", "--silent"], APP_DIR);
     push(`bun install: ${inst.ok ? "ok" : "FAIL"}\n${inst.out}`);
