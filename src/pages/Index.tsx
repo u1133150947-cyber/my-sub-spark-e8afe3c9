@@ -793,6 +793,37 @@ const Index = () => {
           </TabsContent>
         </Tabs>
       </main>
+
+      <Dialog open={!!renameTarget} onOpenChange={(o) => !o && setRenameTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Переименовать подключение</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-xs text-muted-foreground">
+              Это название будут видеть клиенты в приложении (Happ и др.). Можно ставить флаг и страну, например: <code>🇵🇱 Польша</code>.
+              Оригинальное имя на панели: <code>{renameTarget?.original}</code>
+            </div>
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="🇵🇱 Польша"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") saveRename(); }}
+            />
+            <div className="text-[11px] text-muted-foreground">
+              Очисти поле или верни оригинал, чтобы сбросить переименование.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameTarget(null)} disabled={renameSaving}>Отмена</Button>
+            <Button onClick={saveRename} disabled={renameSaving}
+              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
+              {renameSaving ? <Loader2 className="size-4 animate-spin" /> : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
