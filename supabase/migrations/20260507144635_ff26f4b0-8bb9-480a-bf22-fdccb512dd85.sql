@@ -1,0 +1,2 @@
+ALTER TABLE public.subscription_inbounds ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS idx_sub_inbounds_sort ON public.subscription_inbounds (subscription_id, sort_order);
