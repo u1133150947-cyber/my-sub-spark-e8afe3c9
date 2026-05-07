@@ -311,6 +311,56 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ...result, _panels: meta }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "healthCheck") {
+      const all = await getAllPanels();
+      const out: { panel: string; status: string; latency_ms: number; message: string }[] = [];
+      await Promise.all(all.map(async (p) => {
+        const t0 = Date.now();
+        let status = "online";
+        let message = "";
+        try {
+          const res = await panelFetch(p.slug, "/panel/api/inbounds/list", { method: "GET" });
+          const j = JSON.parse(res.body);
+          if (!j.success) { status = "offline"; message = j.msg ?? "no success"; }
+        } catch (e) {
+          status = "offline";
+          message = e instanceof Error ? e.message : String(e);
+        }
+        const latency = Date.now() - t0;
+        out.push({ panel: p.slug, status, latency_ms: latency, message });
+        await supabase.from("panel_health").insert({ panel_slug: p.slug, status, latency_ms: latency, message: message.slice(0, 500) });
+        await supabase.from("panels").update({ status, status_message: message.slice(0, 500), last_checked_at: new Date().toISOString() }).eq("slug", p.slug);
+      }));
+      // GC: keep last 7 days
+      const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      await supabase.from("panel_health").delete().lt("checked_at", cutoff);
+      return new Response(JSON.stringify({ checks: out }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (action === "healthHistory") {
+      const slug = url.searchParams.get("panel");
+      const hours = Math.min(168, Number(url.searchParams.get("hours") ?? "24"));
+      const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      let q = supabase.from("panel_health").select("panel_slug, status, latency_ms, message, checked_at").gte("checked_at", since).order("checked_at", { ascending: false }).limit(2000);
+      if (slug) q = q.eq("panel_slug", slug);
+      const { data, error } = await q;
+      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // uptime % per panel
+      const byPanel: Record<string, { total: number; online: number; avg_latency: number }> = {};
+      for (const r of data ?? []) {
+        const b = byPanel[r.panel_slug] ??= { total: 0, online: 0, avg_latency: 0 };
+        b.total++;
+        if (r.status === "online") b.online++;
+        b.avg_latency += r.latency_ms ?? 0;
+      }
+      const uptime: Record<string, { uptime_pct: number; avg_latency_ms: number; checks: number }> = {};
+      for (const k of Object.keys(byPanel)) {
+        const b = byPanel[k];
+        uptime[k] = { uptime_pct: b.total ? Math.round((b.online / b.total) * 1000) / 10 : 0, avg_latency_ms: b.total ? Math.round(b.avg_latency / b.total) : 0, checks: b.total };
+      }
+      return new Response(JSON.stringify({ history: data ?? [], uptime }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "onlines") {
       const all = await getAllPanels();
       const result: { panel: string; email: string; subscription_id: string | null; sub_name: string | null; remark: string | null }[] = [];
