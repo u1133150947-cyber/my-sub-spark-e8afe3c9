@@ -23,6 +23,54 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 
+const COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: "RU", flag: "🇷🇺", name: "Россия" },
+  { code: "CZ", flag: "🇨🇿", name: "Чехия" },
+  { code: "DE", flag: "🇩🇪", name: "Германия" },
+  { code: "NL", flag: "🇳🇱", name: "Нидерланды" },
+  { code: "FR", flag: "🇫🇷", name: "Франция" },
+  { code: "GB", flag: "🇬🇧", name: "Великобритания" },
+  { code: "US", flag: "🇺🇸", name: "США" },
+  { code: "CA", flag: "🇨🇦", name: "Канада" },
+  { code: "JP", flag: "🇯🇵", name: "Япония" },
+  { code: "SG", flag: "🇸🇬", name: "Сингапур" },
+  { code: "TR", flag: "🇹🇷", name: "Турция" },
+  { code: "UA", flag: "🇺🇦", name: "Украина" },
+  { code: "PL", flag: "🇵🇱", name: "Польша" },
+  { code: "FI", flag: "🇫🇮", name: "Финляндия" },
+  { code: "SE", flag: "🇸🇪", name: "Швеция" },
+  { code: "NO", flag: "🇳🇴", name: "Норвегия" },
+  { code: "ES", flag: "🇪🇸", name: "Испания" },
+  { code: "IT", flag: "🇮🇹", name: "Италия" },
+  { code: "CH", flag: "🇨🇭", name: "Швейцария" },
+  { code: "AT", flag: "🇦🇹", name: "Австрия" },
+  { code: "KZ", flag: "🇰🇿", name: "Казахстан" },
+  { code: "CN", flag: "🇨🇳", name: "Китай" },
+  { code: "HK", flag: "🇭🇰", name: "Гонконг" },
+  { code: "IN", flag: "🇮🇳", name: "Индия" },
+  { code: "BR", flag: "🇧🇷", name: "Бразилия" },
+  { code: "AE", flag: "🇦🇪", name: "ОАЭ" },
+  { code: "LV", flag: "🇱🇻", name: "Латвия" },
+  { code: "LT", flag: "🇱🇹", name: "Литва" },
+  { code: "EE", flag: "🇪🇪", name: "Эстония" },
+];
+const countryByCode = (c: string) => COUNTRIES.find((x) => x.code === c.toUpperCase());
+const findCountryByPrefix = (s: string) => {
+  const trimmed = s.trim();
+  for (const c of COUNTRIES) {
+    if (trimmed.startsWith(`${c.flag} ${c.name}`)) return c;
+    if (trimmed.startsWith(c.flag)) return c;
+  }
+  return undefined;
+};
+const buildDisplay = (countryCode: string, label: string) => {
+  const c = countryByCode(countryCode);
+  const l = label.trim();
+  if (c && l) return `${c.flag} ${c.name} — ${l}`;
+  if (c) return `${c.flag} ${c.name}`;
+  return l;
+};
+
 type Subscription = {
   id: string;
   slug: string;
@@ -99,6 +147,8 @@ const Index = () => {
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [renameTarget, setRenameTarget] = useState<{ panel: string; inboundId: number; original: string } | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameCountry, setRenameCountry] = useState("");
+  const [renameLabel, setRenameLabel] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
@@ -117,13 +167,26 @@ const Index = () => {
 
   const openRename = (panel: string, inboundId: number, original: string) => {
     setRenameTarget({ panel, inboundId, original });
-    setRenameValue(overrides[`${panel}:${inboundId}`] || original);
+    const existing = overrides[`${panel}:${inboundId}`] || "";
+    const matched = existing ? findCountryByPrefix(existing) : undefined;
+    if (matched) {
+      setRenameCountry(matched.code);
+      let rest = existing.trim();
+      if (rest.startsWith(`${matched.flag} ${matched.name}`)) rest = rest.slice(`${matched.flag} ${matched.name}`.length);
+      else if (rest.startsWith(matched.flag)) rest = rest.slice(matched.flag.length);
+      rest = rest.replace(/^\s*[—\-–]\s*/, "").trim();
+      setRenameLabel(rest);
+    } else {
+      setRenameCountry("");
+      setRenameLabel(existing);
+    }
+    setRenameValue(existing);
   };
 
   const saveRename = async () => {
     if (!renameTarget) return;
     const { panel, inboundId } = renameTarget;
-    const val = renameValue.trim();
+    const val = buildDisplay(renameCountry, renameLabel);
     setRenameSaving(true);
     try {
       if (!val || val === renameTarget.original) {
@@ -803,42 +866,48 @@ const Index = () => {
           </DialogHeader>
           <div className="space-y-3">
             <div className="text-xs text-muted-foreground">
-              Это название будут видеть клиенты в приложении (Happ и др.). Можно ставить флаг и страну, например: <code>🇵🇱 Польша</code>.
+              Это название увидят клиенты в приложении (Happ и др.). Имя панели — только для навигации внутри админки.
               Оригинальное имя на панели: <code>{renameTarget?.original}</code>
             </div>
-            <div className="flex gap-2">
+            <div>
+              <Label className="text-xs text-muted-foreground">Страна (флаг + название)</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" className="shrink-0 px-3 text-lg" title="Выбрать флаг">
-                    {(renameValue.match(FLAG_RE)?.[0]) || "🏳️"}
+                  <Button type="button" variant="outline" className="w-full justify-start">
+                    {renameCountry
+                      ? `${countryByCode(renameCountry)?.flag} ${countryByCode(renameCountry)?.name}`
+                      : "🏳️ Без страны"}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-56">
-                  {FLAG_MAP.map(({ flag, keys }) => (
-                    <DropdownMenuItem
-                      key={flag}
-                      onClick={() => {
-                        const cleaned = renameValue.replace(FLAG_RE, "").trimStart();
-                        setRenameValue(`${flag} ${cleaned}`.trimEnd());
-                      }}
-                    >
-                      <span className="text-lg mr-2">{flag}</span>
-                      <span className="capitalize">{keys[0]}</span>
+                <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-72">
+                  <DropdownMenuItem onClick={() => setRenameCountry("")}>
+                    <span className="text-lg mr-2">🏳️</span><span>Без страны</span>
+                  </DropdownMenuItem>
+                  {COUNTRIES.map((c) => (
+                    <DropdownMenuItem key={c.code} onClick={() => setRenameCountry(c.code)}>
+                      <span className="text-lg mr-2">{c.flag}</span>
+                      <span>{c.name}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{c.code}</span>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Подпись (что показать клиенту)</Label>
               <Input
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                placeholder="🇵🇱 Польша"
+                value={renameLabel}
+                onChange={(e) => setRenameLabel(e.target.value)}
+                placeholder="YouTube без рекламы"
                 autoFocus
-                className="flex-1"
                 onKeyDown={(e) => { if (e.key === "Enter") saveRename(); }}
               />
             </div>
+            <div className="text-xs text-muted-foreground">
+              Превью: <code>{buildDisplay(renameCountry, renameLabel) || "— пусто —"}</code>
+            </div>
             <div className="text-[11px] text-muted-foreground">
-              Очисти поле или верни оригинал, чтобы сбросить переименование.
+              Оставь оба поля пустыми, чтобы сбросить переименование.
             </div>
           </div>
           <DialogFooter>
