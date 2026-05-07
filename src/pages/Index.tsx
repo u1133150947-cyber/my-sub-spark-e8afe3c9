@@ -1359,6 +1359,38 @@ const Index = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={importLogOpen} onOpenChange={setImportLogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Лог импорта подписок</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            readOnly
+            value={importLog.join("\n")}
+            className="min-h-[60vh] font-mono text-xs"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              navigator.clipboard.writeText(importLog.join("\n"));
+              toast.success("Лог скопирован");
+            }}>
+              <Copy className="size-4 mr-1" /> Скопировать
+            </Button>
+            <Button variant="outline" onClick={() => {
+              const blob = new Blob([importLog.join("\n")], { type: "text/plain" });
+              const u = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = u; a.download = `import-log-${Date.now()}.txt`;
+              document.body.appendChild(a); a.click(); a.remove();
+              URL.revokeObjectURL(u);
+            }}>
+              <Download className="size-4 mr-1" /> Скачать
+            </Button>
+            <Button onClick={() => setImportLogOpen(false)}>Закрыть</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
