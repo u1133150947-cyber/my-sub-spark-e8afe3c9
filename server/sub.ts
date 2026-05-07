@@ -92,6 +92,15 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
 function withHost(link: string, host: string) {
   const h = host.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
   if (!h) return link;
+  if (/^vmess:\/\//i.test(link)) {
+    try {
+      const raw = link.slice(link.indexOf("//") + 2).replace(/-/g, "+").replace(/_/g, "/");
+      const json = decodeURIComponent(escape(atob(raw + "===".slice((raw.length + 3) % 4))));
+      const cfg = JSON.parse(json);
+      cfg.add = h;
+      return "vmess://" + btoa(unescape(encodeURIComponent(JSON.stringify(cfg)))).replace(/=+$/, "");
+    } catch { return link; }
+  }
   return link.replace(/^([a-z0-9+.-]+:\/\/[^@\s]+@)(\[[^\]]+\]|[^:/?#\s]+)(:\d+)?/i, (_m, a, _old, port = "") => `${a}${h}${port}`);
 }
 
