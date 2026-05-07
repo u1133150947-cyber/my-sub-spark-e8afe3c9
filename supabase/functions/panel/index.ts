@@ -316,14 +316,14 @@ Deno.serve(async (req) => {
       const out: { panel: string; status: string; latency_ms: number; message: string }[] = [];
       await Promise.all(all.map(async (p) => {
         const t0 = Date.now();
-        let status = "online";
+        let status = "ok";
         let message = "";
         try {
           const res = await panelFetch(p.slug, "/panel/api/inbounds/list", { method: "GET" });
           const j = JSON.parse(res.body);
-          if (!j.success) { status = "offline"; message = j.msg ?? "no success"; }
+          if (!j.success) { status = "error"; message = j.msg ?? "no success"; }
         } catch (e) {
-          status = "offline";
+          status = "error";
           message = e instanceof Error ? e.message : String(e);
         }
         const latency = Date.now() - t0;
@@ -350,7 +350,7 @@ Deno.serve(async (req) => {
       for (const r of data ?? []) {
         const b = byPanel[r.panel_slug] ??= { total: 0, online: 0, avg_latency: 0 };
         b.total++;
-        if (r.status === "online") b.online++;
+        if (r.status === "ok" || r.status === "online") b.online++;
         b.avg_latency += r.latency_ms ?? 0;
       }
       const uptime: Record<string, { uptime_pct: number; avg_latency_ms: number; checks: number }> = {};
