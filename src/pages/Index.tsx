@@ -1370,6 +1370,52 @@ const Index = () => {
           <TabsContent value="update" className="mt-0">
             <UpdatePanel />
           </TabsContent>
+
+          <TabsContent value="logs" className="mt-0">
+            <Card className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
+              <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <FileText className="size-4 text-primary" /> Логи ({appLogs.length})
+                </h2>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const text = appLogs.map((l) => `[${new Date(l.ts).toISOString()}] ${l.level.toUpperCase()} ${l.source}: ${l.message}`).join("\n");
+                    navigator.clipboard.writeText(text || "(пусто)");
+                    toast.success("Логи скопированы");
+                  }}>
+                    <Copy className="size-3.5 mr-1" /> Скопировать
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const text = appLogs.map((l) => `[${new Date(l.ts).toISOString()}] ${l.level.toUpperCase()} ${l.source}: ${l.message}`).join("\n");
+                    const blob = new Blob([text], { type: "text/plain" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url; a.download = `app-logs-${new Date().toISOString().slice(0,19)}.txt`;
+                    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+                  }}>
+                    <Download className="size-3.5 mr-1" /> Скачать
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => { APP_LOGS.length = 0; setAppLogs([]); }}>
+                    <Trash className="size-3.5 mr-1" /> Очистить
+                  </Button>
+                </div>
+              </div>
+              {appLogs.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-8 text-center">Пока ошибок нет.</div>
+              ) : (
+                <div className="space-y-1 max-h-[70vh] overflow-auto font-mono text-xs">
+                  {appLogs.slice().reverse().map((l, i) => (
+                    <div key={i} className={`px-2 py-1 rounded ${l.level === "error" ? "bg-destructive/10 text-destructive" : l.level === "warn" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" : "bg-secondary/40 text-muted-foreground"}`}>
+                      <span className="opacity-60">{new Date(l.ts).toLocaleTimeString()}</span>
+                      <span className="ml-2 uppercase opacity-70">{l.level}</span>
+                      <span className="ml-2 opacity-70">{l.source}</span>
+                      <pre className="whitespace-pre-wrap break-all mt-0.5">{l.message}</pre>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          </TabsContent>
         </Tabs>
       </main>
 
