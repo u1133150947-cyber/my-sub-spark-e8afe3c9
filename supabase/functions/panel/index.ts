@@ -62,6 +62,7 @@ function nodeRequest(
         method: opts.method ?? "GET",
         headers: opts.headers ?? {},
         rejectUnauthorized: false,
+        timeout: 15000,
       },
       (res: any) => {
         const chunks: Buffer[] = [];
@@ -76,9 +77,48 @@ function nodeRequest(
       },
     );
     req.on("error", reject);
+    req.on("timeout", () => { req.destroy(new Error("request timeout 15s")); });
     if (opts.body) req.write(opts.body);
     req.end();
   });
+}
+
+// Retry wrapper: 3 attempts with exp backoff for network/5xx errors
+async function nodeRequestRetry(
+  urlStr: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  retries = 3,
+) {
+  let lastErr: any;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await nodeRequest(urlStr, opts);
+      if (res.status >= 500 && i < retries - 1) {
+        await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i)));
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastErr = e;
+      if (i < retries - 1) await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i)));
+    }
+  }
+  throw lastErr;
+}
+
+// Bounded concurrency runner (pool of N workers)
+async function runPool<T, R>(items: T[], limit: number, worker: (it: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let idx = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = idx++;
+      if (i >= items.length) return;
+      results[i] = await worker(items[i]);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 async function loginPanel(slug: PanelKey): Promise<string> {
