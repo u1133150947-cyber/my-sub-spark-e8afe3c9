@@ -167,6 +167,14 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
     onChanged?.();
   };
 
+  const setCountry = async (p: Panel, code: string) => {
+    const { error } = await supabase.from("panels").update({ country: code.toUpperCase() }).eq("id", p.id);
+    if (error) return toast.error("Ошибка: " + error.message);
+    toast.success("Страна обновлена — применится при обновлении подписки");
+    load();
+    onChanged?.();
+  };
+
   const openCreds = (p: Panel) => {
     setCredsPanel(p);
     setCredsForm({ panel_url: p.panel_url, username: p.username, password: p.password });
