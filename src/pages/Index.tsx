@@ -12,7 +12,6 @@ import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
 import { OnlineClients } from "@/components/OnlineClients";
 import { UpdatePanel } from "@/components/UpdatePanel";
-import { TestTab } from "@/components/TestTab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -576,7 +575,6 @@ const Index = () => {
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
             <TabsTrigger value="update">🔄 Обновление</TabsTrigger>
-            <TabsTrigger value="test">✨ Тест</TabsTrigger>
           </TabsList>
 
           <TabsContent value="stats" className="mt-0">
@@ -954,10 +952,6 @@ const Index = () => {
 
           <TabsContent value="update" className="mt-0">
             <UpdatePanel />
-          </TabsContent>
-
-          <TabsContent value="test" className="mt-0">
-            <TestTab />
           </TabsContent>
         </Tabs>
       </main>
