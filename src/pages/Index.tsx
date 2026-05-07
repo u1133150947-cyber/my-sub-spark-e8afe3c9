@@ -617,6 +617,7 @@ const Index = () => {
         version: 1,
         exported_at: new Date().toISOString(),
         subscriptions: (subsData ?? []).map((s: any) => ({
+          slug: s.slug,
           name: s.name,
           client_email: s.client_email,
           expiry_ms: s.expiry_ms,
