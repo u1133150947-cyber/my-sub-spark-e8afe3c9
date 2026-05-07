@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
   total_bytes INTEGER NOT NULL DEFAULT 0,
   hits INTEGER NOT NULL DEFAULT 0,
   last_accessed_at TEXT,
+  raw_links TEXT NOT NULL DEFAULT '[]',
   sni_whitelist TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -104,12 +105,16 @@ try {
   const cols = db.queryEntries(`PRAGMA table_info(subscription_inbounds)`).map((r: any) => r.name);
   if (!cols.includes("sort_order")) db.execute(`ALTER TABLE subscription_inbounds ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`);
 } catch {}
+try {
+  const cols = db.queryEntries(`PRAGMA table_info(subscriptions)`).map((r: any) => r.name);
+  if (!cols.includes("raw_links")) db.execute(`ALTER TABLE subscriptions ADD COLUMN raw_links TEXT NOT NULL DEFAULT '[]'`);
+} catch {}
 
 export function uid() { return crypto.randomUUID(); }
 
 // JSON columns that should be parsed on read / stringified on write.
 const JSON_COLS: Record<string, string[]> = {
-  subscriptions: ["sni_whitelist"],
+  subscriptions: ["sni_whitelist", "raw_links"],
   subscription_inbounds: ["stream_settings"],
 };
 
