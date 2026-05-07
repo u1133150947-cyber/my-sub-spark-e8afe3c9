@@ -137,7 +137,7 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
       }
       const id = row.id;
       if (id) {
-        const r = db.queryEntries(`SELECT * FROM ${table} WHERE id = ?`, [id])[0];
+        const r = db.queryEntries(`SELECT * FROM ${table} WHERE id = ?`, [id as any])[0];
         if (r) out.push(decodeRow(table, r as Record<string, unknown>));
       }
     }
