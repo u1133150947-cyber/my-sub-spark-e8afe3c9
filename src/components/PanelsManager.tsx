@@ -352,7 +352,26 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                         </>
                       ) : (
                         <>
-                          <span className="font-semibold truncate">{withFlag(p.name)}</span>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-base" title="Сменить страну">
+                                {countryByCode(p.country)?.flag ?? "🏳️"}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-56">
+                              {COUNTRIES.map((c) => (
+                                <DropdownMenuItem key={c.code} onClick={() => setCountry(p, c.code)}>
+                                  <span className="text-lg mr-2">{c.flag}</span>
+                                  <span>{c.name}</span>
+                                  <span className="ml-auto text-xs text-muted-foreground">{c.code}</span>
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <span className="font-semibold truncate">{p.name}</span>
+                          {p.country && countryByCode(p.country) && (
+                            <span className="text-xs text-muted-foreground">→ {countryByCode(p.country)!.flag} {countryByCode(p.country)!.name}</span>
+                          )}
                           <Button size="sm" variant="ghost" onClick={() => startEdit(p)} className="h-6 px-1.5">
                             <Pencil className="size-3 text-muted-foreground" />
                           </Button>
