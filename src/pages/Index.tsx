@@ -981,6 +981,9 @@ const Index = () => {
                   />
                 </label>
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setRawImportOpen(true)}>
+                <Plus className="size-3.5 mr-1" /> Из текста
+              </Button>
             </div>
           </div>
           {subs.length === 0 ? (
