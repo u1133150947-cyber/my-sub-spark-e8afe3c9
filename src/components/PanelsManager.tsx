@@ -24,9 +24,43 @@ type Panel = {
   status: string;
   status_message: string;
   last_checked_at: string | null;
+  country: string;
 };
 
-const empty = { name: "", panel_url: "", username: "", password: "" };
+const empty = { name: "", panel_url: "", username: "", password: "", country: "" };
+
+const COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: "RU", flag: "🇷🇺", name: "Россия" },
+  { code: "CZ", flag: "🇨🇿", name: "Чехия" },
+  { code: "DE", flag: "🇩🇪", name: "Германия" },
+  { code: "NL", flag: "🇳🇱", name: "Нидерланды" },
+  { code: "FR", flag: "🇫🇷", name: "Франция" },
+  { code: "GB", flag: "🇬🇧", name: "Великобритания" },
+  { code: "US", flag: "🇺🇸", name: "США" },
+  { code: "CA", flag: "🇨🇦", name: "Канада" },
+  { code: "JP", flag: "🇯🇵", name: "Япония" },
+  { code: "SG", flag: "🇸🇬", name: "Сингапур" },
+  { code: "TR", flag: "🇹🇷", name: "Турция" },
+  { code: "UA", flag: "🇺🇦", name: "Украина" },
+  { code: "PL", flag: "🇵🇱", name: "Польша" },
+  { code: "FI", flag: "🇫🇮", name: "Финляндия" },
+  { code: "SE", flag: "🇸🇪", name: "Швеция" },
+  { code: "NO", flag: "🇳🇴", name: "Норвегия" },
+  { code: "ES", flag: "🇪🇸", name: "Испания" },
+  { code: "IT", flag: "🇮🇹", name: "Италия" },
+  { code: "CH", flag: "🇨🇭", name: "Швейцария" },
+  { code: "AT", flag: "🇦🇹", name: "Австрия" },
+  { code: "KZ", flag: "🇰🇿", name: "Казахстан" },
+  { code: "CN", flag: "🇨🇳", name: "Китай" },
+  { code: "HK", flag: "🇭🇰", name: "Гонконг" },
+  { code: "IN", flag: "🇮🇳", name: "Индия" },
+  { code: "BR", flag: "🇧🇷", name: "Бразилия" },
+  { code: "AE", flag: "🇦🇪", name: "ОАЭ" },
+  { code: "LV", flag: "🇱🇻", name: "Латвия" },
+  { code: "LT", flag: "🇱🇹", name: "Литва" },
+  { code: "EE", flag: "🇪🇪", name: "Эстония" },
+];
+const countryByCode = (c: string) => COUNTRIES.find((x) => x.code === c.toUpperCase());
 
 const detectFlag = (name: string): string => {
   if (FLAG_RE.test(name)) return "";
@@ -57,7 +91,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const load = async () => {
     const { data, error } = await supabase
       .from("panels")
-      .select("id, name, panel_url, username, password, status, status_message, last_checked_at")
+      .select("id, name, panel_url, username, password, status, status_message, last_checked_at, country")
       .order("created_at", { ascending: true });
     if (error) return toast.error("Не удалось загрузить панели");
     setPanels((data ?? []) as Panel[]);
@@ -85,6 +119,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       panel_url: form.panel_url.trim(),
       username: form.username.trim(),
       password: form.password,
+      country: form.country.trim().toUpperCase(),
       host,
       public_host: host,
     });
