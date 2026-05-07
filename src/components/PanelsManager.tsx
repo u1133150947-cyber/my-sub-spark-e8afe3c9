@@ -106,7 +106,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       const { data, error } = await supabase.functions.invoke("panel?action=healthCheck", { method: "POST" });
       if (error) throw error;
       const checks = (data as any)?.checks ?? [];
-      const ok = checks.filter((c: any) => c.status === "online").length;
+      const ok = checks.filter((c: any) => c.status === "ok").length;
       toast.success(`Health-check: ${ok}/${checks.length} онлайн`);
       await load();
       await loadHealthHistory();
