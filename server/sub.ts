@@ -57,10 +57,14 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
   }
   const overrideKey = `${ib.panel ?? ""}:${ib.inbound_id ?? ""}`;
   const label = String(overrides?.get(overrideKey) ?? "").trim();
-  const country = String(ib.panel_country ?? "").trim().toUpperCase();
-  const ci = country ? COUNTRY_INFO[country] : undefined;
-  const prefix = ci ? `${ci.flag} ${ci.name}` : String(ib.panel_name ?? "").trim();
-  const display = label ? `${prefix} — ${label}` : prefix;
+  let display: string;
+  if (label) {
+    display = label;
+  } else {
+    const country = String(ib.panel_country ?? "").trim().toUpperCase();
+    const ci = country ? COUNTRY_INFO[country] : undefined;
+    display = ci ? `${ci.flag} ${ci.name}` : String(ib.panel_name ?? "").trim() || ib.remark;
+  }
   return `vless://${uuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 

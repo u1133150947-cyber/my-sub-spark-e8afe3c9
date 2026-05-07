@@ -74,12 +74,16 @@ function buildVless(
 
   const overrideKey = `${inbound.panel ?? ""}:${inbound.inbound_id ?? ""}`;
   const label = String(overrides?.get(overrideKey) ?? "").trim();
-  const country = String(panelInfo?.country ?? "").trim().toUpperCase();
-  const ci = country ? COUNTRY_INFO[country] : undefined;
-  const prefix = ci
-    ? `${ci.flag} ${ci.name}`
-    : String(panelInfo?.name ?? "").trim() || String((inbound as any).panel_name ?? "").trim();
-  const display = label ? `${prefix} — ${label}` : prefix;
+  let display: string;
+  if (label) {
+    display = label;
+  } else {
+    const country = String(panelInfo?.country ?? "").trim().toUpperCase();
+    const ci = country ? COUNTRY_INFO[country] : undefined;
+    display = ci
+      ? `${ci.flag} ${ci.name}`
+      : String(panelInfo?.name ?? "").trim() || String((inbound as any).panel_name ?? "").trim() || inbound.remark;
+  }
   return `vless://${uuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 
