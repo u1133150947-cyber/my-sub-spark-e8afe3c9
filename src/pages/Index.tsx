@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
@@ -153,6 +154,11 @@ const Index = () => {
   const [renameLabel, setRenameLabel] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [rawImportOpen, setRawImportOpen] = useState(false);
+  const [rawImportText, setRawImportText] = useState("");
+  const [rawImportName, setRawImportName] = useState("");
+  const [rawImportDomain, setRawImportDomain] = useState("");
+  const [rawImporting, setRawImporting] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
