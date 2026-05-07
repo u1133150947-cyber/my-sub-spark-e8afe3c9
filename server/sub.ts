@@ -51,7 +51,7 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
     const np = normalize(panelName), nr = normalize(cleanRemark);
     if (!nr) finalRemark = panelName;
     else if (nr === np || nr.startsWith(np)) finalRemark = cleanRemark;
-    else finalRemark = `${panelName} — ${cleanRemark}`;
+    else finalRemark = `${panelName}\n⤷ ${cleanRemark}`;
   }
   return `vless://${uuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(finalRemark)}`;
 }
