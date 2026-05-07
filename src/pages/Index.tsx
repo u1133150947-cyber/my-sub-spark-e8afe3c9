@@ -866,42 +866,48 @@ const Index = () => {
           </DialogHeader>
           <div className="space-y-3">
             <div className="text-xs text-muted-foreground">
-              Это название будут видеть клиенты в приложении (Happ и др.). Можно ставить флаг и страну, например: <code>🇵🇱 Польша</code>.
+              Это название увидят клиенты в приложении (Happ и др.). Имя панели — только для навигации внутри админки.
               Оригинальное имя на панели: <code>{renameTarget?.original}</code>
             </div>
-            <div className="flex gap-2">
+            <div>
+              <Label className="text-xs text-muted-foreground">Страна (флаг + название)</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" className="shrink-0 px-3 text-lg" title="Выбрать флаг">
-                    {(renameValue.match(FLAG_RE)?.[0]) || "🏳️"}
+                  <Button type="button" variant="outline" className="w-full justify-start">
+                    {renameCountry
+                      ? `${countryByCode(renameCountry)?.flag} ${countryByCode(renameCountry)?.name}`
+                      : "🏳️ Без страны"}
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-56">
-                  {FLAG_MAP.map(({ flag, keys }) => (
-                    <DropdownMenuItem
-                      key={flag}
-                      onClick={() => {
-                        const cleaned = renameValue.replace(FLAG_RE, "").trimStart();
-                        setRenameValue(`${flag} ${cleaned}`.trimEnd());
-                      }}
-                    >
-                      <span className="text-lg mr-2">{flag}</span>
-                      <span className="capitalize">{keys[0]}</span>
+                <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-72">
+                  <DropdownMenuItem onClick={() => setRenameCountry("")}>
+                    <span className="text-lg mr-2">🏳️</span><span>Без страны</span>
+                  </DropdownMenuItem>
+                  {COUNTRIES.map((c) => (
+                    <DropdownMenuItem key={c.code} onClick={() => setRenameCountry(c.code)}>
+                      <span className="text-lg mr-2">{c.flag}</span>
+                      <span>{c.name}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{c.code}</span>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
               </DropdownMenu>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Подпись (что показать клиенту)</Label>
               <Input
-                value={renameValue}
-                onChange={(e) => setRenameValue(e.target.value)}
-                placeholder="🇵🇱 Польша"
+                value={renameLabel}
+                onChange={(e) => setRenameLabel(e.target.value)}
+                placeholder="YouTube без рекламы"
                 autoFocus
-                className="flex-1"
                 onKeyDown={(e) => { if (e.key === "Enter") saveRename(); }}
               />
             </div>
+            <div className="text-xs text-muted-foreground">
+              Превью: <code>{buildDisplay(renameCountry, renameLabel) || "— пусто —"}</code>
+            </div>
             <div className="text-[11px] text-muted-foreground">
-              Очисти поле или верни оригинал, чтобы сбросить переименование.
+              Оставь оба поля пустыми, чтобы сбросить переименование.
             </div>
           </div>
           <DialogFooter>
