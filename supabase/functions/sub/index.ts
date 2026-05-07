@@ -29,6 +29,8 @@ function buildVless(
   const ss = inbound.stream_settings ?? {};
   const network: string = ss.network ?? "tcp";
   const security: string = ss.security ?? "none";
+  // Imported configs may carry their own client UUID (from another panel) — use it instead of the subscription's UUID.
+  const effectiveUuid: string = (ss._clientUuid && String(ss._clientUuid)) || uuid;
 
   const params = new URLSearchParams();
   params.set("type", network);
@@ -84,7 +86,7 @@ function buildVless(
       ? `${ci.flag} ${ci.name}`
       : String(panelInfo?.name ?? "").trim() || String((inbound as any).panel_name ?? "").trim() || inbound.remark;
   }
-  return `vless://${uuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`;
+  return `vless://${effectiveUuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 
 const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
