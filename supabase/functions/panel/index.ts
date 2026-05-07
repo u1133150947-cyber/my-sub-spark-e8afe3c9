@@ -146,6 +146,23 @@ async function getClientTrafficsByEmail(slug: PanelKey): Promise<Record<string, 
   return out;
 }
 
+// Read expiryTime (ms) per client email from inbound settings across all inbounds of a panel.
+async function getClientExpiryByEmail(slug: PanelKey): Promise<Record<string, number>> {
+  const inbounds = await listInbounds(slug);
+  const out: Record<string, number> = {};
+  for (const ib of inbounds) {
+    let s: any = {};
+    try { s = JSON.parse(ib.settings ?? "{}"); } catch {}
+    for (const c of (s.clients ?? [])) {
+      const exp = Number(c.expiryTime ?? 0);
+      if (!c.email) continue;
+      // keep the largest expiry seen for the email
+      if (exp > (out[c.email] ?? 0)) out[c.email] = exp;
+    }
+  }
+  return out;
+}
+
 async function addClient(
   slug: PanelKey,
   inboundId: number,
