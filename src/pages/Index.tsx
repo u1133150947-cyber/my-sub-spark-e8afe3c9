@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, ArrowUp, ArrowDown, Eye } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, ArrowUp, ArrowDown, Eye, Download, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,6 +152,7 @@ const Index = () => {
   const [renameCountry, setRenameCountry] = useState("");
   const [renameLabel, setRenameLabel] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
@@ -535,6 +536,99 @@ const Index = () => {
   };
   const fmtGB = (b: number) => (b ? `${(b / 1024 / 1024 / 1024).toFixed(0)} GB` : "∞");
 
+  const exportSubs = async () => {
+    try {
+      const { data: subsData, error: e1 } = await supabase
+        .from("subscriptions")
+        .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at, sni_whitelist");
+      if (e1) throw e1;
+      const { data: linksData, error: e2 } = await supabase
+        .from("subscription_inbounds")
+        .select("subscription_id, panel, inbound_id, remark, sort_order");
+      if (e2) throw e2;
+      const byId: Record<string, any[]> = {};
+      (linksData ?? []).forEach((r: any) => {
+        (byId[r.subscription_id] ||= []).push({
+          panel: r.panel, inbound_id: r.inbound_id, remark: r.remark, sort_order: r.sort_order,
+        });
+      });
+      const out = {
+        version: 1,
+        exported_at: new Date().toISOString(),
+        subscriptions: (subsData ?? []).map((s: any) => ({
+          name: s.name,
+          client_email: s.client_email,
+          expiry_ms: s.expiry_ms,
+          total_bytes: s.total_bytes,
+          sni_whitelist: s.sni_whitelist ?? [],
+          inbounds: byId[s.id] ?? [],
+        })),
+      };
+      const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `subscriptions-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(`Экспортировано: ${out.subscriptions.length}`);
+    } catch (e: any) {
+      toast.error("Ошибка экспорта: " + (e?.message ?? e));
+    }
+  };
+
+  const importSubs = async (file: File) => {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const list: any[] = parsed?.subscriptions ?? (Array.isArray(parsed) ? parsed : []);
+      if (!list.length) throw new Error("Пустой файл импорта");
+      if (!confirm(`Импортировать ${list.length} подписок? Будут созданы новые клиенты на панелях.`)) {
+        setImporting(false);
+        return;
+      }
+      let ok = 0;
+      const errors: string[] = [];
+      for (const item of list) {
+        try {
+          const name = String(item.name || "").trim();
+          if (!name) { errors.push("пустое имя"); continue; }
+          const selections = (item.inbounds ?? [])
+            .filter((x: any) => x?.panel && x?.inbound_id != null)
+            .map((x: any) => ({ panel: String(x.panel), inboundId: Number(x.inbound_id) }));
+          if (!selections.length) { errors.push(`${name}: нет inbound'ов`); continue; }
+          const expiryMs = Number(item.expiry_ms || 0);
+          const days = expiryMs > 0 ? Math.max(1, Math.ceil((expiryMs - Date.now()) / 86400000)) : 0;
+          const totalGB = item.total_bytes ? Math.round(Number(item.total_bytes) / 1024 / 1024 / 1024) : 0;
+          const { data, error } = await supabase.functions.invoke("panel?action=create", {
+            method: "POST",
+            body: { name, days, totalGB, selections },
+          });
+          if (error) throw error;
+          if (data?.error) throw new Error(data.error);
+          ok++;
+        } catch (e: any) {
+          errors.push(`${item?.name ?? "?"}: ${e?.message ?? e}`);
+        }
+      }
+      if (errors.length) {
+        toast.warning(`Импорт: ${ok} успешно, ${errors.length} с ошибками`, {
+          description: errors.slice(0, 5).join("\n"),
+        });
+      } else {
+        toast.success(`Импортировано: ${ok}`);
+      }
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка импорта: " + (e?.message ?? e));
+    } finally {
+      setImporting(false);
+    }
+  };
+
   const applyPreset = (p: { days: number; gb: number }) => {
     setDays(p.days);
     setTotalGB(p.gb);
@@ -719,7 +813,30 @@ const Index = () => {
 
           <TabsContent value="subs" className="mt-0">
         <section>
-          <h2 className="text-lg font-semibold mb-4">Подписки ({subs.length})</h2>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 className="text-lg font-semibold">Подписки ({subs.length})</h2>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={exportSubs} disabled={subs.length === 0}>
+                <Download className="size-3.5 mr-1" /> Экспорт
+              </Button>
+              <Button variant="outline" size="sm" disabled={importing} asChild>
+                <label className="cursor-pointer">
+                  {importing ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <Upload className="size-3.5 mr-1" />}
+                  Импорт
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (f) importSubs(f);
+                    }}
+                  />
+                </label>
+              </Button>
+            </div>
+          </div>
           {subs.length === 0 ? (
             <Card className="p-10 text-center text-muted-foreground border-dashed">
               Подписок пока нет.
