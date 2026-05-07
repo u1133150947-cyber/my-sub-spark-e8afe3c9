@@ -49,7 +49,7 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
     if (publicKey) params.set("pbk", publicKey);
     const fingerprint = settings.fingerprint || r.fingerprint;
     if (fingerprint) params.set("fp", fingerprint);
-    params.set("flow", "xtls-rprx-vision");
+    if (network === "tcp") params.set("flow", "xtls-rprx-vision");
   }
   if (security === "tls" && ss.tlsSettings) {
     const t = ss.tlsSettings;
