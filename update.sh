@@ -1,56 +1,51 @@
 #!/usr/bin/env bash
 # =====================================================================
-#  Быстрое обновление панели на сервере
-#  - тянет свежий код из git
-#  - ставит зависимости (если менялись)
-#  - пересобирает фронт
-#  - выкатывает в /var/www/panel и перезагружает nginx
-#
-#  Запуск из корня проекта:
+#  Обновление 3X-UI Sub Manager на VDS.
+#  Использование (из корня свежей версии проекта):
 #     sudo bash update.sh
+#
+#  Что делает:
+#    1. Синхронизирует файлы в /opt/sub-manager (без data/, .git, node_modules)
+#    2. Пересобирает фронт (bun run build)
+#    3. Перезапускает systemd-сервис sub-manager
+#    4. Перезагружает Caddy если конфиг менялся
 # =====================================================================
 set -euo pipefail
 
-RED=$'\e[31m'; GRN=$'\e[32m'; YLW=$'\e[33m'; CLR=$'\e[0m'
-log()  { echo "${GRN}[+]${CLR} $*"; }
-warn() { echo "${YLW}[!]${CLR} $*"; }
-die()  { echo "${RED}[x]${CLR} $*" >&2; exit 1; }
+G=$'\e[32m'; Y=$'\e[33m'; R=$'\e[31m'; N=$'\e[0m'
+log(){  echo "${G}[+]${N} $*"; }
+warn(){ echo "${Y}[!]${N} $*"; }
+die(){  echo "${R}[x]${N} $*" >&2; exit 1; }
 
 [[ $EUID -eq 0 ]] || die "Запусти от root: sudo bash update.sh"
-[[ -f package.json ]] || die "Нет package.json — запускай скрипт из корня проекта"
+[[ -f package.json ]] || die "Запускай из корня проекта"
 
-WEB_ROOT="/var/www/panel"
+APP_DIR=/opt/sub-manager
+DB_DIR=$APP_DIR/data
 
-# ---------- git pull ----------
-if [[ -d .git ]]; then
-  log "git pull…"
-  git pull --ff-only || die "git pull не удался — разрули конфликты вручную"
-else
-  warn "Это не git-репозиторий — пропускаю git pull, собираю что есть"
-fi
+command -v deno >/dev/null 2>&1 || die "Deno не установлен — сначала прогоните install.sh"
+command -v bun  >/dev/null 2>&1 || die "Bun не установлен — сначала прогоните install.sh"
 
-# ---------- зависимости ----------
-if ! npm ci --no-audit --no-fund; then
-  warn "npm ci не прошёл — переключаюсь на npm install"
-  npm install --no-audit --no-fund
-fi
+log "Синхронизирую файлы в $APP_DIR"
+mkdir -p "$APP_DIR" "$DB_DIR"
+rsync -a --delete \
+  --exclude node_modules --exclude .git --exclude data --exclude dist \
+  ./ "$APP_DIR/"
 
-# ---------- сборка ----------
-log "npm run build…"
-npm run build
+cd "$APP_DIR"
+
+log "bun install"
+bun install --silent
+
+log "bun run build"
+bun run build
 [[ -d dist ]] || die "Сборка не создала dist/"
 
-# ---------- деплой ----------
-log "Копирую билд в ${WEB_ROOT}…"
-mkdir -p "$WEB_ROOT"
-rm -rf "${WEB_ROOT:?}/"*
-cp -r dist/* "$WEB_ROOT/"
-chown -R www-data:www-data "$WEB_ROOT"
-
-# ---------- reload nginx ----------
-log "nginx -t && reload…"
-nginx -t
-systemctl reload nginx
+log "Перезапускаю sub-manager"
+systemctl restart sub-manager
+sleep 1
+systemctl --no-pager --lines=0 status sub-manager || true
 
 echo
-echo "${GRN}[✓] Обновлено${CLR}"
+echo "${G}[✓] Обновлено${N}"
+echo "  Логи:        journalctl -u sub-manager -f"
