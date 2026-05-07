@@ -23,6 +23,54 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 
+const COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: "RU", flag: "🇷🇺", name: "Россия" },
+  { code: "CZ", flag: "🇨🇿", name: "Чехия" },
+  { code: "DE", flag: "🇩🇪", name: "Германия" },
+  { code: "NL", flag: "🇳🇱", name: "Нидерланды" },
+  { code: "FR", flag: "🇫🇷", name: "Франция" },
+  { code: "GB", flag: "🇬🇧", name: "Великобритания" },
+  { code: "US", flag: "🇺🇸", name: "США" },
+  { code: "CA", flag: "🇨🇦", name: "Канада" },
+  { code: "JP", flag: "🇯🇵", name: "Япония" },
+  { code: "SG", flag: "🇸🇬", name: "Сингапур" },
+  { code: "TR", flag: "🇹🇷", name: "Турция" },
+  { code: "UA", flag: "🇺🇦", name: "Украина" },
+  { code: "PL", flag: "🇵🇱", name: "Польша" },
+  { code: "FI", flag: "🇫🇮", name: "Финляндия" },
+  { code: "SE", flag: "🇸🇪", name: "Швеция" },
+  { code: "NO", flag: "🇳🇴", name: "Норвегия" },
+  { code: "ES", flag: "🇪🇸", name: "Испания" },
+  { code: "IT", flag: "🇮🇹", name: "Италия" },
+  { code: "CH", flag: "🇨🇭", name: "Швейцария" },
+  { code: "AT", flag: "🇦🇹", name: "Австрия" },
+  { code: "KZ", flag: "🇰🇿", name: "Казахстан" },
+  { code: "CN", flag: "🇨🇳", name: "Китай" },
+  { code: "HK", flag: "🇭🇰", name: "Гонконг" },
+  { code: "IN", flag: "🇮🇳", name: "Индия" },
+  { code: "BR", flag: "🇧🇷", name: "Бразилия" },
+  { code: "AE", flag: "🇦🇪", name: "ОАЭ" },
+  { code: "LV", flag: "🇱🇻", name: "Латвия" },
+  { code: "LT", flag: "🇱🇹", name: "Литва" },
+  { code: "EE", flag: "🇪🇪", name: "Эстония" },
+];
+const countryByCode = (c: string) => COUNTRIES.find((x) => x.code === c.toUpperCase());
+const findCountryByPrefix = (s: string) => {
+  const trimmed = s.trim();
+  for (const c of COUNTRIES) {
+    if (trimmed.startsWith(`${c.flag} ${c.name}`)) return c;
+    if (trimmed.startsWith(c.flag)) return c;
+  }
+  return undefined;
+};
+const buildDisplay = (countryCode: string, label: string) => {
+  const c = countryByCode(countryCode);
+  const l = label.trim();
+  if (c && l) return `${c.flag} ${c.name} — ${l}`;
+  if (c) return `${c.flag} ${c.name}`;
+  return l;
+};
+
 type Subscription = {
   id: string;
   slug: string;
