@@ -444,9 +444,16 @@ Deno.serve(async (req) => {
           });
           created.push(sub.id);
         } catch (e) {
-          errors.push({ sub: sub.id, error: e instanceof Error ? e.message : String(e) });
+          const errMsg = e instanceof Error ? e.message : String(e);
+          errors.push({ sub: sub.id, email: sub.client_email, error: errMsg });
+          await supabase.from("audit_log").insert({
+            level: "error", action: "bulkAddInbound.client", panel_slug: panel,
+            subscription_id: sub.id, status: "error", error: errMsg.slice(0, 1000),
+            request_id: requestId, meta: { inbound_id: inboundId, email: sub.client_email },
+          });
         }
       });
+      await writeAudit(errors.length ? "warn" : "info", "ok", null, { panel, inbound_id: inboundId, created: created.length, errors: errors.length });
       return new Response(JSON.stringify({ created: created.length, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -470,10 +477,17 @@ Deno.serve(async (req) => {
           await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${s.client_uuid}`, { method: "POST" });
           removed++;
         } catch (e) {
-          errors.push({ sub: s.id, error: e instanceof Error ? e.message : String(e) });
+          const errMsg = e instanceof Error ? e.message : String(e);
+          errors.push({ sub: s.id, error: errMsg });
+          await supabase.from("audit_log").insert({
+            level: "error", action: "bulkRemoveInbound.client", panel_slug: panel,
+            subscription_id: s.id, status: "error", error: errMsg.slice(0, 1000),
+            request_id: requestId, meta: { inbound_id: inboundId },
+          });
         }
       });
       await supabase.from("subscription_inbounds").delete().eq("panel", panel).eq("inbound_id", inboundId);
+      await writeAudit(errors.length ? "warn" : "info", "ok", null, { panel, inbound_id: inboundId, removed, errors: errors.length });
       return new Response(JSON.stringify({ removed, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
