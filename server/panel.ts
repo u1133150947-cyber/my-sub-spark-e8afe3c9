@@ -180,6 +180,33 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       return json({ subscription: decodeRow("subscriptions", sub as any), created, errors });
     }
 
+    if (action === "importRaw" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const name = String(body.name ?? "").trim();
+      const links = Array.isArray(body.links) ? body.links.map((x: unknown) => String(x).trim()).filter(Boolean) : [];
+      const domain = String(body.domain ?? "").trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+      if (!name) return json({ error: "name required" }, 400);
+      if (!links.length) return json({ error: "links required" }, 400);
+      const slug = randomSlug(12), clientUuid = uuidv4(), subId = uid();
+      const swapHost = (l: string) => {
+        if (!domain) return l;
+        if (/^vmess:\/\//i.test(l)) {
+          try {
+            const raw = l.slice(l.indexOf("//") + 2).replace(/-/g, "+").replace(/_/g, "/");
+            const cfg = JSON.parse(decodeURIComponent(escape(atob(raw + "===".slice((raw.length + 3) % 4)))));
+            cfg.add = domain;
+            return "vmess://" + btoa(unescape(encodeURIComponent(JSON.stringify(cfg)))).replace(/=+$/, "");
+          } catch { return l; }
+        }
+        return l.replace(/^([a-z0-9+.-]+:\/\/[^@\s]+@)(\[[^\]]+\]|[^:/?#\s]+)(:\d+)?/i, (_m, a, _old, port = "") => `${a}${domain}${port}`);
+      };
+      const normalized = links.map(swapHost);
+      const email = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
+      db.query(`INSERT INTO subscriptions (id, slug, name, client_email, client_uuid, raw_links, expiry_ms, total_bytes) VALUES (?, ?, ?, ?, ?, ?, 0, 0)`,
+        [subId, slug, name, email, clientUuid, JSON.stringify(normalized)]);
+      return json({ subscription: decodeRow("subscriptions", row<any>(`SELECT * FROM subscriptions WHERE id = ?`, [subId]) as any) });
+    }
+
     if (action === "delete" && req.method === "POST") {
       const body = await req.json();
       const subId = String(body.id ?? "");

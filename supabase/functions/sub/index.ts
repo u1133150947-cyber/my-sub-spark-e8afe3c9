@@ -110,6 +110,21 @@ function buildVless(
   return `vless://${effectiveUuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 
+function withHost(link: string, host: string) {
+  const h = host.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+  if (!h) return link;
+  if (/^vmess:\/\//i.test(link)) {
+    try {
+      const raw = link.slice(link.indexOf("//") + 2).replace(/-/g, "+").replace(/_/g, "/");
+      const json = decodeURIComponent(escape(atob(raw + "===".slice((raw.length + 3) % 4))));
+      const cfg = JSON.parse(json);
+      cfg.add = h;
+      return "vmess://" + btoa(unescape(encodeURIComponent(JSON.stringify(cfg)))).replace(/=+$/, "");
+    } catch { return link; }
+  }
+  return link.replace(/^([a-z0-9+.-]+:\/\/[^@\s]+@)(\[[^\]]+\]|[^:/?#\s]+)(:\d+)?/i, (_m, a, _old, port = "") => `${a}${h}${port}`);
+}
+
 const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
   RU: { flag: "🇷🇺", name: "Россия" },
   CZ: { flag: "🇨🇿", name: "Чехия" },
@@ -164,7 +179,7 @@ Deno.serve(async (req) => {
 
     const { data: sub, error } = await supabase
       .from("subscriptions")
-      .select("id, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist")
+      .select("id, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist, raw_links")
       .eq("slug", slug)
       .maybeSingle();
 
@@ -207,6 +222,11 @@ Deno.serve(async (req) => {
     }
 
     const lines: string[] = [];
+    const rawLinks = Array.isArray((sub as any).raw_links) ? (sub as any).raw_links : [];
+    if (rawLinks.length) {
+      const host = url.searchParams.get("host") || req.headers.get("x-forwarded-host") || url.host;
+      for (const link of rawLinks) lines.push(withHost(String(link), host));
+    }
     const whitelist: string[] = Array.isArray((sub as any).sni_whitelist)
       ? (sub as any).sni_whitelist.filter((s: string) => typeof s === "string" && s.trim().length > 0)
       : [];

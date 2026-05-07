@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
@@ -81,6 +82,7 @@ type Subscription = {
   total_bytes: number;
   hits: number;
   created_at: string;
+  raw_links?: string[];
 };
 
 type InboundClient = { email: string; id?: string; enable?: boolean };
@@ -153,6 +155,11 @@ const Index = () => {
   const [renameLabel, setRenameLabel] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [rawImportOpen, setRawImportOpen] = useState(false);
+  const [rawImportText, setRawImportText] = useState("");
+  const [rawImportName, setRawImportName] = useState("");
+  const [rawImportDomain, setRawImportDomain] = useState("");
+  const [rawImporting, setRawImporting] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
@@ -275,10 +282,13 @@ const Index = () => {
   const loadSubs = async () => {
     const { data, error } = await supabase
       .from("subscriptions")
-      .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at")
+      .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at, raw_links")
       .order("created_at", { ascending: false });
     if (error) return toast.error("Не удалось загрузить подписки");
-    setSubs(data ?? []);
+    setSubs(((data ?? []) as any[]).map((s) => ({
+      ...s,
+      raw_links: Array.isArray(s.raw_links) ? s.raw_links : [],
+    })));
   };
 
   const loadInbounds = async () => {
@@ -535,6 +545,50 @@ const Index = () => {
     return d.toLocaleDateString("ru-RU");
   };
   const fmtGB = (b: number) => (b ? `${(b / 1024 / 1024 / 1024).toFixed(0)} GB` : "∞");
+
+  const decodeMaybeBase64 = (text: string) => {
+    const trimmed = text.trim();
+    if (/^(vless|vmess|trojan|ss):\/\//im.test(trimmed)) return trimmed;
+    const compact = trimmed.replace(/\s+/g, "");
+    try {
+      const normalized = compact.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = normalized + "===".slice((normalized.length + 3) % 4);
+      return decodeURIComponent(escape(atob(padded)));
+    } catch {
+      return trimmed;
+    }
+  };
+
+  const extractConfigLinks = (text: string) =>
+    decodeMaybeBase64(text)
+      .split(/[\r\n]+/)
+      .map((x) => x.trim())
+      .filter((x) => /^(vless|vmess|trojan|ss):\/\//i.test(x));
+
+  const importRawSubscription = async () => {
+    const links = extractConfigLinks(rawImportText);
+    if (!links.length) return toast.error("Не нашёл vless/vmess/trojan/ss ссылки в тексте");
+    const name = rawImportName.trim() || `Импорт ${new Date().toLocaleDateString("ru-RU")}`;
+    setRawImporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=importRaw", {
+        method: "POST",
+        body: { name, links, domain: rawImportDomain.trim() },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success("Создана подписка из текста");
+      setRawImportOpen(false);
+      setRawImportText("");
+      setRawImportName("");
+      setRawImportDomain("");
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка импорта текстом: " + (e?.message ?? e));
+    } finally {
+      setRawImporting(false);
+    }
+  };
 
   const exportSubs = async () => {
     try {
@@ -931,6 +985,9 @@ const Index = () => {
                   />
                 </label>
               </Button>
+              <Button variant="outline" size="sm" onClick={() => setRawImportOpen(true)}>
+                <Plus className="size-3.5 mr-1" /> Из текста
+              </Button>
             </div>
           </div>
           {subs.length === 0 ? (
@@ -1225,6 +1282,43 @@ const Index = () => {
             <Button onClick={saveRename} disabled={renameSaving}
               style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
               {renameSaving ? <Loader2 className="size-4 animate-spin" /> : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={rawImportOpen} onOpenChange={setRawImportOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Создать подписку из текста</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Имя подписки</Label>
+              <Input value={rawImportName} onChange={(e) => setRawImportName(e.target.value)} placeholder="Olga" maxLength={64} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Новый домен</Label>
+              <Input value={rawImportDomain} onChange={(e) => setRawImportDomain(e.target.value)} placeholder="vpn.example.com или https://vpn.example.com" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Код/текст подписки из панели</Label>
+              <Textarea
+                value={rawImportText}
+                onChange={(e) => setRawImportText(e.target.value)}
+                className="min-h-48 font-mono text-xs"
+                placeholder="Вставь base64-код подписки или строки vless://..."
+              />
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Клиенты в новой подписке не создаются на panel — будут отдаваться готовые ссылки, а host в них заменится на новый домен.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRawImportOpen(false)} disabled={rawImporting}>Отмена</Button>
+            <Button onClick={importRawSubscription} disabled={rawImporting || !rawImportText.trim()}
+              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
+              {rawImporting ? <Loader2 className="size-4 animate-spin" /> : "Создать"}
             </Button>
           </DialogFooter>
         </DialogContent>

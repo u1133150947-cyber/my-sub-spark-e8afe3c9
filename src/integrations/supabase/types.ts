@@ -253,6 +253,7 @@ export type Database = {
           id: string
           last_accessed_at: string | null
           name: string
+          raw_links: Json
           slug: string
           sni_whitelist: string[]
           total_bytes: number
@@ -266,6 +267,7 @@ export type Database = {
           id?: string
           last_accessed_at?: string | null
           name: string
+          raw_links?: Json
           slug: string
           sni_whitelist?: string[]
           total_bytes?: number
@@ -279,6 +281,7 @@ export type Database = {
           id?: string
           last_accessed_at?: string | null
           name?: string
+          raw_links?: Json
           slug?: string
           sni_whitelist?: string[]
           total_bytes?: number
