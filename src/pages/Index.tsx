@@ -232,8 +232,6 @@ const Index = () => {
 
   useEffect(() => {
     loadSubs();
-    loadInbounds();
-    loadEmailMap();
     loadOverrides();
   }, []);
 
@@ -460,7 +458,10 @@ const Index = () => {
       </header>
 
       <main className="container py-8">
-        <Tabs value={activeTab} className="space-y-6" onValueChange={(v) => { setActiveTab(v); if (v === "create" || v === "stats" || v === "online") loadInbounds(); if (v === "create") loadEmailMap(); }}>
+        <Tabs value={activeTab} className="space-y-6" onValueChange={(v) => {
+          setActiveTab(v);
+          if (v === "create") { loadInbounds(); loadEmailMap(); }
+        }}>
           <TabsList className="grid w-full max-w-3xl grid-cols-5">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
             <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
