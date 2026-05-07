@@ -678,6 +678,16 @@ Deno.serve(async (req) => {
       if (newName !== undefined && newName.length > 0) upd.name = newName;
       if (hasDays) upd.expiry_ms = newExpiry;
       if (hasGB) upd.total_bytes = newTotal;
+      if (typeof body.slug === "string") {
+        const newSlug = body.slug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (newSlug && newSlug.length >= 4 && newSlug !== sub.slug) {
+          const { data: clash } = await supabase.from("subscriptions").select("id").eq("slug", newSlug).maybeSingle();
+          if (clash) {
+            return new Response(JSON.stringify({ error: `slug "${newSlug}" уже занят` }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          upd.slug = newSlug;
+        }
+      }
       if (Object.keys(upd).length) {
         const { error: uErr } = await supabase.from("subscriptions").update(upd).eq("id", subId);
         if (uErr) throw new Error(`db update: ${uErr.message}`);
