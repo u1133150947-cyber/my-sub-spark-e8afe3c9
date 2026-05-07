@@ -160,6 +160,8 @@ const Index = () => {
   const [rawImportName, setRawImportName] = useState("");
   const [rawImportDomain, setRawImportDomain] = useState("");
   const [rawImporting, setRawImporting] = useState(false);
+  const [importLog, setImportLog] = useState<string[]>([]);
+  const [importLogOpen, setImportLogOpen] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
