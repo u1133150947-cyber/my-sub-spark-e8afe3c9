@@ -147,6 +147,8 @@ const Index = () => {
   const [overrides, setOverrides] = useState<Record<string, string>>({});
   const [renameTarget, setRenameTarget] = useState<{ panel: string; inboundId: number; original: string } | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameCountry, setRenameCountry] = useState("");
+  const [renameLabel, setRenameLabel] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
@@ -165,13 +167,26 @@ const Index = () => {
 
   const openRename = (panel: string, inboundId: number, original: string) => {
     setRenameTarget({ panel, inboundId, original });
-    setRenameValue(overrides[`${panel}:${inboundId}`] || original);
+    const existing = overrides[`${panel}:${inboundId}`] || "";
+    const matched = existing ? findCountryByPrefix(existing) : undefined;
+    if (matched) {
+      setRenameCountry(matched.code);
+      let rest = existing.trim();
+      if (rest.startsWith(`${matched.flag} ${matched.name}`)) rest = rest.slice(`${matched.flag} ${matched.name}`.length);
+      else if (rest.startsWith(matched.flag)) rest = rest.slice(matched.flag.length);
+      rest = rest.replace(/^\s*[—\-–]\s*/, "").trim();
+      setRenameLabel(rest);
+    } else {
+      setRenameCountry("");
+      setRenameLabel(existing);
+    }
+    setRenameValue(existing);
   };
 
   const saveRename = async () => {
     if (!renameTarget) return;
     const { panel, inboundId } = renameTarget;
-    const val = renameValue.trim();
+    const val = buildDisplay(renameCountry, renameLabel);
     setRenameSaving(true);
     try {
       if (!val || val === renameTarget.original) {
