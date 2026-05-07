@@ -147,7 +147,7 @@ async function panelFetch(
   const cfg = panelCfg(await getPanelBySlug(slug));
   let cookie = await loginPanel(slug);
   const doReq = (ck: string) =>
-    nodeRequest(`${cfg.url}${path}`, {
+    nodeRequestRetry(`${cfg.url}${path}`, {
       method: init?.method ?? "GET",
       headers: { ...(init?.headers ?? {}), Cookie: ck, Accept: "application/json" },
       body: init?.body,
