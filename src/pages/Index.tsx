@@ -661,12 +661,19 @@ const Index = () => {
         "Если inbound не найден по имени — создать подписку на ВСЕХ доступных inbound'ах текущих панелей?\n\nOK = да (рекомендуется при разных названиях панелей)\nОтмена = пропускать такие подписки"
       );
       log(`fallbackAll=${fallbackAll}`);
+      const detachedIfNoInbound = confirm(
+        "Если inbound'ы текущих панелей не загрузились или не совпали — всё равно создать подписки БЕЗ привязки к панелям?\n\nOK = да, потом добавите панели вручную в редактировании подписки\nОтмена = пропускать такие подписки"
+      );
+      log(`detachedIfNoInbound=${detachedIfNoInbound}`);
       // Загружаем актуальные inbounds для матчинга по remark (т.к. slug панелей и id могут отличаться)
-      let live: InboundsResp | null = inbounds;
-      if (!live) {
-        const { data, error } = await supabase.functions.invoke("panel?action=inbounds", { method: "GET" });
-        if (error) throw error;
-        live = data;
+      let live: InboundsResp | null = null;
+      const { data: liveData, error: liveError } = await supabase.functions.invoke("panel?action=inbounds", { method: "GET" });
+      if (liveError) {
+        log(`WARN: не удалось свежо загрузить inbound'ы: ${liveError.message ?? liveError}`);
+        live = inbounds;
+      } else {
+        live = liveData;
+        setInbounds(liveData);
       }
       const responsePanelKeys = Object.keys(live ?? {}).filter((k) => k !== "_panels" && Array.isArray((live as any)[k]) && k && k !== "null" && k !== "undefined");
       const livePanels = (((live?._panels as PanelMeta[]) ?? [])
@@ -772,14 +779,27 @@ const Index = () => {
               }
             }
           }
-          if (!selections.length) {
-            log(`  SKIP: нет inbound'ов`);
-            errors.push(`${name}: не нашёл inbound'ы (${missing.join(", ") || "пусто"})`);
-            continue;
-          }
           const expiryMs = Number(item.expiry_ms || 0);
           const days = expiryMs > 0 ? Math.max(1, Math.ceil((expiryMs - Date.now()) / 86400000)) : 0;
           const totalGB = item.total_bytes ? Math.round(Number(item.total_bytes) / 1024 / 1024 / 1024) : 0;
+          if (!selections.length) {
+            if (!detachedIfNoInbound) {
+              log(`  SKIP: нет inbound'ов`);
+              errors.push(`${name}: не нашёл inbound'ы (${missing.join(", ") || "пусто"})`);
+              continue;
+            }
+            log(`  -> createDetached: days=${days} GB=${totalGB}`);
+            const { data, error } = await supabase.functions.invoke("panel?action=createDetached", {
+              method: "POST",
+              body: { name, days, totalGB },
+            });
+            if (error) { log(`  ERROR detached invoke: ${error.message ?? error}`); throw error; }
+            if (data?.error) { log(`  ERROR detached data: ${data.error}`); throw new Error(data.error); }
+            log(`  OK detached: ${JSON.stringify(data).slice(0,300)}`);
+            ok++;
+            errors.push(`${name}: создана без inbound'ов — добавьте панели вручную`);
+            continue;
+          }
           const validSelections = selections.filter((s) => s.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(s.inboundId));
           if (validSelections.length !== selections.length) log(`  FIX: удалены некорректные selections=${selections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
           if (!validSelections.length) throw new Error("панели загрузились без slug — обновите список inbound'ов и повторите импорт");
