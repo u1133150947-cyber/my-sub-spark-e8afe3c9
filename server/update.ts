@@ -81,6 +81,7 @@ export async function handleUpdate(req: Request, _url: URL): Promise<Response> {
       "--exclude", "node_modules",
       "--exclude", ".git",
       "--exclude", "dist",
+      "--exclude", ".env",
       `${srcDir.replace(/\/?$/, "/")}`,
       `${APP_DIR.replace(/\/?$/, "/")}`,
     ]);
