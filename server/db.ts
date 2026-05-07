@@ -94,6 +94,12 @@ CREATE TABLE IF NOT EXISTS traffic_snapshots (
 CREATE INDEX IF NOT EXISTS idx_ts_created ON traffic_snapshots(created_at);
 `);
 
+// Lightweight migrations for legacy DBs.
+try {
+  const cols = db.queryEntries(`PRAGMA table_info(panels)`).map((r: any) => r.name);
+  if (!cols.includes("country")) db.execute(`ALTER TABLE panels ADD COLUMN country TEXT NOT NULL DEFAULT ''`);
+} catch {}
+
 export function uid() { return crypto.randomUUID(); }
 
 // JSON columns that should be parsed on read / stringified on write.
