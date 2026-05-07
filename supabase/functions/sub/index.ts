@@ -72,9 +72,18 @@ function buildVless(
   }
 
   const overrideKey = `${inbound.panel ?? ""}:${inbound.inbound_id ?? ""}`;
-  const displayRemark = overrides?.get(overrideKey) ?? mapRemark(inbound.remark);
-  const remark = encodeURIComponent(displayRemark);
-  return `vless://${uuid}@${inbound.host}:${inbound.port}?${params.toString()}#${remark}`;
+  const raw = String(overrides?.get(overrideKey) ?? mapRemark(inbound.remark) ?? "").trim();
+  const panelName = String((inbound as any).panel_name ?? "").trim();
+  const cleanRemark = raw.replace(/^[\s\-—–:|]+/, "").trim();
+  const norm = (s: string) => s.toLowerCase().replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\p{P}\p{S}]/gu, "").replace(/\s+/g, " ").trim();
+  let display = cleanRemark || raw;
+  if (panelName) {
+    const np = norm(panelName), nr = norm(cleanRemark);
+    if (!nr) display = panelName;
+    else if (nr === np || nr.startsWith(np)) display = cleanRemark;
+    else display = `${panelName} — ${cleanRemark}`;
+  }
+  return `vless://${uuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 
 // Friendly remark overrides for subscription display
@@ -119,6 +128,15 @@ Deno.serve(async (req) => {
       .from("subscription_inbounds")
       .select("panel, inbound_id, remark, protocol, port, host, stream_settings")
       .eq("subscription_id", sub.id);
+
+    // Fetch panel display names so we can prefix country/flag to remarks.
+    const panelNameMap = new Map<string, string>();
+    const slugs = Array.from(new Set((inbounds ?? []).map((ib: any) => ib.panel)));
+    if (slugs.length) {
+      const { data: panelsRows } = await supabase.from("panels").select("slug, name").in("slug", slugs);
+      (panelsRows ?? []).forEach((p: any) => panelNameMap.set(p.slug, p.name));
+    }
+    for (const ib of (inbounds ?? []) as any[]) ib.panel_name = panelNameMap.get(ib.panel) ?? "";
 
     // Load overrides for the panel+inbound pairs used by this subscription
     const overridesMap = new Map<string, string>();
