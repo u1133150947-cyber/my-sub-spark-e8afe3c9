@@ -503,6 +503,32 @@ const Index = () => {
     }
   };
 
+  const bulkDeleteSubs = async () => {
+    const ids = Array.from(subsSelected);
+    if (!ids.length) return;
+    if (!confirm(`Удалить ${ids.length} подписок и всех клиентов в панелях?`)) return;
+    setBulkDeleting(true);
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try {
+        const { data, error } = await supabase.functions.invoke("panel?action=delete", {
+          method: "POST",
+          body: { id },
+        });
+        if (error || data?.error) throw new Error(error?.message || data?.error);
+        ok++;
+      } catch (e: any) {
+        fail++;
+        pushLog("error", "bulkDelete", `${id}: ${e?.message ?? e}`);
+      }
+    }
+    setBulkDeleting(false);
+    setSubsSelected(new Set());
+    if (fail) toast.error(`Удалено ${ok}, ошибок ${fail}`);
+    else toast.success(`Удалено: ${ok}`);
+    loadSubs();
+  };
+
   const openEdit = async (s: Subscription) => {
     setEditingId(s.id);
     setEditName(s.name);
