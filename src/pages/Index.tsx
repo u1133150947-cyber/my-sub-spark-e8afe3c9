@@ -549,7 +549,12 @@ const Index = () => {
                               <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
                                 <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-sm truncate">{ib.remark || `inbound #${ib.id}`}</div>
+                                  <div className="text-sm truncate">
+                                    {inboundLabel(panel, ib.id, ib.remark)}
+                                    {overrides[`${panel}:${ib.id}`] && (
+                                      <span className="ml-2 text-[10px] uppercase text-muted-foreground" title={ib.remark}>↺ {ib.remark}</span>
+                                    )}
+                                  </div>
                                   <div className="text-xs text-muted-foreground">
                                     {ib.protocol.toUpperCase()} · :{ib.port}
                                   </div>
@@ -562,7 +567,11 @@ const Index = () => {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel className="text-xs">Массовые действия</DropdownMenuLabel>
+                                  <DropdownMenuLabel className="text-xs">Действия</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => openRename(panel, ib.id, ib.remark || `#${ib.id}`)}>
+                                    <Pencil className="size-3.5 mr-2 text-primary" /> Переименовать
+                                  </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => bulkAdd(panel, ib.id, ib.remark || `#${ib.id}`)}>
                                     <UserPlus className="size-3.5 mr-2 text-green-500" /> Добавить всем
@@ -738,7 +747,7 @@ const Index = () => {
                                             <Checkbox checked={editSelected.has(key)} onCheckedChange={() => toggleEdit(key)} />
                                             <div className="flex-1 min-w-0">
                                               <div className="text-sm truncate">
-                                                {ib.remark || `inbound #${ib.id}`}
+                                                {inboundLabel(panel, ib.id, ib.remark)}
                                                 {wasExisting && (
                                                   <span className="ml-2 text-[10px] uppercase text-muted-foreground">активно</span>
                                                 )}
