@@ -121,6 +121,9 @@ if [[ -n "$DOMAIN" ]]; then
   cat >/etc/caddy/Caddyfile <<EOF
 $DOMAIN {
   encode gzip
+  request_body {
+    max_size 200MB
+  }
   @protected not path /sub/* /functions/v1/sub*
   basicauth @protected {
     $AUTH_USER $AUTH_HASH
@@ -132,6 +135,9 @@ else
   cat >/etc/caddy/Caddyfile <<EOF
 :80 {
   encode gzip
+  request_body {
+    max_size 200MB
+  }
   @protected not path /sub/* /functions/v1/sub*
   basicauth @protected {
     $AUTH_USER $AUTH_HASH
