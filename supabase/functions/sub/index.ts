@@ -74,7 +74,8 @@ function buildVless(
   const overrideKey = `${inbound.panel ?? ""}:${inbound.inbound_id ?? ""}`;
   const raw = String(overrides?.get(overrideKey) ?? mapRemark(inbound.remark) ?? "").trim();
   const panelName = String((inbound as any).panel_name ?? "").trim();
-  const cleanRemark = raw.replace(/^[\s\-—–:|]+/, "").trim();
+  let cleanRemark = raw.replace(/^[\s\-—–:|]+/, "").trim();
+  cleanRemark = cleanRemark.replace(/^[a-z]{2}[\s\-—–:|]+/i, "").trim();
   const norm = (s: string) => s.toLowerCase().replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\p{P}\p{S}]/gu, "").replace(/\s+/g, " ").trim();
   let display = cleanRemark || raw;
   if (panelName) {
