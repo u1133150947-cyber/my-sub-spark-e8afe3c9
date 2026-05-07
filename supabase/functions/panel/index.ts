@@ -62,6 +62,7 @@ function nodeRequest(
         method: opts.method ?? "GET",
         headers: opts.headers ?? {},
         rejectUnauthorized: false,
+        timeout: 15000,
       },
       (res: any) => {
         const chunks: Buffer[] = [];
@@ -76,9 +77,48 @@ function nodeRequest(
       },
     );
     req.on("error", reject);
+    req.on("timeout", () => { req.destroy(new Error("request timeout 15s")); });
     if (opts.body) req.write(opts.body);
     req.end();
   });
+}
+
+// Retry wrapper: 3 attempts with exp backoff for network/5xx errors
+async function nodeRequestRetry(
+  urlStr: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
+  retries = 3,
+) {
+  let lastErr: any;
+  for (let i = 0; i < retries; i++) {
+    try {
+      const res = await nodeRequest(urlStr, opts);
+      if (res.status >= 500 && i < retries - 1) {
+        await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i)));
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastErr = e;
+      if (i < retries - 1) await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i)));
+    }
+  }
+  throw lastErr;
+}
+
+// Bounded concurrency runner (pool of N workers)
+async function runPool<T, R>(items: T[], limit: number, worker: (it: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let idx = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = idx++;
+      if (i >= items.length) return;
+      results[i] = await worker(items[i]);
+    }
+  });
+  await Promise.all(runners);
+  return results;
 }
 
 async function loginPanel(slug: PanelKey): Promise<string> {
@@ -107,7 +147,7 @@ async function panelFetch(
   const cfg = panelCfg(await getPanelBySlug(slug));
   let cookie = await loginPanel(slug);
   const doReq = (ck: string) =>
-    nodeRequest(`${cfg.url}${path}`, {
+    nodeRequestRetry(`${cfg.url}${path}`, {
       method: init?.method ?? "GET",
       headers: { ...(init?.headers ?? {}), Cookie: ck, Accept: "application/json" },
       body: init?.body,
@@ -271,6 +311,56 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ...result, _panels: meta }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "healthCheck") {
+      const all = await getAllPanels();
+      const out: { panel: string; status: string; latency_ms: number; message: string }[] = [];
+      await Promise.all(all.map(async (p) => {
+        const t0 = Date.now();
+        let status = "ok";
+        let message = "";
+        try {
+          const res = await panelFetch(p.slug, "/panel/api/inbounds/list", { method: "GET" });
+          const j = JSON.parse(res.body);
+          if (!j.success) { status = "error"; message = j.msg ?? "no success"; }
+        } catch (e) {
+          status = "error";
+          message = e instanceof Error ? e.message : String(e);
+        }
+        const latency = Date.now() - t0;
+        out.push({ panel: p.slug, status, latency_ms: latency, message });
+        await supabase.from("panel_health").insert({ panel_slug: p.slug, status, latency_ms: latency, message: message.slice(0, 500) });
+        await supabase.from("panels").update({ status, status_message: message.slice(0, 500), last_checked_at: new Date().toISOString() }).eq("slug", p.slug);
+      }));
+      // GC: keep last 7 days
+      const cutoff = new Date(Date.now() - 7 * 24 * 3600 * 1000).toISOString();
+      await supabase.from("panel_health").delete().lt("checked_at", cutoff);
+      return new Response(JSON.stringify({ checks: out }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
+    if (action === "healthHistory") {
+      const slug = url.searchParams.get("panel");
+      const hours = Math.min(168, Number(url.searchParams.get("hours") ?? "24"));
+      const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      let q = supabase.from("panel_health").select("panel_slug, status, latency_ms, message, checked_at").gte("checked_at", since).order("checked_at", { ascending: false }).limit(2000);
+      if (slug) q = q.eq("panel_slug", slug);
+      const { data, error } = await q;
+      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // uptime % per panel
+      const byPanel: Record<string, { total: number; online: number; avg_latency: number }> = {};
+      for (const r of data ?? []) {
+        const b = byPanel[r.panel_slug] ??= { total: 0, online: 0, avg_latency: 0 };
+        b.total++;
+        if (r.status === "ok" || r.status === "online") b.online++;
+        b.avg_latency += r.latency_ms ?? 0;
+      }
+      const uptime: Record<string, { uptime_pct: number; avg_latency_ms: number; checks: number }> = {};
+      for (const k of Object.keys(byPanel)) {
+        const b = byPanel[k];
+        uptime[k] = { uptime_pct: b.total ? Math.round((b.online / b.total) * 1000) / 10 : 0, avg_latency_ms: b.total ? Math.round(b.avg_latency / b.total) : 0, checks: b.total };
+      }
+      return new Response(JSON.stringify({ history: data ?? [], uptime }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "onlines") {
       const all = await getAllPanels();
       const result: { panel: string; email: string; subscription_id: string | null; sub_name: string | null; remark: string | null }[] = [];
@@ -330,7 +420,7 @@ Deno.serve(async (req) => {
       const created: any[] = [];
       const errors: any[] = [];
       const targets = (allSubs ?? []).filter((s) => !have.has(s.id));
-      await Promise.all(targets.map(async (sub) => {
+      await runPool(targets, 5, async (sub) => {
         try {
           const email = `${sub.client_email}_${panel}${ib.id}`;
           await addClient(panel, inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: sub.slug.slice(0, 16), flow });
@@ -343,7 +433,7 @@ Deno.serve(async (req) => {
         } catch (e) {
           errors.push({ sub: sub.id, error: e instanceof Error ? e.message : String(e) });
         }
-      }));
+      });
       return new Response(JSON.stringify({ created: created.length, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -362,14 +452,14 @@ Deno.serve(async (req) => {
       const { data: subs } = await supabase.from("subscriptions").select("id, client_uuid").in("id", subIds);
       const errors: any[] = [];
       let removed = 0;
-      await Promise.all((subs ?? []).map(async (s) => {
+      await runPool(subs ?? [], 5, async (s) => {
         try {
           await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${s.client_uuid}`, { method: "POST" });
           removed++;
         } catch (e) {
           errors.push({ sub: s.id, error: e instanceof Error ? e.message : String(e) });
         }
-      }));
+      });
       await supabase.from("subscription_inbounds").delete().eq("panel", panel).eq("inbound_id", inboundId);
       return new Response(JSON.stringify({ removed, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }

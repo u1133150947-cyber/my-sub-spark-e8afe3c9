@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload } from "lucide-react";
+import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload, Activity } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -25,6 +25,7 @@ type Panel = {
   status_message: string;
   last_checked_at: string | null;
   country: string;
+  slug?: string;
 };
 
 const empty = { name: "", panel_url: "", username: "", password: "", country: "" };
@@ -88,11 +89,38 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [credsSaving, setCredsSaving] = useState(false);
   const [credsTesting, setCredsTesting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [healthChecking, setHealthChecking] = useState(false);
+  const [uptime, setUptime] = useState<Record<string, { uptime_pct: number; avg_latency_ms: number; checks: number }>>({});
+
+  const loadHealthHistory = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=healthHistory&hours=24", { method: "GET" });
+      if (error) return;
+      setUptime((data as any)?.uptime ?? {});
+    } catch {}
+  };
+
+  const runHealthCheck = async () => {
+    setHealthChecking(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=healthCheck", { method: "POST" });
+      if (error) throw error;
+      const checks = (data as any)?.checks ?? [];
+      const ok = checks.filter((c: any) => c.status === "ok").length;
+      toast.success(`Health-check: ${ok}/${checks.length} онлайн`);
+      await load();
+      await loadHealthHistory();
+    } catch (e: any) {
+      toast.error("Health-check failed: " + (e?.message ?? e));
+    } finally {
+      setHealthChecking(false);
+    }
+  };
 
   const load = async () => {
     const { data, error } = await supabase
       .from("panels")
-      .select("id, name, panel_url, username, password, status, status_message, last_checked_at, country")
+      .select("id, name, panel_url, username, password, status, status_message, last_checked_at, country, slug")
       .order("created_at", { ascending: true });
     if (error) return toast.error("Не удалось загрузить панели");
     setPanels((data ?? []) as Panel[]);
@@ -174,6 +202,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
 
   useEffect(() => {
     load();
+    loadHealthHistory();
   }, []);
 
   const update = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -398,6 +427,10 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h2 className="text-lg font-semibold">Панели ({panels.length})</h2>
           <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={runHealthCheck} disabled={healthChecking || panels.length === 0}>
+              {healthChecking ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <Activity className="size-3.5 mr-1" />}
+              Health-check
+            </Button>
             <Button variant="outline" size="sm" onClick={exportPanels} disabled={panels.length === 0}>
               <Download className="size-3.5 mr-1" /> Экспорт
             </Button>
@@ -492,6 +525,12 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                     <code className="text-xs text-muted-foreground truncate block">{p.panel_url || "URL не задан"}</code>
                     {p.status === "error" && p.status_message && (
                       <div className="text-xs text-destructive mt-1 truncate">{p.status_message}</div>
+                    )}
+                    {p.slug && uptime[p.slug] && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        24ч uptime: <span className={uptime[p.slug].uptime_pct >= 99 ? "text-green-500" : uptime[p.slug].uptime_pct >= 90 ? "text-yellow-500" : "text-destructive"}>{uptime[p.slug].uptime_pct}%</span>
+                        {" · "}avg {uptime[p.slug].avg_latency_ms}ms · {uptime[p.slug].checks} проверок
+                      </div>
                     )}
                   </div>
                   <div className="flex gap-2">
