@@ -182,6 +182,20 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       return json({ subscription: decodeRow("subscriptions", sub as any), created, errors });
     }
 
+    if (action === "createDetached" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const name = String(body.name ?? "").trim();
+      const days = Number(body.days ?? 30), totalGB = Number(body.totalGB ?? 0);
+      if (!name) return json({ error: "name required" }, 400);
+      const slug = randomSlug(12), clientUuid = uuidv4(), subId = uid();
+      const email = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
+      const expiryMs = days > 0 ? Date.now() + days * 86400000 : 0;
+      const totalBytes = totalGB > 0 ? Math.floor(totalGB * 1024 * 1024 * 1024) : 0;
+      db.query(`INSERT INTO subscriptions (id, slug, name, client_email, client_uuid, expiry_ms, total_bytes) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [subId, slug, name, email, clientUuid, expiryMs, totalBytes]);
+      return json({ subscription: decodeRow("subscriptions", row<any>(`SELECT * FROM subscriptions WHERE id = ?`, [subId]) as any), created: [], detached: true });
+    }
+
     if (action === "importRaw" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const name = String(body.name ?? "").trim();

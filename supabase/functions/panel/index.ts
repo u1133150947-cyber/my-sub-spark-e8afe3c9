@@ -504,6 +504,23 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ subscription: sub, created, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "createDetached" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const name: string = String(body.name ?? "").trim();
+      const days: number = Number(body.days ?? 30);
+      const totalGB: number = Number(body.totalGB ?? 0);
+      if (!name) return new Response(JSON.stringify({ error: "name required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const slug = randomSlug(12);
+      const expiryMs = days > 0 ? Date.now() + days * 24 * 60 * 60 * 1000 : 0;
+      const totalBytes = totalGB > 0 ? Math.floor(totalGB * 1024 * 1024 * 1024) : 0;
+      const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
+      const { data: sub, error } = await supabase.from("subscriptions").insert({
+        slug, name, client_email: baseEmail, client_uuid: uuidv4(), expiry_ms: expiryMs, total_bytes: totalBytes,
+      }).select().single();
+      if (error) throw new Error(`db insert detached sub: ${error.message}`);
+      return new Response(JSON.stringify({ subscription: sub, created: [], detached: true }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "importRaw" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const name = String(body.name ?? "").trim();
