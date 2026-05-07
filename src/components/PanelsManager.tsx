@@ -201,6 +201,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
 
   useEffect(() => {
     load();
+    loadHealthHistory();
   }, []);
 
   const update = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
