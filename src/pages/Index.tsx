@@ -870,7 +870,7 @@ const Index = () => {
               Оригинальное имя на панели: <code>{renameTarget?.original}</code>
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">Страна (флаг + название)</Label>
+              <Label className="text-xs text-muted-foreground">Флаг страны (только иконка)</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button type="button" variant="outline" className="w-full justify-start">
