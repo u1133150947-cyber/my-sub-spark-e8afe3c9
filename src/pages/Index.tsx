@@ -1003,6 +1003,7 @@ const Index = () => {
         <Tabs value={activeTab} className="space-y-6" onValueChange={(v) => {
           setActiveTab(v);
           if (v === "create") { loadInbounds(); loadEmailMap(); }
+          if (v === "logs") loadServerLogs();
         }}>
           <TabsList className="grid w-full max-w-4xl grid-cols-7">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
