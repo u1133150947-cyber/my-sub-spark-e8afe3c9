@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload } from "lucide-react";
+import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload, Activity } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -88,6 +88,33 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [credsSaving, setCredsSaving] = useState(false);
   const [credsTesting, setCredsTesting] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [healthChecking, setHealthChecking] = useState(false);
+  const [uptime, setUptime] = useState<Record<string, { uptime_pct: number; avg_latency_ms: number; checks: number }>>({});
+
+  const loadHealthHistory = async () => {
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=healthHistory&hours=24", { method: "GET" });
+      if (error) return;
+      setUptime((data as any)?.uptime ?? {});
+    } catch {}
+  };
+
+  const runHealthCheck = async () => {
+    setHealthChecking(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=healthCheck", { method: "POST" });
+      if (error) throw error;
+      const checks = (data as any)?.checks ?? [];
+      const ok = checks.filter((c: any) => c.status === "online").length;
+      toast.success(`Health-check: ${ok}/${checks.length} онлайн`);
+      await load();
+      await loadHealthHistory();
+    } catch (e: any) {
+      toast.error("Health-check failed: " + (e?.message ?? e));
+    } finally {
+      setHealthChecking(false);
+    }
+  };
 
   const load = async () => {
     const { data, error } = await supabase
