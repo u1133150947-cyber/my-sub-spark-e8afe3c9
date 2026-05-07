@@ -120,6 +120,7 @@ export type Database = {
       }
       panels: {
         Row: {
+          country: string
           created_at: string
           host: string
           id: string
@@ -142,6 +143,7 @@ export type Database = {
           username: string
         }
         Insert: {
+          country?: string
           created_at?: string
           host: string
           id?: string
@@ -164,6 +166,7 @@ export type Database = {
           username: string
         }
         Update: {
+          country?: string
           created_at?: string
           host?: string
           id?: string
