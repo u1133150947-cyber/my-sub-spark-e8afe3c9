@@ -66,8 +66,8 @@ const findCountryByPrefix = (s: string) => {
 const buildDisplay = (countryCode: string, label: string) => {
   const c = countryByCode(countryCode);
   const l = label.trim();
-  if (c && l) return `${c.flag} ${c.name} — ${l}`;
-  if (c) return `${c.flag} ${c.name}`;
+  if (c && l) return `${c.flag} ${l}`;
+  if (c) return c.flag;
   return l;
 };
 
@@ -870,7 +870,7 @@ const Index = () => {
               Оригинальное имя на панели: <code>{renameTarget?.original}</code>
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground">Страна (флаг + название)</Label>
+              <Label className="text-xs text-muted-foreground">Флаг страны (только иконка)</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button type="button" variant="outline" className="w-full justify-start">
