@@ -188,7 +188,19 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (!name) return json({ error: "name required" }, 400);
       if (!links.length) return json({ error: "links required" }, 400);
       const slug = randomSlug(12), clientUuid = uuidv4(), subId = uid();
-      const normalized = links.map((l: string) => domain ? l.replace(/^([a-z0-9+.-]+:\/\/[^@\s]+@)(\[[^\]]+\]|[^:/?#\s]+)(:\d+)?/i, (_m, a, _old, port = "") => `${a}${domain}${port}`) : l);
+      const swapHost = (l: string) => {
+        if (!domain) return l;
+        if (/^vmess:\/\//i.test(l)) {
+          try {
+            const raw = l.slice(l.indexOf("//") + 2).replace(/-/g, "+").replace(/_/g, "/");
+            const cfg = JSON.parse(decodeURIComponent(escape(atob(raw + "===".slice((raw.length + 3) % 4)))));
+            cfg.add = domain;
+            return "vmess://" + btoa(unescape(encodeURIComponent(JSON.stringify(cfg)))).replace(/=+$/, "");
+          } catch { return l; }
+        }
+        return l.replace(/^([a-z0-9+.-]+:\/\/[^@\s]+@)(\[[^\]]+\]|[^:/?#\s]+)(:\d+)?/i, (_m, a, _old, port = "") => `${a}${domain}${port}`);
+      };
+      const normalized = links.map(swapHost);
       const email = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
       db.query(`INSERT INTO subscriptions (id, slug, name, client_email, client_uuid, raw_links, expiry_ms, total_bytes) VALUES (?, ?, ?, ?, ?, ?, 0, 0)`,
         [subId, slug, name, email, clientUuid, JSON.stringify(normalized)]);
