@@ -254,25 +254,20 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
-            <Label className="text-xs text-muted-foreground">Название</Label>
+            <Label className="text-xs text-muted-foreground">Страна (определяет флаг и название для пользователей)</Label>
             <div className="flex gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" className="shrink-0 px-3 text-lg" title="Выбрать флаг">
-                    {(form.name.match(FLAG_RE)?.[0]) || "🏳️"}
+                  <Button type="button" variant="outline" className="shrink-0 px-3" title="Выбрать страну">
+                    {form.country ? `${countryByCode(form.country)?.flag ?? "🏳️"} ${form.country}` : "🏳️ Страна"}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-56">
-                  {FLAG_MAP.map(({ flag, keys }) => (
-                    <DropdownMenuItem
-                      key={flag}
-                      onClick={() => {
-                        const cleaned = form.name.replace(FLAG_RE, "").trimStart();
-                        update("name", `${flag} ${cleaned}`.trimEnd());
-                      }}
-                    >
-                      <span className="text-lg mr-2">{flag}</span>
-                      <span className="capitalize">{keys[0]}</span>
+                  {COUNTRIES.map((c) => (
+                    <DropdownMenuItem key={c.code} onClick={() => update("country", c.code)}>
+                      <span className="text-lg mr-2">{c.flag}</span>
+                      <span>{c.name}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{c.code}</span>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -280,10 +275,13 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
               <Input
                 value={form.name}
                 onChange={(e) => update("name", e.target.value)}
-                placeholder="🇨🇿 Чехия #1"
+                placeholder="Внутреннее название (для админки)"
                 className="flex-1"
               />
             </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Пользователю показывается «{form.country ? `${countryByCode(form.country)?.flag} ${countryByCode(form.country)?.name}` : "🏳️ Страна"}», а название — только для тебя в админке.
+            </p>
           </div>
           <div className="md:col-span-2">
             <Label className="text-xs text-muted-foreground">URL панели</Label>
