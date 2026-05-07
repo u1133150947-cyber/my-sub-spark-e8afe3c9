@@ -66,8 +66,8 @@ const findCountryByPrefix = (s: string) => {
 const buildDisplay = (countryCode: string, label: string) => {
   const c = countryByCode(countryCode);
   const l = label.trim();
-  if (c && l) return `${c.flag} ${c.name} — ${l}`;
-  if (c) return `${c.flag} ${c.name}`;
+  if (c && l) return `${c.flag} ${l}`;
+  if (c) return c.flag;
   return l;
 };
 
