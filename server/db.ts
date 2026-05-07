@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS subscription_inbounds (
   host TEXT NOT NULL,
   stream_settings TEXT NOT NULL DEFAULT '{}',
   client_email TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_si_sub ON subscription_inbounds(subscription_id);
@@ -98,6 +99,10 @@ CREATE INDEX IF NOT EXISTS idx_ts_created ON traffic_snapshots(created_at);
 try {
   const cols = db.queryEntries(`PRAGMA table_info(panels)`).map((r: any) => r.name);
   if (!cols.includes("country")) db.execute(`ALTER TABLE panels ADD COLUMN country TEXT NOT NULL DEFAULT ''`);
+} catch {}
+try {
+  const cols = db.queryEntries(`PRAGMA table_info(subscription_inbounds)`).map((r: any) => r.name);
+  if (!cols.includes("sort_order")) db.execute(`ALTER TABLE subscription_inbounds ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`);
 } catch {}
 
 export function uid() { return crypto.randomUUID(); }

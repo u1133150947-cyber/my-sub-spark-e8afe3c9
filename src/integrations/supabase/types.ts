@@ -201,6 +201,7 @@ export type Database = {
           port: number
           protocol: string
           remark: string
+          sort_order: number
           stream_settings: Json
           subscription_id: string
         }
@@ -214,6 +215,7 @@ export type Database = {
           port: number
           protocol: string
           remark: string
+          sort_order?: number
           stream_settings?: Json
           subscription_id: string
         }
@@ -227,6 +229,7 @@ export type Database = {
           port?: number
           protocol?: string
           remark?: string
+          sort_order?: number
           stream_settings?: Json
           subscription_id?: string
         }

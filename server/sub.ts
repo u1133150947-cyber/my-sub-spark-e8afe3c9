@@ -78,7 +78,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   if (!sub) return new Response("Subscription not found", { status: 404, headers: cors });
   const subDecoded = decodeRow("subscriptions", sub);
 
-  const inbounds = db.queryEntries(`SELECT panel, inbound_id, remark, protocol, port, host, stream_settings FROM subscription_inbounds WHERE subscription_id = ?`, [sub.id]).map((r: any) => decodeRow("subscription_inbounds", r));
+  const inbounds = db.queryEntries(`SELECT panel, inbound_id, remark, protocol, port, host, stream_settings, sort_order, created_at FROM subscription_inbounds WHERE subscription_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC`, [sub.id]).map((r: any) => decodeRow("subscription_inbounds", r));
 
   // Pull panel display names + country code.
   const panelInfo = new Map<string, { name: string; country: string }>();

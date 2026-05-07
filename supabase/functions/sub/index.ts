@@ -151,8 +151,10 @@ Deno.serve(async (req) => {
 
     const { data: inbounds } = await supabase
       .from("subscription_inbounds")
-      .select("panel, inbound_id, remark, protocol, port, host, stream_settings")
-      .eq("subscription_id", sub.id);
+      .select("panel, inbound_id, remark, protocol, port, host, stream_settings, sort_order, created_at")
+      .eq("subscription_id", sub.id)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
 
     // Fetch panel display names + country code so we can prefix country/flag to remarks.
     const panelInfoMap = new Map<string, { name: string; country: string }>();
