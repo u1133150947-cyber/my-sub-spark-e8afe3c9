@@ -459,7 +459,12 @@ Deno.serve(async (req) => {
       if (!validSelections.length) return new Response(JSON.stringify({ error: "Некорректные панели в импорте: panel=null. Обновите патч и импортируйте заново.", selections }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
       const clientUuid = uuidv4();
-      const slug = randomSlug(12);
+      const desiredSlug = String(body.slug ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
+      if (desiredSlug) {
+        const { data: clash } = await supabase.from("subscriptions").select("id").eq("slug", slug).maybeSingle();
+        if (clash) slug = randomSlug(12);
+      }
       const subId = randomSlug(16);
       const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
       const expiryMs = days > 0 ? Date.now() + days * 24 * 60 * 60 * 1000 : 0;
@@ -510,7 +515,12 @@ Deno.serve(async (req) => {
       const days: number = Number(body.days ?? 30);
       const totalGB: number = Number(body.totalGB ?? 0);
       if (!name) return new Response(JSON.stringify({ error: "name required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const slug = randomSlug(12);
+      const desiredSlug = String(body.slug ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
+      if (desiredSlug) {
+        const { data: clash } = await supabase.from("subscriptions").select("id").eq("slug", slug).maybeSingle();
+        if (clash) slug = randomSlug(12);
+      }
       const expiryMs = days > 0 ? Date.now() + days * 24 * 60 * 60 * 1000 : 0;
       const totalBytes = totalGB > 0 ? Math.floor(totalGB * 1024 * 1024 * 1024) : 0;
       const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
