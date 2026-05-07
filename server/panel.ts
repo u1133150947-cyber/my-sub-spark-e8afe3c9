@@ -275,7 +275,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (newName !== undefined && newName.length > 0) { sets.push("name = ?"); args.push(newName); }
       if (hasDays) { sets.push("expiry_ms = ?"); args.push(newExpiry); }
       if (hasGB) { sets.push("total_bytes = ?"); args.push(newTotal); }
-      const subs = rows<any>(`SELECT id, client_uuid FROM subscriptions WHERE id IN (${placeholders})`, subIds as any);
+      if (sets.length) { args.push(subId); db.query(`UPDATE subscriptions SET ${sets.join(", ")} WHERE id = ?`, args as any); }
       return json({ ok: true, errors });
     }
 
