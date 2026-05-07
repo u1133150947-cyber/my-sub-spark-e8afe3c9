@@ -617,6 +617,7 @@ const Index = () => {
         version: 1,
         exported_at: new Date().toISOString(),
         subscriptions: (subsData ?? []).map((s: any) => ({
+          slug: s.slug,
           name: s.name,
           client_email: s.client_email,
           expiry_ms: s.expiry_ms,
@@ -788,10 +789,11 @@ const Index = () => {
               errors.push(`${name}: не нашёл inbound'ы (${missing.join(", ") || "пусто"})`);
               continue;
             }
-            log(`  -> createDetached: days=${days} GB=${totalGB}`);
+            const desiredSlug = String(item.slug ?? "").trim();
+            log(`  -> createDetached: days=${days} GB=${totalGB} slug=${desiredSlug || "(auto)"}`);
             const { data, error } = await supabase.functions.invoke("panel?action=createDetached", {
               method: "POST",
-              body: { name, days, totalGB },
+              body: { name, days, totalGB, slug: desiredSlug || undefined },
             });
             if (error) { log(`  ERROR detached invoke: ${error.message ?? error}`); throw error; }
             if (data?.error) { log(`  ERROR detached data: ${data.error}`); throw new Error(data.error); }
@@ -803,10 +805,11 @@ const Index = () => {
           const validSelections = selections.filter((s) => s.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(s.inboundId));
           if (validSelections.length !== selections.length) log(`  FIX: удалены некорректные selections=${selections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
           if (!validSelections.length) throw new Error("панели загрузились без slug — обновите список inbound'ов и повторите импорт");
-          log(`  -> create: days=${days} GB=${totalGB} selections=${validSelections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
+          const desiredSlug2 = String(item.slug ?? "").trim();
+          log(`  -> create: days=${days} GB=${totalGB} slug=${desiredSlug2 || "(auto)"} selections=${validSelections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
           const { data, error } = await supabase.functions.invoke("panel?action=create", {
             method: "POST",
-            body: { name, days, totalGB, selections: validSelections },
+            body: { name, days, totalGB, selections: validSelections, slug: desiredSlug2 || undefined },
           });
           if (error) {
             log(`  ERROR invoke: ${error.message ?? error}`);
