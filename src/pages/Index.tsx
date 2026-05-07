@@ -590,6 +590,9 @@ const Index = () => {
         setImporting(false);
         return;
       }
+      const fallbackAll = confirm(
+        "Если inbound не найден по имени — создать подписку на ВСЕХ доступных inbound'ах текущих панелей?\n\nOK = да (рекомендуется при разных названиях панелей)\nОтмена = пропускать такие подписки"
+      );
       // Загружаем актуальные inbounds для матчинга по remark (т.к. slug панелей и id могут отличаться)
       let live: InboundsResp | null = inbounds;
       if (!live) {
@@ -677,6 +680,15 @@ const Index = () => {
               }
             } else {
               missing.push(x.remark || `${x.panel}#${x.inbound_id}`);
+            }
+          }
+          if (!selections.length) {
+            if (fallbackAll) {
+              const all = Array.from(byPanelId.values());
+              if (all.length) {
+                for (const m of all) selections.push(m);
+                errors.push(`${name}: использованы все доступные inbound'ы (исходные: ${missing.join(", ")})`);
+              }
             }
           }
           if (!selections.length) {
