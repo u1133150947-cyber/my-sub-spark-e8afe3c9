@@ -9,11 +9,11 @@ const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
 function row<T = any>(sql: string, args: unknown[] = []): T | undefined {
-  const r = db.queryEntries(sql, args)[0];
+  const r = db.queryEntries(sql, args as any)[0];
   return r as T | undefined;
 }
 function rows<T = any>(sql: string, args: unknown[] = []): T[] {
-  return db.queryEntries(sql, args) as T[];
+  return db.queryEntries(sql, args as any) as T[];
 }
 
 export async function handlePanel(req: Request, url: URL): Promise<Response> {
@@ -275,7 +275,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (newName !== undefined && newName.length > 0) { sets.push("name = ?"); args.push(newName); }
       if (hasDays) { sets.push("expiry_ms = ?"); args.push(newExpiry); }
       if (hasGB) { sets.push("total_bytes = ?"); args.push(newTotal); }
-      if (sets.length) { args.push(subId); db.query(`UPDATE subscriptions SET ${sets.join(", ")} WHERE id = ?`, args); }
+      const subs = rows<any>(`SELECT id, client_uuid FROM subscriptions WHERE id IN (${placeholders})`, subIds as any);
       return json({ ok: true, errors });
     }
 

@@ -157,7 +157,7 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
     db.query(`UPDATE ${table} SET ${set}${where.sql}`, [...keys.map((k) => row[k]), ...where.args] as any);
     if (/return=representation/.test(prefer)) {
       const rows = db.queryEntries(`SELECT * FROM ${table}${where.sql}`, where.args as any);
-      return jsonResponse(rows.map((r) => decodeRow(table, r as Record<string, unknown>)));
+      return jsonResponse((rows as any[]).map((r) => decodeRow(table, r as Record<string, unknown>)));
     }
     return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*" } });
   }
