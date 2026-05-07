@@ -370,7 +370,7 @@ Deno.serve(async (req) => {
       const created: any[] = [];
       const errors: any[] = [];
       const targets = (allSubs ?? []).filter((s) => !have.has(s.id));
-      await Promise.all(targets.map(async (sub) => {
+      await runPool(targets, 5, async (sub) => {
         try {
           const email = `${sub.client_email}_${panel}${ib.id}`;
           await addClient(panel, inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: sub.slug.slice(0, 16), flow });
@@ -383,7 +383,7 @@ Deno.serve(async (req) => {
         } catch (e) {
           errors.push({ sub: sub.id, error: e instanceof Error ? e.message : String(e) });
         }
-      }));
+      });
       return new Response(JSON.stringify({ created: created.length, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
@@ -402,14 +402,14 @@ Deno.serve(async (req) => {
       const { data: subs } = await supabase.from("subscriptions").select("id, client_uuid").in("id", subIds);
       const errors: any[] = [];
       let removed = 0;
-      await Promise.all((subs ?? []).map(async (s) => {
+      await runPool(subs ?? [], 5, async (s) => {
         try {
           await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${s.client_uuid}`, { method: "POST" });
           removed++;
         } catch (e) {
           errors.push({ sub: s.id, error: e instanceof Error ? e.message : String(e) });
         }
-      }));
+      });
       await supabase.from("subscription_inbounds").delete().eq("panel", panel).eq("inbound_id", inboundId);
       return new Response(JSON.stringify({ removed, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
