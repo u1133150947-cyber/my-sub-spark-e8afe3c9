@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload } from "lucide-react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -528,6 +528,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Изменить доступы — {credsPanel?.name}</DialogTitle>
+            <DialogDescription>Обновите URL, логин и пароль 3X-UI панели.</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             <div>
