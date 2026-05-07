@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 type Subscription = {
   id: string;
@@ -94,9 +95,54 @@ const Index = () => {
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("subs");
   const [emailToSubId, setEmailToSubId] = useState<Record<string, string>>({});
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [renameTarget, setRenameTarget] = useState<{ panel: string; inboundId: number; original: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
+  const inboundLabel = (panel: string, id: number, fallback: string) =>
+    overrides[`${panel}:${id}`] || fallback || `inbound #${id}`;
+
+  const loadOverrides = async () => {
+    const { data } = await supabase
+      .from("inbound_overrides")
+      .select("panel, inbound_id, display_remark");
+    const m: Record<string, string> = {};
+    (data ?? []).forEach((r: any) => { m[`${r.panel}:${r.inbound_id}`] = r.display_remark; });
+    setOverrides(m);
+  };
+
+  const openRename = (panel: string, inboundId: number, original: string) => {
+    setRenameTarget({ panel, inboundId, original });
+    setRenameValue(overrides[`${panel}:${inboundId}`] || original);
+  };
+
+  const saveRename = async () => {
+    if (!renameTarget) return;
+    const { panel, inboundId } = renameTarget;
+    const val = renameValue.trim();
+    setRenameSaving(true);
+    try {
+      if (!val || val === renameTarget.original) {
+        await supabase.from("inbound_overrides").delete().eq("panel", panel).eq("inbound_id", inboundId);
+        toast.success("Название сброшено");
+      } else {
+        const { error } = await supabase
+          .from("inbound_overrides")
+          .upsert({ panel, inbound_id: inboundId, display_remark: val }, { onConflict: "panel,inbound_id" });
+        if (error) throw error;
+        toast.success("Название обновлено — применится при следующем обновлении подписки");
+      }
+      await loadOverrides();
+      setRenameTarget(null);
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setRenameSaving(false);
+    }
+  };
 
   const loadEmailMap = async () => {
     const { data } = await supabase
@@ -187,6 +233,7 @@ const Index = () => {
     loadSubs();
     loadInbounds();
     loadEmailMap();
+    loadOverrides();
   }, []);
 
   const toggle = (key: string) => {
@@ -502,7 +549,12 @@ const Index = () => {
                               <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
                                 <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
                                 <div className="flex-1 min-w-0">
-                                  <div className="text-sm truncate">{ib.remark || `inbound #${ib.id}`}</div>
+                                  <div className="text-sm truncate">
+                                    {inboundLabel(panel, ib.id, ib.remark)}
+                                    {overrides[`${panel}:${ib.id}`] && (
+                                      <span className="ml-2 text-[10px] uppercase text-muted-foreground" title={ib.remark}>↺ {ib.remark}</span>
+                                    )}
+                                  </div>
                                   <div className="text-xs text-muted-foreground">
                                     {ib.protocol.toUpperCase()} · :{ib.port}
                                   </div>
@@ -515,7 +567,11 @@ const Index = () => {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel className="text-xs">Массовые действия</DropdownMenuLabel>
+                                  <DropdownMenuLabel className="text-xs">Действия</DropdownMenuLabel>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem onClick={() => openRename(panel, ib.id, ib.remark || `#${ib.id}`)}>
+                                    <Pencil className="size-3.5 mr-2 text-primary" /> Переименовать
+                                  </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem onClick={() => bulkAdd(panel, ib.id, ib.remark || `#${ib.id}`)}>
                                     <UserPlus className="size-3.5 mr-2 text-green-500" /> Добавить всем
@@ -691,7 +747,7 @@ const Index = () => {
                                             <Checkbox checked={editSelected.has(key)} onCheckedChange={() => toggleEdit(key)} />
                                             <div className="flex-1 min-w-0">
                                               <div className="text-sm truncate">
-                                                {ib.remark || `inbound #${ib.id}`}
+                                                {inboundLabel(panel, ib.id, ib.remark)}
                                                 {wasExisting && (
                                                   <span className="ml-2 text-[10px] uppercase text-muted-foreground">активно</span>
                                                 )}
@@ -737,6 +793,37 @@ const Index = () => {
           </TabsContent>
         </Tabs>
       </main>
+
+      <Dialog open={!!renameTarget} onOpenChange={(o) => !o && setRenameTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Переименовать подключение</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="text-xs text-muted-foreground">
+              Это название будут видеть клиенты в приложении (Happ и др.). Можно ставить флаг и страну, например: <code>🇵🇱 Польша</code>.
+              Оригинальное имя на панели: <code>{renameTarget?.original}</code>
+            </div>
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              placeholder="🇵🇱 Польша"
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter") saveRename(); }}
+            />
+            <div className="text-[11px] text-muted-foreground">
+              Очисти поле или верни оригинал, чтобы сбросить переименование.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenameTarget(null)} disabled={renameSaving}>Отмена</Button>
+            <Button onClick={saveRename} disabled={renameSaving}
+              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
+              {renameSaving ? <Loader2 className="size-4 animate-spin" /> : "Сохранить"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -15,8 +15,11 @@ function buildVless(
     host: string;
     remark: string;
     stream_settings: any;
+    panel?: string;
+    inbound_id?: number;
   },
   sniOverride?: string,
+  overrides?: Map<string, string>,
 ) {
   if (inbound.protocol !== "vless") {
     // Only vless supported for now
@@ -68,7 +71,8 @@ function buildVless(
     if (httpPath) params.set("path", httpPath);
   }
 
-  const displayRemark = mapRemark(inbound.remark);
+  const overrideKey = `${inbound.panel ?? ""}:${inbound.inbound_id ?? ""}`;
+  const displayRemark = overrides?.get(overrideKey) ?? mapRemark(inbound.remark);
   const remark = encodeURIComponent(displayRemark);
   return `vless://${uuid}@${inbound.host}:${inbound.port}?${params.toString()}#${remark}`;
 }
@@ -116,6 +120,20 @@ Deno.serve(async (req) => {
       .select("panel, inbound_id, remark, protocol, port, host, stream_settings")
       .eq("subscription_id", sub.id);
 
+    // Load overrides for the panel+inbound pairs used by this subscription
+    const overridesMap = new Map<string, string>();
+    const pairs = (inbounds ?? []).map((ib: any) => ({ panel: ib.panel, inbound_id: ib.inbound_id }));
+    if (pairs.length > 0) {
+      const panels = Array.from(new Set(pairs.map((p) => p.panel)));
+      const ids = Array.from(new Set(pairs.map((p) => p.inbound_id)));
+      const { data: ovs } = await supabase
+        .from("inbound_overrides")
+        .select("panel, inbound_id, display_remark")
+        .in("panel", panels)
+        .in("inbound_id", ids);
+      (ovs ?? []).forEach((o: any) => overridesMap.set(`${o.panel}:${o.inbound_id}`, o.display_remark));
+    }
+
     const lines: string[] = [];
     const whitelist: string[] = Array.isArray((sub as any).sni_whitelist)
       ? (sub as any).sni_whitelist.filter((s: string) => typeof s === "string" && s.trim().length > 0)
@@ -124,7 +142,7 @@ Deno.serve(async (req) => {
       const sniOverride = whitelist.length > 0
         ? whitelist[Math.floor(Math.random() * whitelist.length)]
         : undefined;
-      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, sniOverride);
+      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, sniOverride, overridesMap);
       if (link) lines.push(link);
     }
 
