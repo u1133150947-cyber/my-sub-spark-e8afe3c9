@@ -876,6 +876,55 @@ const Index = () => {
                           </div>
                         </div>
 
+                        <div>
+                          <Label className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                            <Eye className="size-3.5" /> Как увидит клиент в приложении (порядок ↕)
+                          </Label>
+                          <Card className="p-3 bg-background border-border">
+                            {(() => {
+                              const visible = editOrder.filter((k) => editSelected.has(k));
+                              if (!visible.length) {
+                                return <div className="text-xs text-muted-foreground">Нет выбранных подключений</div>;
+                              }
+                              const findIb = (key: string) => {
+                                const [panel, idStr] = key.split(":");
+                                const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
+                                if (!Array.isArray(list)) return { panel, id: Number(idStr), remark: `#${idStr}` };
+                                const ib = list.find((x) => x.id === Number(idStr));
+                                return { panel, id: Number(idStr), remark: ib?.remark ?? `#${idStr}` };
+                              };
+                              return (
+                                <div className="space-y-1">
+                                  {visible.map((key, idx) => {
+                                    const { panel, id, remark } = findIb(key);
+                                    return (
+                                      <div key={key} className="flex items-center gap-2 px-2 py-1.5 rounded bg-secondary/40">
+                                        <span className="text-xs text-muted-foreground w-5 text-right tabular-nums">{idx + 1}.</span>
+                                        <div className="flex-1 min-w-0 text-sm truncate">
+                                          {inboundLabel(panel, id, remark)}
+                                        </div>
+                                        <Button variant="ghost" size="icon" className="size-7" disabled={idx === 0}
+                                          onClick={() => moveOrder(key, -1)}>
+                                          <ArrowUp className="size-3.5" />
+                                        </Button>
+                                        <Button variant="ghost" size="icon" className="size-7" disabled={idx === visible.length - 1}
+                                          onClick={() => moveOrder(key, 1)}>
+                                          <ArrowDown className="size-3.5" />
+                                        </Button>
+                                      </div>
+                                    );
+                                  })}
+                                  <div className="flex justify-end pt-2">
+                                    <Button variant="outline" size="sm" onClick={() => saveOrder(s)}>
+                                      <Check className="size-3.5 mr-1" /> Сохранить порядок
+                                    </Button>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </Card>
+                        </div>
+
                         <div className="flex gap-2 justify-end">
                           <Button variant="ghost" size="sm" onClick={closeEdit} disabled={savingEdit}>
                             <X className="size-4 mr-1" /> Отмена
