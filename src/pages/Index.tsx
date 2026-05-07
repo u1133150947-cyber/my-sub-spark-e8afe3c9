@@ -1104,6 +1104,36 @@ const Index = () => {
                         <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <Link2 className="size-3 shrink-0" />
                           <code className="truncate">{url}</code>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2"
+                            title="Изменить URL подписки"
+                            onClick={async () => {
+                              if (editingId !== s.id) await openEdit(s);
+                              const current = (editingId === s.id ? editSlug : s.slug) || s.slug;
+                              const input = window.prompt("Новый URL подписки (slug, a-z 0-9, мин. 4 символа):", current);
+                              if (input == null) return;
+                              const norm = input.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+                              if (!norm || norm.length < 4) { toast.error("URL должен быть минимум 4 символа (a-z 0-9)"); return; }
+                              if (norm === s.slug) return;
+                              try {
+                                const { data, error } = await supabase.functions.invoke("panel?action=update", {
+                                  method: "POST",
+                                  body: { id: s.id, slug: norm },
+                                });
+                                if (error) throw error;
+                                if (data?.error) throw new Error(data.error);
+                                toast.success("URL подписки обновлён");
+                                setEditSlug(norm);
+                                await loadSubs();
+                              } catch (e: any) {
+                                toast.error(e?.message || "Не удалось обновить URL");
+                              }
+                            }}
+                          >
+                            <Pencil className="size-3" />
+                          </Button>
                         </div>
                       </div>
                       <div className="flex gap-2 flex-wrap">
