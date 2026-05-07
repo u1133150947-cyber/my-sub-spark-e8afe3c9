@@ -374,6 +374,27 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ history: data ?? [], uptime }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "auditLog") {
+      const level = url.searchParams.get("level"); // info|warn|error
+      const act = url.searchParams.get("act");
+      const panel = url.searchParams.get("panel");
+      const search = url.searchParams.get("q");
+      const hours = Math.min(720, Number(url.searchParams.get("hours") ?? "24"));
+      const limit = Math.min(1000, Number(url.searchParams.get("limit") ?? "300"));
+      const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+      let q = supabase.from("audit_log").select("id, ts, level, action, panel_slug, subscription_id, status, duration_ms, error, request_id, meta").gte("ts", since).order("ts", { ascending: false }).limit(limit);
+      if (level) q = q.eq("level", level);
+      if (act) q = q.eq("action", act);
+      if (panel) q = q.eq("panel_slug", panel);
+      if (search) q = q.or(`error.ilike.%${search}%,action.ilike.%${search}%`);
+      const { data, error } = await q;
+      if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      // GC: keep last 30 days
+      const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+      supabase.from("audit_log").delete().lt("ts", cutoff).then(() => {});
+      return new Response(JSON.stringify({ logs: data ?? [] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "onlines") {
       const all = await getAllPanels();
       const result: { panel: string; email: string; subscription_id: string | null; sub_name: string | null; remark: string | null }[] = [];
