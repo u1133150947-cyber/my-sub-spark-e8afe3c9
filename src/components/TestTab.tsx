@@ -95,6 +95,7 @@ export function TestTab() {
     try {
       const rows = Array.from(picked).map((i, idx) => {
         const it = items[i];
+        const ss = { ...(it.stream_settings as any), _clientUuid: it.uuid ?? "" };
         return {
           subscription_id: sub.id,
           panel: panelTag || "imported",
@@ -103,7 +104,7 @@ export function TestTab() {
           protocol: it.protocol,
           port: it.port || 443,
           host: it.host,
-          stream_settings: it.stream_settings as any,
+          stream_settings: ss,
           client_email: sub.client_email,
           sort_order: idx,
         };
