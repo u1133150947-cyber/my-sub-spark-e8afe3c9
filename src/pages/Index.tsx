@@ -1126,7 +1126,7 @@ const Index = () => {
                                 if (data?.error) throw new Error(data.error);
                                 toast.success("URL подписки обновлён");
                                 setEditSlug(norm);
-                                await refresh();
+                                await loadSubs();
                               } catch (e: any) {
                                 toast.error(e?.message || "Не удалось обновить URL");
                               }
