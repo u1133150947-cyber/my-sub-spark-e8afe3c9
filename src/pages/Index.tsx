@@ -294,6 +294,12 @@ const Index = () => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast.success(`Добавлено клиентам: ${data.created}${data.errors?.length ? `, ошибок: ${data.errors.length}` : ""}`);
+      pushLog("info", "bulkAdd", `panel=${panel} inbound=${inboundId} created=${data.created} errors=${data.errors?.length ?? 0}`);
+      if (data?.errors?.length) {
+        for (const er of data.errors) {
+          pushLog("error", "bulkAdd", `sub=${er.sub ?? "?"}: ${er.error ?? JSON.stringify(er)}`);
+        }
+      }
       loadSubs();
     } catch (e: any) {
       toast.error("Ошибка: " + (e?.message ?? e));
@@ -314,6 +320,12 @@ const Index = () => {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast.success(`Убрано у клиентов: ${data.removed}${data.errors?.length ? `, ошибок: ${data.errors.length}` : ""}`);
+      pushLog("info", "bulkRemove", `panel=${panel} inbound=${inboundId} removed=${data.removed} errors=${data.errors?.length ?? 0}`);
+      if (data?.errors?.length) {
+        for (const er of data.errors) {
+          pushLog("error", "bulkRemove", `sub=${er.sub ?? "?"}: ${er.error ?? JSON.stringify(er)}`);
+        }
+      }
       loadSubs();
     } catch (e: any) {
       toast.error("Ошибка: " + (e?.message ?? e));
