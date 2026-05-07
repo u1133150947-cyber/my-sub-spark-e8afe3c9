@@ -376,6 +376,43 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ removed, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "syncExpiry") {
+      const all = await getAllPanels();
+      const { data: subs } = await supabase.from("subscriptions").select("id, client_email, expiry_ms");
+      const { data: links } = await supabase.from("subscription_inbounds").select("subscription_id, client_email");
+      const emailToSub = new Map<string, string>();
+      (links ?? []).forEach((l: any) => { if (l.client_email) emailToSub.set(l.client_email, l.subscription_id); });
+      (subs ?? []).forEach((s: any) => { if (s.client_email && !emailToSub.has(s.client_email)) emailToSub.set(s.client_email, s.id); });
+
+      const subToExpiry = new Map<string, number>();
+      const errors: Record<string, string> = {};
+      for (const p of all) {
+        try {
+          const m = await getClientExpiryByEmail(p.slug);
+          for (const [email, exp] of Object.entries(m)) {
+            const sid = emailToSub.get(email);
+            if (!sid) continue;
+            const cur = subToExpiry.get(sid) ?? 0;
+            // 0 means unlimited in X-UI; keep "max" except 0 wins only if no real value
+            if (exp > 0 && (cur === 0 || exp > cur)) subToExpiry.set(sid, exp);
+            else if (cur === 0 && exp === 0) subToExpiry.set(sid, 0);
+          }
+        } catch (e) {
+          errors[p.slug] = e instanceof Error ? e.message : String(e);
+        }
+      }
+
+      let updated = 0;
+      for (const s of subs ?? []) {
+        const newExp = subToExpiry.get(s.id);
+        if (newExp === undefined) continue;
+        if (Number(s.expiry_ms ?? 0) === newExp) continue;
+        const { error: uErr } = await supabase.from("subscriptions").update({ expiry_ms: newExp }).eq("id", s.id);
+        if (!uErr) updated++;
+      }
+      return new Response(JSON.stringify({ updated, total: subs?.length ?? 0, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "stats") {
       const all = await getAllPanels();
       const { data: subs } = await supabase.from("subscriptions").select("id, name, client_email, created_at");
