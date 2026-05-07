@@ -251,6 +251,19 @@ function hostFromUrl(u: string) { try { return new URL(u).hostname; } catch { re
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const supabase = supabaseAdmin;
+  const t0 = Date.now();
+  const url0 = new URL(req.url);
+  const action0 = url0.searchParams.get("action") ?? "";
+  const requestId = req.headers.get("x-request-id") ?? crypto.randomUUID();
+  const writeAudit = async (level: string, status: string, error: string | null, meta: Record<string, unknown> = {}) => {
+    try {
+      await supabase.from("audit_log").insert({
+        level, action: action0, status, error: error ? error.slice(0, 1000) : null,
+        duration_ms: Date.now() - t0, request_id: requestId,
+        meta: { method: req.method, ...meta },
+      });
+    } catch {}
+  };
 
   try {
     const url = new URL(req.url);
@@ -786,9 +799,11 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    await writeAudit("warn", "unknown", "Unknown action");
     return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
+    await writeAudit("error", "exception", msg, { stack: e instanceof Error ? (e.stack ?? "").slice(0, 500) : undefined });
     return new Response(JSON.stringify({ error: msg }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   }
 });
