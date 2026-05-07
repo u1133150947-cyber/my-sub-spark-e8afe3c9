@@ -160,15 +160,11 @@ Deno.serve(async (req) => {
         totalBytes: total,
         subUrl: req.url,
       });
-      return new Response(html, {
-        status: 200,
-        headers: {
-          ...corsHeaders,
-          "content-type": "text/html; charset=utf-8",
-          "Cache-Control": "no-store",
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
+      const htmlHeaders = new Headers();
+      htmlHeaders.set("Content-Type", "text/html; charset=utf-8");
+      htmlHeaders.set("Cache-Control", "no-store");
+      for (const [k, v] of Object.entries(corsHeaders)) htmlHeaders.set(k, v);
+      return new Response(html, { status: 200, headers: htmlHeaders });
     }
 
     return new Response(body, {
