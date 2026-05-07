@@ -158,8 +158,13 @@ Deno.serve(async (req) => {
     const expire = sub.expiry_ms ? Math.floor(sub.expiry_ms / 1000) : 0;
 
     const unlimited = !sub.expiry_ms || sub.expiry_ms === 0;
-    const titleText = unlimited ? `${sub.name} • ∞ без ограничений` : sub.name;
-    const profileTitle = "base64:" + btoa(unescape(encodeURIComponent(titleText)));
+    const profileTitle = "base64:" + btoa(unescape(encodeURIComponent(sub.name)));
+    const announceText = unlimited
+      ? "♾ Подписка без ограничений"
+      : "";
+    const announce = announceText
+      ? "base64:" + btoa(unescape(encodeURIComponent(announceText)))
+      : "";
 
     return new Response(body, {
       status: 200,
@@ -169,6 +174,7 @@ Deno.serve(async (req) => {
         "profile-title": profileTitle,
         "profile-update-interval": "12",
         "subscription-userinfo": `upload=${upload}; download=${download}; total=${total}; expire=${expire}`,
+        ...(announce ? { "announce": announce } : {}),
         "content-disposition": `attachment; filename=${encodeURIComponent(sub.name)}`,
       },
     });
