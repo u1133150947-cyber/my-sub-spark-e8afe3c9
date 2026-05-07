@@ -26,7 +26,7 @@ PORT=8080
 # ---- 1. Базовые пакеты ------------------------------------------------
 log "Ставим curl, tar, unzip, ca-certificates, debian-keyring"
 apt-get update -qq
-apt-get install -y -qq curl tar unzip ca-certificates debian-keyring debian-archive-keyring apt-transport-https
+apt-get install -y -qq curl tar unzip rsync ca-certificates debian-keyring debian-archive-keyring apt-transport-https
 
 # ---- 2. Deno ----------------------------------------------------------
 if ! command -v deno >/dev/null 2>&1; then
