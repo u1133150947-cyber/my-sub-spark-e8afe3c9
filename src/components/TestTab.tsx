@@ -74,7 +74,7 @@ export function TestTab() {
           protocol: it.protocol,
           port: it.port || 443,
           host: it.host,
-          stream_settings: it.stream_settings,
+          stream_settings: it.stream_settings as any,
           client_email: sub.client_email,
           sort_order: idx,
         };
