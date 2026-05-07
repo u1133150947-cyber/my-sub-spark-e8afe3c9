@@ -137,10 +137,24 @@ Deno.serve(async (req) => {
       .eq("id", sub.id)
       .then(() => {});
 
-    // Compute aggregate userinfo
+    // Compute aggregate userinfo (used traffic from latest snapshot)
+    let used = 0;
+    const { data: lastSnap } = await supabase
+      .from("traffic_snapshots")
+      .select("used_bytes")
+      .eq("subscription_id", sub.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (lastSnap?.used_bytes != null) used = Number(lastSnap.used_bytes);
+
     const upload = 0;
-    const download = 0;
-    const total = sub.total_bytes ?? 0;
+    const download = used;
+    // If total_bytes == 0 (unlimited), many clients require a non-zero total.
+    // Use a large value so used/total renders correctly.
+    const total = sub.total_bytes && sub.total_bytes > 0
+      ? sub.total_bytes
+      : 1099511627776 * 1024; // 1 PiB as "unlimited"
     const expire = sub.expiry_ms ? Math.floor(sub.expiry_ms / 1000) : 0;
 
     const profileTitle = "base64:" + btoa(unescape(encodeURIComponent(sub.name)));
