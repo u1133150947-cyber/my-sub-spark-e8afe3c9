@@ -212,7 +212,12 @@ EOF
   cd "$PROJECT_DIR"
 
   # ---------- пишем .env проекта ----------
-  SUPABASE_URL_VAL="http://127.0.0.1:8000"
+  # Фронт ходит на тот же домен/IP — nginx проксирует /rest /auth /functions /storage /realtime в Supabase
+  if [[ -n "$DOMAIN" ]]; then
+    SUPABASE_URL_VAL="$( [[ $ISSUE_SSL == yes ]] && echo https || echo http )://${DOMAIN}"
+  else
+    SUPABASE_URL_VAL="http://$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')"
+  fi
   log "Пишу .env проекта…"
   cat > .env <<ENV
 VITE_SUPABASE_URL=${SUPABASE_URL_VAL}
