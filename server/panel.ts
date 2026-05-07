@@ -151,7 +151,13 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (!selections.length) return json({ error: "selections required" }, 400);
       const validSelections = selections.filter((s) => s?.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(Number(s.inboundId)));
       if (!validSelections.length) return json({ error: "Некорректные панели в импорте: panel=null. Установите свежий патч и импортируйте заново.", selections }, 400);
-      const clientUuid = uuidv4(), slug = randomSlug(12), subIdShort = randomSlug(16);
+      const desiredSlug = String(body.slug ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
+      if (desiredSlug) {
+        const clash = row<any>(`SELECT id FROM subscriptions WHERE slug = ?`, [slug]);
+        if (clash) slug = randomSlug(12);
+      }
+      const clientUuid = uuidv4(), subIdShort = randomSlug(16);
       const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
       const expiryMs = days > 0 ? Date.now() + days * 86400000 : 0;
       const totalBytes = totalGB > 0 ? Math.floor(totalGB * 1024 * 1024 * 1024) : 0;
@@ -187,7 +193,13 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const name = String(body.name ?? "").trim();
       const days = Number(body.days ?? 30), totalGB = Number(body.totalGB ?? 0);
       if (!name) return json({ error: "name required" }, 400);
-      const slug = randomSlug(12), clientUuid = uuidv4(), subId = uid();
+      const desiredSlug = String(body.slug ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
+      if (desiredSlug) {
+        const clash = row<any>(`SELECT id FROM subscriptions WHERE slug = ?`, [slug]);
+        if (clash) slug = randomSlug(12);
+      }
+      const clientUuid = uuidv4(), subId = uid();
       const email = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
       const expiryMs = days > 0 ? Date.now() + days * 86400000 : 0;
       const totalBytes = totalGB > 0 ? Math.floor(totalGB * 1024 * 1024 * 1024) : 0;
