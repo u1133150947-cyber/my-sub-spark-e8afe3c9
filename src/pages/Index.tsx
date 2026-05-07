@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 
 type Subscription = {
   id: string;
@@ -94,9 +95,54 @@ const Index = () => {
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("subs");
   const [emailToSubId, setEmailToSubId] = useState<Record<string, string>>({});
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [renameTarget, setRenameTarget] = useState<{ panel: string; inboundId: number; original: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
+  const inboundLabel = (panel: string, id: number, fallback: string) =>
+    overrides[`${panel}:${id}`] || fallback || `inbound #${id}`;
+
+  const loadOverrides = async () => {
+    const { data } = await supabase
+      .from("inbound_overrides")
+      .select("panel, inbound_id, display_remark");
+    const m: Record<string, string> = {};
+    (data ?? []).forEach((r: any) => { m[`${r.panel}:${r.inbound_id}`] = r.display_remark; });
+    setOverrides(m);
+  };
+
+  const openRename = (panel: string, inboundId: number, original: string) => {
+    setRenameTarget({ panel, inboundId, original });
+    setRenameValue(overrides[`${panel}:${inboundId}`] || original);
+  };
+
+  const saveRename = async () => {
+    if (!renameTarget) return;
+    const { panel, inboundId } = renameTarget;
+    const val = renameValue.trim();
+    setRenameSaving(true);
+    try {
+      if (!val || val === renameTarget.original) {
+        await supabase.from("inbound_overrides").delete().eq("panel", panel).eq("inbound_id", inboundId);
+        toast.success("Название сброшено");
+      } else {
+        const { error } = await supabase
+          .from("inbound_overrides")
+          .upsert({ panel, inbound_id: inboundId, display_remark: val }, { onConflict: "panel,inbound_id" });
+        if (error) throw error;
+        toast.success("Название обновлено — применится при следующем обновлении подписки");
+      }
+      await loadOverrides();
+      setRenameTarget(null);
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setRenameSaving(false);
+    }
+  };
 
   const loadEmailMap = async () => {
     const { data } = await supabase
@@ -187,6 +233,7 @@ const Index = () => {
     loadSubs();
     loadInbounds();
     loadEmailMap();
+    loadOverrides();
   }, []);
 
   const toggle = (key: string) => {
