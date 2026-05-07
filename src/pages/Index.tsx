@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, ArrowUp, ArrowDown, Eye, Download, Upload } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, ArrowUp, ArrowDown, Eye, Download, Upload, FileText, Trash } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +24,39 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
+
+// ===== Глобальный лог ошибок/событий =====
+type AppLog = { ts: number; level: "error" | "warn" | "info"; source: string; message: string };
+const APP_LOGS: AppLog[] = [];
+const APP_LOG_LISTENERS = new Set<() => void>();
+const APP_LOG_MAX = 500;
+function pushLog(level: AppLog["level"], source: string, message: string) {
+  APP_LOGS.push({ ts: Date.now(), level, source, message });
+  if (APP_LOGS.length > APP_LOG_MAX) APP_LOGS.splice(0, APP_LOGS.length - APP_LOG_MAX);
+  APP_LOG_LISTENERS.forEach((fn) => { try { fn(); } catch {} });
+}
+// Перехват toast.error/warning + console.error/warn + window.onerror
+if (typeof window !== "undefined" && !(window as any).__appLogPatched) {
+  (window as any).__appLogPatched = true;
+  const origErr = toast.error.bind(toast);
+  const origWarn = (toast as any).warning?.bind(toast);
+  (toast as any).error = (msg: any, opts?: any) => {
+    const text = typeof msg === "string" ? msg : (msg?.message ?? JSON.stringify(msg));
+    pushLog("error", "toast", String(text) + (opts?.description ? `\n${opts.description}` : ""));
+    return origErr(msg, opts);
+  };
+  if (origWarn) (toast as any).warning = (msg: any, opts?: any) => {
+    const text = typeof msg === "string" ? msg : (msg?.message ?? JSON.stringify(msg));
+    pushLog("warn", "toast", String(text) + (opts?.description ? `\n${opts.description}` : ""));
+    return origWarn(msg, opts);
+  };
+  const ce = console.error.bind(console);
+  console.error = (...args: any[]) => { pushLog("error", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); ce(...args); };
+  const cw = console.warn.bind(console);
+  console.warn = (...args: any[]) => { pushLog("warn", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); cw(...args); };
+  window.addEventListener("error", (e) => pushLog("error", "window", `${e.message} @ ${e.filename}:${e.lineno}`));
+  window.addEventListener("unhandledrejection", (e: any) => pushLog("error", "promise", String(e?.reason?.message ?? e?.reason ?? e)));
+}
 
 const COUNTRIES: { code: string; flag: string; name: string }[] = [
   { code: "RU", flag: "🇷🇺", name: "Россия" },
@@ -163,6 +196,12 @@ const Index = () => {
   const [rawImporting, setRawImporting] = useState(false);
   const [importLog, setImportLog] = useState<string[]>([]);
   const [importLogOpen, setImportLogOpen] = useState(false);
+  const [appLogs, setAppLogs] = useState<AppLog[]>(APP_LOGS.slice());
+  useEffect(() => {
+    const fn = () => setAppLogs(APP_LOGS.slice());
+    APP_LOG_LISTENERS.add(fn);
+    return () => { APP_LOG_LISTENERS.delete(fn); };
+  }, []);
 
   const panelMeta: PanelMeta[] = (((inbounds?._panels as PanelMeta[]) ?? [])
     .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
@@ -301,12 +340,22 @@ const Index = () => {
       const { data, error } = await supabase.functions.invoke("panel?action=inbounds", {
         method: "GET",
       });
-      if (error) throw error;
+      if (error) { pushLog("error", "loadInbounds", `invoke error: ${error.message ?? error}`); throw error; }
+      if (data && typeof data === "object") {
+        for (const k of Object.keys(data)) {
+          const v: any = (data as any)[k];
+          if (v && typeof v === "object" && !Array.isArray(v) && k !== "_panels" && v.error) {
+            pushLog("error", "panel:" + k, `inbounds: ${v.error}`);
+          }
+        }
+      }
       const keys = Object.keys(data ?? {}).filter((k) => k !== "_panels" && Array.isArray((data as any)[k]) && k && k !== "null" && k !== "undefined");
       const meta = Array.isArray((data as any)?._panels)
         ? (data as any)._panels.filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined")
         : [];
       setInbounds({ ...(data ?? {}), _panels: meta.length ? meta : keys.map((slug) => ({ slug, name: slug })) });
+      const totalIb = keys.reduce((n, k) => n + (Array.isArray((data as any)[k]) ? (data as any)[k].length : 0), 0);
+      pushLog("info", "loadInbounds", `панелей=${meta.length || keys.length}, inbound'ов=${totalIb}`);
     } catch (e: any) {
       toast.error("Ошибка загрузки inbound'ов: " + (e?.message ?? e));
     } finally {
@@ -896,6 +945,7 @@ const Index = () => {
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
             <TabsTrigger value="update">🔄 Обновление</TabsTrigger>
+            <TabsTrigger value="logs">🪵 Логи{appLogs.some(l=>l.level==="error") ? ` (${appLogs.filter(l=>l.level==="error").length})` : ""}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="stats" className="mt-0">
@@ -1319,6 +1369,52 @@ const Index = () => {
 
           <TabsContent value="update" className="mt-0">
             <UpdatePanel />
+          </TabsContent>
+
+          <TabsContent value="logs" className="mt-0">
+            <Card className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
+              <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <FileText className="size-4 text-primary" /> Логи ({appLogs.length})
+                </h2>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const text = appLogs.map((l) => `[${new Date(l.ts).toISOString()}] ${l.level.toUpperCase()} ${l.source}: ${l.message}`).join("\n");
+                    navigator.clipboard.writeText(text || "(пусто)");
+                    toast.success("Логи скопированы");
+                  }}>
+                    <Copy className="size-3.5 mr-1" /> Скопировать
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const text = appLogs.map((l) => `[${new Date(l.ts).toISOString()}] ${l.level.toUpperCase()} ${l.source}: ${l.message}`).join("\n");
+                    const blob = new Blob([text], { type: "text/plain" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url; a.download = `app-logs-${new Date().toISOString().slice(0,19)}.txt`;
+                    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+                  }}>
+                    <Download className="size-3.5 mr-1" /> Скачать
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => { APP_LOGS.length = 0; setAppLogs([]); }}>
+                    <Trash className="size-3.5 mr-1" /> Очистить
+                  </Button>
+                </div>
+              </div>
+              {appLogs.length === 0 ? (
+                <div className="text-sm text-muted-foreground py-8 text-center">Пока ошибок нет.</div>
+              ) : (
+                <div className="space-y-1 max-h-[70vh] overflow-auto font-mono text-xs">
+                  {appLogs.slice().reverse().map((l, i) => (
+                    <div key={i} className={`px-2 py-1 rounded ${l.level === "error" ? "bg-destructive/10 text-destructive" : l.level === "warn" ? "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400" : "bg-secondary/40 text-muted-foreground"}`}>
+                      <span className="opacity-60">{new Date(l.ts).toLocaleTimeString()}</span>
+                      <span className="ml-2 uppercase opacity-70">{l.level}</span>
+                      <span className="ml-2 opacity-70">{l.source}</span>
+                      <pre className="whitespace-pre-wrap break-all mt-0.5">{l.message}</pre>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
           </TabsContent>
         </Tabs>
       </main>
