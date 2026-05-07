@@ -1,26 +1,23 @@
 #!/usr/bin/env bash
 # =====================================================================
-#  Auto-installer для VPN-панели (Vite + СВОЙ Supabase)
-#  Поддержка: Ubuntu 22.04 / 24.04
+#  Auto-installer для VPN-панели — ВСЁ на твоём VPS
+#  Поддержка: Ubuntu 22.04 / 24.04 (минимум 2 GB RAM, рекомендую 4 GB)
 #
 #  Что делает скрипт:
-#   1. Ставит Node.js 20, nginx, git, apache2-utils, certbot, supabase CLI
-#   2. Спрашивает доступы к ТВОЕМУ Supabase-проекту (URL, anon key,
-#      service role key, project ref, db password) и логин/пароль админа
-#   3. Накатывает схему (supabase/migrations/*) в твою БД
-#   4. Деплоит edge-функции (sub, panel) и записывает их секреты
-#   5. Пишет .env с твоими ключами и собирает фронтенд
-#   6. Кладёт билд в /var/www/panel
-#   7. Настраивает nginx + Basic Auth + проксирование /sub/ на твой Supabase
-#   8. (Опц.) выпускает Let's Encrypt сертификат
+#   1. Ставит Node.js 20, Docker, nginx, certbot, apache2-utils, supabase CLI
+#   2. Поднимает self-hosted Supabase в Docker (Postgres + API + Auth +
+#      Storage + Edge Runtime) в /opt/supabase. БД — у тебя на VPS.
+#   3. Генерит JWT ключи (anon, service_role) и пароль БД сам.
+#   4. Накатывает схему (supabase/migrations/*) в локальный Postgres.
+#   5. Деплоит edge-функции (sub, panel) в локальный Edge Runtime.
+#   6. Пишет .env, собирает фронтенд, кладёт в /var/www/panel.
+#   7. Настраивает nginx + Basic Auth + проксирование /sub/ → локальный
+#      Supabase Kong (порт 8000). Внешних сервисов НЕТ.
+#   8. (Опц.) выпускает Let's Encrypt сертификат.
 #
 #  Использование:
 #     sudo bash install.sh                # интерактивно
 #     sudo SKIP_SUPABASE=1 bash install.sh  # только пересобрать фронт
-#
-#  Перед запуском создай ПУСТОЙ проект на https://supabase.com (Free tier).
-#  Из Project Settings возьми: URL, anon key, service_role key, project ref
-#  (ref — это поддомен xxxx.supabase.co), Database password.
 # =====================================================================
 set -euo pipefail
 
@@ -33,6 +30,7 @@ die()  { echo "${RED}[x]${CLR} $*" >&2; exit 1; }
 [[ -f package.json ]] || die "Нет package.json — запускай скрипт из корня проекта"
 
 SKIP_SUPABASE="${SKIP_SUPABASE:-0}"
+SUPA_DIR="/opt/supabase"
 
 # ---------- интерактивный ввод ----------
 read -rp "Логин администратора: " ADMIN_USER
@@ -53,27 +51,11 @@ if [[ -n "$DOMAIN" ]]; then
   [[ -n "$LE_EMAIL" ]] && ISSUE_SSL="yes"
 fi
 
-# ---------- Supabase ----------
+# ---------- Доступы к 3X-UI панелям и Telegram ----------
 if [[ "$SKIP_SUPABASE" != "1" ]]; then
   echo
-  echo "${GRN}--- Доступы к ТВОЕМУ Supabase-проекту ---${CLR}"
-  echo "Создай проект на https://supabase.com (Free tier) и возьми из Project Settings:"
-  echo "  • API → URL и anon public key и service_role key"
-  echo "  • General → Reference ID (project ref, например abcdefghij)"
-  echo "  • Database → пароль БД (тот, что задавал при создании проекта)"
-  echo
-  read -rp "Supabase URL (https://<ref>.supabase.co): " SUPABASE_URL_VAL
-  read -rp "Supabase project ref (xxxx из xxxx.supabase.co): " SUPABASE_REF
-  read -rsp "Supabase anon (publishable) key: " SUPABASE_ANON; echo
-  read -rsp "Supabase service_role key:       " SUPABASE_SERVICE; echo
-  read -rsp "Supabase database password:      " SUPABASE_DB_PASS; echo
-
-  [[ -n "$SUPABASE_URL_VAL" && -n "$SUPABASE_REF" && -n "$SUPABASE_ANON" && -n "$SUPABASE_SERVICE" && -n "$SUPABASE_DB_PASS" ]] \
-    || die "Все поля Supabase обязательны"
-
-  echo
   echo "${GRN}--- Доступы к 3X-UI панелям (для edge-функций) ---${CLR}"
-  echo "Можно нажать ENTER чтобы пропустить и заполнить позже через Supabase Dashboard → Edge Functions → Secrets."
+  echo "Можно нажать ENTER чтобы пропустить и заполнить позже в ${SUPA_DIR}/.env"
   read -rp  "PANEL_RU_URL      : " PANEL_RU_URL || true
   read -rp  "PANEL_RU_USERNAME : " PANEL_RU_USERNAME || true
   read -rsp "PANEL_RU_PASSWORD : " PANEL_RU_PASSWORD || true; echo
@@ -102,82 +84,146 @@ if ! command -v node >/dev/null || [[ "$(node -v 2>/dev/null | cut -dv -f2 | cut
 fi
 log "node $(node -v), npm $(npm -v)"
 
-# ---------- Supabase CLI ----------
 if [[ "$SKIP_SUPABASE" != "1" ]]; then
-  if ! command -v supabase >/dev/null; then
-    log "Ставлю Supabase CLI…"
-    SUPA_VER="2.20.5"
-    ARCH=$(dpkg --print-architecture)
-    curl -fsSL "https://github.com/supabase/cli/releases/download/v${SUPA_VER}/supabase_${SUPA_VER}_linux_${ARCH}.deb" -o /tmp/supabase.deb
-    dpkg -i /tmp/supabase.deb || apt-get -fy install
-    rm -f /tmp/supabase.deb
+  # ---------- Docker ----------
+  if ! command -v docker >/dev/null; then
+    log "Ставлю Docker…"
+    curl -fsSL https://get.docker.com | sh
   fi
-  log "supabase $(supabase --version)"
+  if ! docker compose version >/dev/null 2>&1; then
+    apt-get install -y docker-compose-plugin
+  fi
+  systemctl enable --now docker
 
-  # ---------- пишем .env ----------
-  log "Пишу .env с твоими ключами…"
+  # ---------- self-hosted Supabase ----------
+  if [[ ! -d "$SUPA_DIR/docker" ]]; then
+    log "Клонирую supabase/supabase в ${SUPA_DIR}…"
+    mkdir -p /opt
+    git clone --depth 1 https://github.com/supabase/supabase.git "$SUPA_DIR"
+  else
+    log "Supabase уже в ${SUPA_DIR}, обновляю…"
+    git -C "$SUPA_DIR" pull --ff-only || warn "git pull supabase не удался — продолжаю с тем, что есть"
+  fi
+
+  cd "$SUPA_DIR/docker"
+
+  # ---------- генерим секреты, если .env ещё нет ----------
+  if [[ ! -f .env ]]; then
+    log "Генерю JWT ключи и пароли…"
+    cp .env.example .env
+
+    JWT_SECRET=$(openssl rand -hex 32)
+    POSTGRES_PASSWORD=$(openssl rand -hex 24)
+    DASHBOARD_PASSWORD=$(openssl rand -hex 16)
+
+    # генерим anon и service_role JWT через node (HS256)
+    NOW=$(date +%s)
+    EXP=$((NOW + 60*60*24*365*10)) # 10 лет
+    gen_jwt() {
+      local role="$1"
+      node -e "
+        const c=require('crypto');
+        const b64=s=>Buffer.from(s).toString('base64url');
+        const h=b64(JSON.stringify({alg:'HS256',typ:'JWT'}));
+        const p=b64(JSON.stringify({role:'$role',iss:'supabase',iat:$NOW,exp:$EXP}));
+        const s=c.createHmac('sha256','$JWT_SECRET').update(h+'.'+p).digest('base64url');
+        process.stdout.write(h+'.'+p+'.'+s);
+      "
+    }
+    ANON_KEY=$(gen_jwt anon)
+    SERVICE_KEY=$(gen_jwt service_role)
+
+    sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" .env
+    sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" .env
+    sed -i "s|^ANON_KEY=.*|ANON_KEY=${ANON_KEY}|" .env
+    sed -i "s|^SERVICE_ROLE_KEY=.*|SERVICE_ROLE_KEY=${SERVICE_KEY}|" .env
+    sed -i "s|^DASHBOARD_USERNAME=.*|DASHBOARD_USERNAME=${ADMIN_USER}|" .env
+    sed -i "s|^DASHBOARD_PASSWORD=.*|DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD}|" .env
+    # внешний URL для kong
+    if [[ -n "$DOMAIN" ]]; then
+      EXT_URL="https://${DOMAIN}"
+    else
+      EXT_URL="http://$(curl -s https://api.ipify.org || echo localhost)"
+    fi
+    sed -i "s|^API_EXTERNAL_URL=.*|API_EXTERNAL_URL=${EXT_URL}|" .env
+    sed -i "s|^SUPABASE_PUBLIC_URL=.*|SUPABASE_PUBLIC_URL=${EXT_URL}|" .env
+    sed -i "s|^SITE_URL=.*|SITE_URL=${EXT_URL}|" .env
+
+    # секреты edge-функций (panel/sub читают их через Deno.env)
+    cat >> .env <<EOF
+
+# === User-provided panel/telegram secrets ===
+PANEL_RU_URL=${PANEL_RU_URL:-}
+PANEL_RU_USERNAME=${PANEL_RU_USERNAME:-}
+PANEL_RU_PASSWORD=${PANEL_RU_PASSWORD:-}
+PANEL_CZ_URL=${PANEL_CZ_URL:-}
+PANEL_CZ_USERNAME=${PANEL_CZ_USERNAME:-}
+PANEL_CZ_PASSWORD=${PANEL_CZ_PASSWORD:-}
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID:-}
+EOF
+
+    log "Сгенерированы ключи. Сохрани их (есть в ${SUPA_DIR}/docker/.env):"
+    echo "  ANON_KEY     = ${ANON_KEY}"
+    echo "  SERVICE_KEY  = ${SERVICE_KEY}"
+    echo "  DB password  = ${POSTGRES_PASSWORD}"
+    echo "  Dashboard PW = ${DASHBOARD_PASSWORD}"
+  else
+    log "${SUPA_DIR}/docker/.env уже существует — использую его"
+    # подгружаем уже существующие ключи
+    set -a; source .env; set +a
+    ANON_KEY="${ANON_KEY:-}"
+    SERVICE_KEY="${SERVICE_ROLE_KEY:-}"
+    POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+  fi
+
+  # ---------- кладём наши edge-функции в supabase/docker/volumes/functions/ ----------
+  log "Копирую edge-функции (sub, panel) в Supabase volumes…"
+  PROJECT_DIR="$OLDPWD"
+  mkdir -p volumes/functions/sub volumes/functions/panel
+  cp -f "$PROJECT_DIR/supabase/functions/sub/index.ts"   volumes/functions/sub/index.ts
+  cp -f "$PROJECT_DIR/supabase/functions/panel/index.ts" volumes/functions/panel/index.ts
+
+  # ---------- стартуем стек ----------
+  log "Поднимаю Supabase (docker compose up -d)…"
+  docker compose pull
+  docker compose up -d
+
+  log "Жду готовности Postgres…"
+  for i in $(seq 1 60); do
+    docker compose exec -T db pg_isready -U postgres >/dev/null 2>&1 && break
+    sleep 2
+    [[ $i -eq 60 ]] && die "Postgres не стартанул за 2 минуты"
+  done
+
+  # ---------- накатываем миграции ----------
+  log "Накатываю миграции в локальный Postgres…"
+  for f in "$PROJECT_DIR"/supabase/migrations/*.sql; do
+    log "  → $(basename "$f")"
+    docker compose exec -T db psql -U postgres -d postgres -v ON_ERROR_STOP=0 -q < "$f" \
+      2> >(grep -vE "already exists|does not exist, skipping" >&2) || \
+      warn "Миграция $(basename "$f") отработала с предупреждениями"
+  done
+
+  # ---------- перезапускаем edge runtime, чтобы подхватил функции ----------
+  log "Перезапуск edge runtime…"
+  docker compose restart functions
+
+  cd "$PROJECT_DIR"
+
+  # ---------- пишем .env проекта ----------
+  # Фронт ходит на тот же домен/IP — nginx проксирует /rest /auth /functions /storage /realtime в Supabase
+  if [[ -n "$DOMAIN" ]]; then
+    SUPABASE_URL_VAL="$( [[ $ISSUE_SSL == yes ]] && echo https || echo http )://${DOMAIN}"
+  else
+    SUPABASE_URL_VAL="http://$(curl -s https://api.ipify.org || hostname -I | awk '{print $1}')"
+  fi
+  log "Пишу .env проекта…"
   cat > .env <<ENV
 VITE_SUPABASE_URL=${SUPABASE_URL_VAL}
-VITE_SUPABASE_PUBLISHABLE_KEY=${SUPABASE_ANON}
-VITE_SUPABASE_PROJECT_ID=${SUPABASE_REF}
+VITE_SUPABASE_PUBLISHABLE_KEY=${ANON_KEY}
+VITE_SUPABASE_PROJECT_ID=local
 ENV
-
-  # ---------- подменяем project_id в supabase/config.toml ----------
-  log "Обновляю supabase/config.toml → ${SUPABASE_REF}"
-  sed -i "s/^project_id = .*/project_id = \"${SUPABASE_REF}\"/" supabase/config.toml
-
-  # ---------- накатываем миграции напрямую через psql (надёжнее, чем supabase db push) ----------
-  PG_URI="postgresql://postgres.${SUPABASE_REF}:${SUPABASE_DB_PASS}@aws-0-eu-central-1.pooler.supabase.com:6543/postgres"
-  log "Проверяю подключение к БД…"
-  if ! PGPASSWORD="$SUPABASE_DB_PASS" psql "$PG_URI" -c "select 1" >/dev/null 2>&1; then
-    warn "Pooler eu-central-1 не отвечает — пробую прямое подключение"
-    PG_URI="postgresql://postgres:${SUPABASE_DB_PASS}@db.${SUPABASE_REF}.supabase.co:5432/postgres"
-    PGPASSWORD="$SUPABASE_DB_PASS" psql "$PG_URI" -c "select 1" >/dev/null \
-      || die "Не удаётся подключиться к БД. Проверь project ref и пароль."
-  fi
-
-  log "Накатываю миграции из supabase/migrations/…"
-  for f in supabase/migrations/*.sql; do
-    log "  → $(basename "$f")"
-    PGPASSWORD="$SUPABASE_DB_PASS" psql "$PG_URI" -v ON_ERROR_STOP=0 -q -f "$f" \
-      2> >(grep -vE "already exists|does not exist, skipping" >&2) || \
-      warn "Миграция $(basename "$f") отработала с предупреждениями (нормально, если БД уже частично накатана)"
-  done
-
-  # ---------- логин в supabase CLI и деплой функций ----------
-  log "Деплою edge-функции (sub, panel)…"
-  export SUPABASE_ACCESS_TOKEN="${SUPABASE_ACCESS_TOKEN:-}"
-  if [[ -z "$SUPABASE_ACCESS_TOKEN" ]]; then
-    warn "SUPABASE_ACCESS_TOKEN не задан."
-    echo  "  → Сгенерируй access token: https://supabase.com/dashboard/account/tokens"
-    read -rsp "Вставь Supabase access token: " SUPABASE_ACCESS_TOKEN; echo
-    export SUPABASE_ACCESS_TOKEN
-  fi
-
-  supabase link --project-ref "$SUPABASE_REF" --password "$SUPABASE_DB_PASS" >/dev/null 2>&1 || \
-    warn "supabase link выдал предупреждения — продолжаю"
-
-  for fn in sub panel; do
-    log "  deploy $fn…"
-    supabase functions deploy "$fn" --no-verify-jwt --project-ref "$SUPABASE_REF" \
-      || die "Не удалось задеплоить функцию $fn"
-  done
-
-  # ---------- секреты функций ----------
-  log "Записываю секреты edge-функций…"
-  SECRET_ARGS=()
-  [[ -n "${PANEL_RU_URL:-}"      ]] && SECRET_ARGS+=("PANEL_RU_URL=$PANEL_RU_URL")
-  [[ -n "${PANEL_RU_USERNAME:-}" ]] && SECRET_ARGS+=("PANEL_RU_USERNAME=$PANEL_RU_USERNAME")
-  [[ -n "${PANEL_RU_PASSWORD:-}" ]] && SECRET_ARGS+=("PANEL_RU_PASSWORD=$PANEL_RU_PASSWORD")
-  [[ -n "${PANEL_CZ_URL:-}"      ]] && SECRET_ARGS+=("PANEL_CZ_URL=$PANEL_CZ_URL")
-  [[ -n "${PANEL_CZ_USERNAME:-}" ]] && SECRET_ARGS+=("PANEL_CZ_USERNAME=$PANEL_CZ_USERNAME")
-  [[ -n "${PANEL_CZ_PASSWORD:-}" ]] && SECRET_ARGS+=("PANEL_CZ_PASSWORD=$PANEL_CZ_PASSWORD")
-  [[ -n "${TELEGRAM_BOT_TOKEN:-}" ]] && SECRET_ARGS+=("TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN")
-  [[ -n "${ADMIN_TELEGRAM_ID:-}"  ]] && SECRET_ARGS+=("ADMIN_TELEGRAM_ID=$ADMIN_TELEGRAM_ID")
-  if [[ ${#SECRET_ARGS[@]} -gt 0 ]]; then
-    supabase secrets set "${SECRET_ARGS[@]}" --project-ref "$SUPABASE_REF" >/dev/null \
-      || warn "Не все секреты записались — проверь Dashboard → Edge Functions → Secrets"
-  fi
 else
   log "SKIP_SUPABASE=1 — пропускаю backend, только пересобираю фронт"
   [[ -f .env ]] || die "Нет .env, а SKIP_SUPABASE=1. Запусти без SKIP_SUPABASE."
@@ -231,11 +277,21 @@ server {
     # Подписка: /sub/<slug> -> твой Supabase edge function (БЕЗ Basic Auth)
     location /sub/ {
         auth_basic off;
-        proxy_pass ${SUPABASE_URL_VAL}/functions/v1/sub/;
-        proxy_set_header Host ${SUPABASE_URL_VAL#https://};
+        proxy_pass http://127.0.0.1:8000/functions/v1/sub/;
+        proxy_set_header Host \$host;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_ssl_server_name on;
+    }
+
+    # Локальный Supabase API (REST + Auth + Edge) — без Basic Auth, нужен фронту
+    location /rest/         { auth_basic off; proxy_pass http://127.0.0.1:8000; proxy_set_header Host \$host; }
+    location /auth/         { auth_basic off; proxy_pass http://127.0.0.1:8000; proxy_set_header Host \$host; }
+    location /realtime/     { auth_basic off; proxy_pass http://127.0.0.1:8000; proxy_set_header Host \$host;
+        proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; }
+    location /storage/      { auth_basic off; proxy_pass http://127.0.0.1:8000; proxy_set_header Host \$host; client_max_body_size 50m; }
+    location /functions/    { auth_basic off; proxy_pass http://127.0.0.1:8000; proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # SPA fallback (React Router)
