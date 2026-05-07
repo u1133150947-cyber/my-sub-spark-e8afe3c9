@@ -91,6 +91,33 @@ export type Database = {
           },
         ]
       }
+      inbound_overrides: {
+        Row: {
+          created_at: string
+          display_remark: string
+          id: string
+          inbound_id: number
+          panel: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_remark: string
+          id?: string
+          inbound_id: number
+          panel: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_remark?: string
+          id?: string
+          inbound_id?: number
+          panel?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       panels: {
         Row: {
           created_at: string
