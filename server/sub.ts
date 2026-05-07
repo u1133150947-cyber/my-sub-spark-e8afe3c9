@@ -21,20 +21,34 @@ const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
   LT: { flag: "🇱🇹", name: "Литва" }, EE: { flag: "🇪🇪", name: "Эстония" },
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function cleanUuid(...values: unknown[]): string {
+  for (const value of values) {
+    const candidate = String(value ?? "").trim();
+    if (UUID_RE.test(candidate)) return candidate;
+  }
+  return "";
+}
+
 function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, overrides?: Map<string, string>) {
   if (ib.protocol !== "vless") return null;
   const ss = ib.stream_settings ?? {};
-  const effectiveUuid: string = (ss._clientUuid && String(ss._clientUuid)) || uuid;
+  const effectiveUuid = cleanUuid(ss._clientUuid, ss.clientUuid, ss.uuid, ss.id, uuid);
+  if (!effectiveUuid) return null;
   const network = ss.network ?? "tcp", security = ss.security ?? "none";
   const params = new URLSearchParams();
   params.set("type", network); params.set("security", security); params.set("encryption", "none");
   if (security === "reality" && ss.realitySettings) {
     const r = ss.realitySettings, settings = r.settings ?? {};
-    const sni = sniOverride || (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined);
+    const sni = sniOverride || (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
     if (sni) params.set("sni", sni);
-    if (Array.isArray(r.shortIds) && r.shortIds[0]) params.set("sid", r.shortIds[0]);
-    if (settings.publicKey) params.set("pbk", settings.publicKey);
-    if (settings.fingerprint) params.set("fp", settings.fingerprint);
+    const sid = (Array.isArray(r.shortIds) && r.shortIds[0]) || r.shortId;
+    if (sid) params.set("sid", sid);
+    const publicKey = settings.publicKey || r.publicKey;
+    if (publicKey) params.set("pbk", publicKey);
+    const fingerprint = settings.fingerprint || r.fingerprint;
+    if (fingerprint) params.set("fp", fingerprint);
     params.set("flow", "xtls-rprx-vision");
   }
   if (security === "tls" && ss.tlsSettings) {
@@ -49,6 +63,12 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
     if (ss.wsSettings.headers?.Host) params.set("host", ss.wsSettings.headers.Host);
   }
   if (network === "grpc" && ss.grpcSettings?.serviceName) params.set("serviceName", ss.grpcSettings.serviceName);
+  if ((network === "xhttp" || network === "splithttp") && ss.xhttpSettings) {
+    if (ss.xhttpSettings.path) params.set("path", ss.xhttpSettings.path);
+    if (ss.xhttpSettings.mode) params.set("mode", ss.xhttpSettings.mode);
+    const host = ss.xhttpSettings.headers?.Host;
+    if (host) params.set("host", Array.isArray(host) ? host[0] : host);
+  }
   if (network === "tcp" && ss.tcpSettings?.header?.type) {
     params.set("headerType", ss.tcpSettings.header.type);
     const httpHost = ss.tcpSettings.header?.request?.headers?.Host?.[0];
