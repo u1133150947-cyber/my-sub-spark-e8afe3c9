@@ -3,6 +3,24 @@ import { db, decodeRow } from "./db.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 
+const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
+  RU: { flag: "🇷🇺", name: "Россия" }, CZ: { flag: "🇨🇿", name: "Чехия" },
+  DE: { flag: "🇩🇪", name: "Германия" }, NL: { flag: "🇳🇱", name: "Нидерланды" },
+  FR: { flag: "🇫🇷", name: "Франция" }, GB: { flag: "🇬🇧", name: "Великобритания" },
+  UK: { flag: "🇬🇧", name: "Великобритания" }, US: { flag: "🇺🇸", name: "США" },
+  CA: { flag: "🇨🇦", name: "Канада" }, JP: { flag: "🇯🇵", name: "Япония" },
+  SG: { flag: "🇸🇬", name: "Сингапур" }, TR: { flag: "🇹🇷", name: "Турция" },
+  UA: { flag: "🇺🇦", name: "Украина" }, PL: { flag: "🇵🇱", name: "Польша" },
+  FI: { flag: "🇫🇮", name: "Финляндия" }, SE: { flag: "🇸🇪", name: "Швеция" },
+  NO: { flag: "🇳🇴", name: "Норвегия" }, ES: { flag: "🇪🇸", name: "Испания" },
+  IT: { flag: "🇮🇹", name: "Италия" }, CH: { flag: "🇨🇭", name: "Швейцария" },
+  AT: { flag: "🇦🇹", name: "Австрия" }, KZ: { flag: "🇰🇿", name: "Казахстан" },
+  CN: { flag: "🇨🇳", name: "Китай" }, HK: { flag: "🇭🇰", name: "Гонконг" },
+  IN: { flag: "🇮🇳", name: "Индия" }, BR: { flag: "🇧🇷", name: "Бразилия" },
+  AE: { flag: "🇦🇪", name: "ОАЭ" }, LV: { flag: "🇱🇻", name: "Латвия" },
+  LT: { flag: "🇱🇹", name: "Литва" }, EE: { flag: "🇪🇪", name: "Эстония" },
+};
+
 function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, overrides?: Map<string, string>) {
   if (ib.protocol !== "vless") return null;
   const ss = ib.stream_settings ?? {};
@@ -38,22 +56,12 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
     if (httpPath) params.set("path", httpPath);
   }
   const overrideKey = `${ib.panel ?? ""}:${ib.inbound_id ?? ""}`;
-  const rawRemark = String(overrides?.get(overrideKey) ?? ib.remark ?? "").trim();
-  const panelName = String(ib.panel_name ?? "").trim();
-  // Strip emoji/punctuation for dedupe so "🇨🇿 Чехия" vs "Чехия" matches.
-  const normalize = (s: string) =>
-    s.toLowerCase().replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\p{P}\p{S}]/gu, "").replace(/\s+/g, " ").trim();
-  // Strip leading country code (cz, ru, de, ...) and separators from the remark.
-  let cleanRemark = rawRemark.replace(/^[\s\-—–:|]+/, "").trim();
-  cleanRemark = cleanRemark.replace(/^[a-z]{2}[\s\-—–:|]+/i, "").trim();
-  let finalRemark = cleanRemark || rawRemark;
-  if (panelName) {
-    const np = normalize(panelName), nr = normalize(cleanRemark);
-    if (!nr) finalRemark = panelName;
-    else if (nr === np || nr.startsWith(np)) finalRemark = cleanRemark;
-    else finalRemark = `${panelName} (${cleanRemark})`;
-  }
-  return `vless://${uuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(finalRemark)}`;
+  const label = String(overrides?.get(overrideKey) ?? "").trim();
+  const country = String(ib.panel_country ?? "").trim().toUpperCase();
+  const ci = country ? COUNTRY_INFO[country] : undefined;
+  const prefix = ci ? `${ci.flag} ${ci.name}` : String(ib.panel_name ?? "").trim();
+  const display = label ? `${prefix} — ${label}` : prefix;
+  return `vless://${uuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 
 export async function handleSub(req: Request, url: URL): Promise<Response> {
@@ -68,15 +76,19 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
 
   const inbounds = db.queryEntries(`SELECT panel, inbound_id, remark, protocol, port, host, stream_settings FROM subscription_inbounds WHERE subscription_id = ?`, [sub.id]).map((r: any) => decodeRow("subscription_inbounds", r));
 
-  // Pull panel display names so we can prepend country/flag to the remark.
-  const panelNames = new Map<string, string>();
+  // Pull panel display names + country code.
+  const panelInfo = new Map<string, { name: string; country: string }>();
   if (inbounds.length) {
     const slugs = Array.from(new Set(inbounds.map((ib: any) => ib.panel)));
     const ph = slugs.map(() => "?").join(",");
-    const rows = db.queryEntries(`SELECT slug, name FROM panels WHERE slug IN (${ph})`, slugs);
-    rows.forEach((r: any) => panelNames.set(r.slug, r.name));
+    const rows = db.queryEntries(`SELECT slug, name, country FROM panels WHERE slug IN (${ph})`, slugs);
+    rows.forEach((r: any) => panelInfo.set(r.slug, { name: r.name ?? "", country: r.country ?? "" }));
   }
-  for (const ib of inbounds as any[]) ib.panel_name = panelNames.get(ib.panel) ?? "";
+  for (const ib of inbounds as any[]) {
+    const info = panelInfo.get(ib.panel);
+    ib.panel_name = info?.name ?? "";
+    ib.panel_country = info?.country ?? "";
+  }
 
   const overridesMap = new Map<string, string>();
   if (inbounds.length) {
