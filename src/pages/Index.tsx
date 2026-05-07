@@ -1181,6 +1181,11 @@ const Index = () => {
                             <Input type="number" min={0} placeholder="не менять" value={editGB} onChange={(e) => setEditGB(e.target.value)} />
                           </div>
                         </div>
+                        <div>
+                          <Label className="text-xs text-muted-foreground">URL подписки (slug, a-z 0-9)</Label>
+                          <Input value={editSlug} onChange={(e) => setEditSlug(e.target.value)} maxLength={32} placeholder="например 8ic8nngcvdz7" />
+                          <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${editSlug || s.slug}`}</p>
+                        </div>
 
                         <div>
                           <Label className="text-xs text-muted-foreground mb-2 block">Подключения</Label>
