@@ -382,6 +382,7 @@ const Index = () => {
     setEditName(s.name);
     setEditDays("");
     setEditGB("");
+    setEditSlug(s.slug);
     // load current whitelist
     const { data: subRow } = await supabase
       .from("subscriptions")
