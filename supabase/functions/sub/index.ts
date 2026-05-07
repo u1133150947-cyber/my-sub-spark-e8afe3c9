@@ -155,6 +155,27 @@ Deno.serve(async (req) => {
 
     const profileTitle = "base64:" + btoa(unescape(encodeURIComponent(sub.name)));
 
+    // Announce text under the title (Happ supports Announce header)
+    let announceText = "";
+    if (!sub.expiry_ms || sub.expiry_ms === 0) {
+      announceText = "♾ Без ограничения по времени";
+    } else {
+      const diff = sub.expiry_ms - Date.now();
+      if (diff <= 0) {
+        announceText = "⛔ Подписка истекла";
+      } else {
+        const d = Math.ceil(diff / 86400000);
+        const word = (() => {
+          const n10 = d % 10, n100 = d % 100;
+          if (n10 === 1 && n100 !== 11) return "день";
+          if (n10 >= 2 && n10 <= 4 && (n100 < 10 || n100 >= 20)) return "дня";
+          return "дней";
+        })();
+        announceText = `⏳ Осталось ${d} ${word}`;
+      }
+    }
+    const announce = "base64:" + btoa(unescape(encodeURIComponent(announceText)));
+
     return new Response(body, {
       status: 200,
       headers: {
@@ -163,6 +184,7 @@ Deno.serve(async (req) => {
         "profile-title": profileTitle,
         "profile-update-interval": "12",
         "subscription-userinfo": `upload=${upload}; download=${download}; total=${total}; expire=${expire}`,
+        "announce": announce,
         "content-disposition": `attachment; filename=${encodeURIComponent(sub.name)}`,
       },
     });
