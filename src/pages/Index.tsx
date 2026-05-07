@@ -1282,6 +1282,43 @@ const Index = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={rawImportOpen} onOpenChange={setRawImportOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Создать подписку из текста</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs text-muted-foreground">Имя подписки</Label>
+              <Input value={rawImportName} onChange={(e) => setRawImportName(e.target.value)} placeholder="Olga" maxLength={64} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Новый домен</Label>
+              <Input value={rawImportDomain} onChange={(e) => setRawImportDomain(e.target.value)} placeholder="vpn.example.com или https://vpn.example.com" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Код/текст подписки из панели</Label>
+              <Textarea
+                value={rawImportText}
+                onChange={(e) => setRawImportText(e.target.value)}
+                className="min-h-48 font-mono text-xs"
+                placeholder="Вставь base64-код подписки или строки vless://..."
+              />
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Клиенты в новой подписке не создаются на panel — будут отдаваться готовые ссылки, а host в них заменится на новый домен.
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRawImportOpen(false)} disabled={rawImporting}>Отмена</Button>
+            <Button onClick={importRawSubscription} disabled={rawImporting || !rawImportText.trim()}
+              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
+              {rawImporting ? <Loader2 className="size-4 animate-spin" /> : "Создать"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
