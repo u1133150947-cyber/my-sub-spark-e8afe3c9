@@ -145,28 +145,6 @@ Deno.serve(async (req) => {
 
     const profileTitle = "base64:" + btoa(unescape(encodeURIComponent(sub.name)));
 
-    // Browser request → render HTML landing page
-    const accept = req.headers.get("accept") ?? "";
-    const ua = req.headers.get("user-agent") ?? "";
-    const wantsHtml =
-      accept.includes("text/html") &&
-      !/clash|sing-box|v2ray|happ|throne|koala|flclash|prizrak|stash|shadowrocket/i.test(ua);
-
-    if (wantsHtml) {
-      const html = renderPage({
-        name: sub.name,
-        expiryMs: sub.expiry_ms ?? 0,
-        usedBytes: 0,
-        totalBytes: total,
-        subUrl: req.url,
-      });
-      const htmlHeaders = new Headers();
-      htmlHeaders.set("Content-Type", "text/html; charset=utf-8");
-      htmlHeaders.set("Cache-Control", "no-store");
-      for (const [k, v] of Object.entries(corsHeaders)) htmlHeaders.set(k, v);
-      return new Response(html, { status: 200, headers: htmlHeaders });
-    }
-
     return new Response(body, {
       status: 200,
       headers: {
