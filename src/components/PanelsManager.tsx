@@ -526,6 +526,12 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                     {p.status === "error" && p.status_message && (
                       <div className="text-xs text-destructive mt-1 truncate">{p.status_message}</div>
                     )}
+                    {p.slug && uptime[p.slug] && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        24ч uptime: <span className={uptime[p.slug].uptime_pct >= 99 ? "text-green-500" : uptime[p.slug].uptime_pct >= 90 ? "text-yellow-500" : "text-destructive"}>{uptime[p.slug].uptime_pct}%</span>
+                        {" · "}avg {uptime[p.slug].avg_latency_ms}ms · {uptime[p.slug].checks} проверок
+                      </div>
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button
