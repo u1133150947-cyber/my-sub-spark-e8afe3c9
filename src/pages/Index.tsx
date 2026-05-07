@@ -590,16 +590,67 @@ const Index = () => {
         setImporting(false);
         return;
       }
+      // Загружаем актуальные inbounds для матчинга по remark (т.к. slug панелей и id могут отличаться)
+      let live: InboundsResp | null = inbounds;
+      if (!live) {
+        const { data, error } = await supabase.functions.invoke("panel?action=inbounds", { method: "GET" });
+        if (error) throw error;
+        live = data;
+      }
+      const livePanels = (live?._panels as PanelMeta[]) ?? [];
+      // Индекс: remark(lower) -> [{panel, inboundId}]
+      const byRemark = new Map<string, { panel: string; inboundId: number }[]>();
+      const byPanelId = new Map<string, { panel: string; inboundId: number }>();
+      for (const pm of livePanels) {
+        const ibs = live?.[pm.slug];
+        if (Array.isArray(ibs)) {
+          for (const ib of ibs as InboundInfo[]) {
+            byPanelId.set(`${pm.slug}:${ib.id}`, { panel: pm.slug, inboundId: ib.id });
+            const key = (ib.remark || "").trim().toLowerCase();
+            if (key) {
+              const arr = byRemark.get(key) ?? [];
+              arr.push({ panel: pm.slug, inboundId: ib.id });
+              byRemark.set(key, arr);
+            }
+          }
+        }
+      }
       let ok = 0;
       const errors: string[] = [];
       for (const item of list) {
         try {
           const name = String(item.name || "").trim();
           if (!name) { errors.push("пустое имя"); continue; }
-          const selections = (item.inbounds ?? [])
-            .filter((x: any) => x?.panel && x?.inbound_id != null)
-            .map((x: any) => ({ panel: String(x.panel), inboundId: Number(x.inbound_id) }));
-          if (!selections.length) { errors.push(`${name}: нет inbound'ов`); continue; }
+          const rawSelections: any[] = item.inbounds ?? [];
+          const selections: { panel: string; inboundId: number }[] = [];
+          const missing: string[] = [];
+          const seen = new Set<string>();
+          for (const x of rawSelections) {
+            if (!x) continue;
+            // 1) точное совпадение по panel:inbound_id
+            const exactKey = `${x.panel}:${x.inbound_id}`;
+            const exact = byPanelId.get(exactKey);
+            if (exact) {
+              const k = `${exact.panel}:${exact.inboundId}`;
+              if (!seen.has(k)) { seen.add(k); selections.push(exact); }
+              continue;
+            }
+            // 2) матчинг по remark
+            const rk = String(x.remark || "").trim().toLowerCase();
+            const matches = rk ? byRemark.get(rk) : undefined;
+            if (matches && matches.length) {
+              for (const m of matches) {
+                const k = `${m.panel}:${m.inboundId}`;
+                if (!seen.has(k)) { seen.add(k); selections.push(m); }
+              }
+            } else {
+              missing.push(x.remark || `${x.panel}#${x.inbound_id}`);
+            }
+          }
+          if (!selections.length) {
+            errors.push(`${name}: не нашёл inbound'ы (${missing.join(", ") || "пусто"})`);
+            continue;
+          }
           const expiryMs = Number(item.expiry_ms || 0);
           const days = expiryMs > 0 ? Math.max(1, Math.ceil((expiryMs - Date.now()) / 86400000)) : 0;
           const totalGB = item.total_bytes ? Math.round(Number(item.total_bytes) / 1024 / 1024 / 1024) : 0;
@@ -610,13 +661,14 @@ const Index = () => {
           if (error) throw error;
           if (data?.error) throw new Error(data.error);
           ok++;
+          if (missing.length) errors.push(`${name}: пропущены inbound'ы (${missing.join(", ")})`);
         } catch (e: any) {
           errors.push(`${item?.name ?? "?"}: ${e?.message ?? e}`);
         }
       }
       if (errors.length) {
-        toast.warning(`Импорт: ${ok} успешно, ${errors.length} с ошибками`, {
-          description: errors.slice(0, 5).join("\n"),
+        toast.warning(`Импорт: ${ok} успешно, ${errors.length} с предупреждениями`, {
+          description: errors.slice(0, 8).join("\n"),
         });
       } else {
         toast.success(`Импортировано: ${ok}`);
