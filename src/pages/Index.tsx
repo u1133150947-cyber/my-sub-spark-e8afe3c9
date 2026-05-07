@@ -486,6 +486,26 @@ const Index = () => {
     }
   };
 
+  const saveOrder = async (s: Subscription) => {
+    const orderedSelected = editOrder.filter((k) => editSelected.has(k));
+    if (!orderedSelected.length) return;
+    try {
+      for (let i = 0; i < orderedSelected.length; i++) {
+        const [panel, idStr] = orderedSelected[i].split(":");
+        const { error } = await supabase
+          .from("subscription_inbounds")
+          .update({ sort_order: i } as any)
+          .eq("subscription_id", s.id)
+          .eq("panel", panel)
+          .eq("inbound_id", Number(idStr));
+        if (error) throw error;
+      }
+      toast.success("Порядок сохранён");
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    }
+  };
+
   const saveSniWhitelist = async (s: Subscription) => {
     const list = editSniText
       .split(/[\s,]+/)
