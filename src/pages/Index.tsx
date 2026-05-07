@@ -1111,25 +1111,10 @@ const Index = () => {
                             title="Изменить URL подписки"
                             onClick={async () => {
                               if (editingId !== s.id) await openEdit(s);
-                              const current = (editingId === s.id ? editSlug : s.slug) || s.slug;
-                              const input = window.prompt("Новый URL подписки (slug, a-z 0-9, мин. 4 символа):", current);
-                              if (input == null) return;
-                              const norm = input.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-                              if (!norm || norm.length < 4) { toast.error("URL должен быть минимум 4 символа (a-z 0-9)"); return; }
-                              if (norm === s.slug) return;
-                              try {
-                                const { data, error } = await supabase.functions.invoke("panel?action=update", {
-                                  method: "POST",
-                                  body: { id: s.id, slug: norm },
-                                });
-                                if (error) throw error;
-                                if (data?.error) throw new Error(data.error);
-                                toast.success("URL подписки обновлён");
-                                setEditSlug(norm);
-                                await loadSubs();
-                              } catch (e: any) {
-                                toast.error(e?.message || "Не удалось обновить URL");
-                              }
+                              setTimeout(() => {
+                                const el = document.querySelector(`#sub-${s.id} input[data-slug-input="1"]`) as HTMLInputElement | null;
+                                if (el) { el.focus(); el.select(); el.scrollIntoView({ behavior: "smooth", block: "center" }); }
+                              }, 50);
                             }}
                           >
                             <Pencil className="size-3" />
@@ -1213,7 +1198,7 @@ const Index = () => {
                         </div>
                         <div>
                           <Label className="text-xs text-muted-foreground">URL подписки (slug, a-z 0-9)</Label>
-                          <Input value={editSlug} onChange={(e) => setEditSlug(e.target.value)} maxLength={32} placeholder="например 8ic8nngcvdz7" />
+                          <Input data-slug-input="1" value={editSlug} onChange={(e) => setEditSlug(e.target.value)} maxLength={32} placeholder="например 8ic8nngcvdz7" />
                           <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${editSlug || s.slug}`}</p>
                         </div>
 
