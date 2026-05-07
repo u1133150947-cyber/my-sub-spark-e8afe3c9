@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 
 type Subscription = {
   id: string;
@@ -804,13 +805,37 @@ const Index = () => {
               Это название будут видеть клиенты в приложении (Happ и др.). Можно ставить флаг и страну, например: <code>🇵🇱 Польша</code>.
               Оригинальное имя на панели: <code>{renameTarget?.original}</code>
             </div>
-            <Input
-              value={renameValue}
-              onChange={(e) => setRenameValue(e.target.value)}
-              placeholder="🇵🇱 Польша"
-              autoFocus
-              onKeyDown={(e) => { if (e.key === "Enter") saveRename(); }}
-            />
+            <div className="flex gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" variant="outline" className="shrink-0 px-3 text-lg" title="Выбрать флаг">
+                    {(renameValue.match(FLAG_RE)?.[0]) || "🏳️"}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-56">
+                  {FLAG_MAP.map(({ flag, keys }) => (
+                    <DropdownMenuItem
+                      key={flag}
+                      onClick={() => {
+                        const cleaned = renameValue.replace(FLAG_RE, "").trimStart();
+                        setRenameValue(`${flag} ${cleaned}`.trimEnd());
+                      }}
+                    >
+                      <span className="text-lg mr-2">{flag}</span>
+                      <span className="capitalize">{keys[0]}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Input
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                placeholder="🇵🇱 Польша"
+                autoFocus
+                className="flex-1"
+                onKeyDown={(e) => { if (e.key === "Enter") saveRename(); }}
+              />
+            </div>
             <div className="text-[11px] text-muted-foreground">
               Очисти поле или верни оригинал, чтобы сбросить переименование.
             </div>
