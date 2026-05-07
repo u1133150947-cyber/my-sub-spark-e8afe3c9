@@ -460,6 +460,11 @@ const Index = () => {
       if (editName.trim() && editName.trim() !== s.name) updateBody.name = editName.trim();
       if (editDays !== "") updateBody.days = Number(editDays);
       if (editGB !== "") updateBody.totalGB = Number(editGB);
+      const newSlug = editSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (newSlug && newSlug !== s.slug) {
+        if (newSlug.length < 4) throw new Error("URL должен быть минимум 4 символа (a-z 0-9)");
+        updateBody.slug = newSlug;
+      }
       if (Object.keys(updateBody).length > 1) {
         const { data, error } = await supabase.functions.invoke("panel?action=update", {
           method: "POST",
