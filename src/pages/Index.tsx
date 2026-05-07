@@ -140,6 +140,7 @@ const Index = () => {
   const [editName, setEditName] = useState("");
   const [editDays, setEditDays] = useState<string>("");
   const [editGB, setEditGB] = useState<string>("");
+  const [editSlug, setEditSlug] = useState<string>("");
   const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [editOrder, setEditOrder] = useState<string[]>([]);
