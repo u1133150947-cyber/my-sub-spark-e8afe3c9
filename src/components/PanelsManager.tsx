@@ -25,6 +25,7 @@ type Panel = {
   status_message: string;
   last_checked_at: string | null;
   country: string;
+  slug?: string;
 };
 
 const empty = { name: "", panel_url: "", username: "", password: "", country: "" };
@@ -119,7 +120,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const load = async () => {
     const { data, error } = await supabase
       .from("panels")
-      .select("id, name, panel_url, username, password, status, status_message, last_checked_at, country")
+      .select("id, name, panel_url, username, password, status, status_message, last_checked_at, country, slug")
       .order("created_at", { ascending: true });
     if (error) return toast.error("Не удалось загрузить панели");
     setPanels((data ?? []) as Panel[]);
