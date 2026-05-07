@@ -109,6 +109,14 @@ try {
   const cols = db.queryEntries(`PRAGMA table_info(subscriptions)`).map((r: any) => r.name);
   if (!cols.includes("raw_links")) db.execute(`ALTER TABLE subscriptions ADD COLUMN raw_links TEXT NOT NULL DEFAULT '[]'`);
 } catch {}
+// Backfill: panels added before slug auto-gen could end up with NULL/empty slug.
+try {
+  const broken = db.queryEntries(`SELECT id FROM panels WHERE slug IS NULL OR slug = ''`);
+  for (const r of broken) {
+    const slug = "p" + crypto.randomUUID().replace(/-/g, "").slice(0, 10);
+    db.query(`UPDATE panels SET slug = ? WHERE id = ?`, [slug, (r as any).id]);
+  }
+} catch {}
 
 export function uid() { return crypto.randomUUID(); }
 

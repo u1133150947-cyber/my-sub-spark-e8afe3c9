@@ -121,6 +121,10 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
     for (const raw of rows) {
       const row = encodeRow(table, raw);
       if (!row.id && cols.has("id")) row.id = uid();
+      // Auto-generate slug for panels (mirror Supabase trigger panels_autogen_slug)
+      if (table === "panels" && cols.has("slug") && (!row.slug || String(row.slug).trim() === "")) {
+        row.slug = "p" + uid().replace(/-/g, "").slice(0, 10);
+      }
       const keys = Object.keys(row).filter((k) => cols.has(k) && isIdent(k));
       const values = keys.map((k) => row[k]);
       const placeholders = keys.map(() => "?").join(",");
