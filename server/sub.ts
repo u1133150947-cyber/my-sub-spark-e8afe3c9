@@ -38,12 +38,18 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
     if (httpPath) params.set("path", httpPath);
   }
   const overrideKey = `${ib.panel ?? ""}:${ib.inbound_id ?? ""}`;
-  const rawRemark = overrides?.get(overrideKey) ?? ib.remark ?? "";
-  const panelName = (ib.panel_name ?? "").trim();
-  // Prepend panel name (with flag) so user-edited remarks keep the country.
-  let finalRemark = rawRemark;
-  if (panelName && !rawRemark.toLowerCase().includes(panelName.toLowerCase())) {
-    finalRemark = `${panelName} — ${rawRemark}`.trim();
+  const rawRemark = String(overrides?.get(overrideKey) ?? ib.remark ?? "").trim();
+  const panelName = String(ib.panel_name ?? "").trim();
+  // Strip emoji/punctuation for dedupe so "🇨🇿 Чехия" vs "Чехия" matches.
+  const normalize = (s: string) =>
+    s.toLowerCase().replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\p{P}\p{S}]/gu, "").replace(/\s+/g, " ").trim();
+  const cleanRemark = rawRemark.replace(/^[\s\-—–:|]+/, "").trim();
+  let finalRemark = cleanRemark || rawRemark;
+  if (panelName) {
+    const np = normalize(panelName), nr = normalize(cleanRemark);
+    if (!nr) finalRemark = panelName;
+    else if (nr === np || nr.startsWith(np)) finalRemark = cleanRemark;
+    else finalRemark = `${panelName} — ${cleanRemark}`;
   }
   return `vless://${uuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(finalRemark)}`;
 }
