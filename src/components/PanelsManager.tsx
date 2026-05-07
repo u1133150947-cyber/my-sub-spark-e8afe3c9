@@ -24,9 +24,43 @@ type Panel = {
   status: string;
   status_message: string;
   last_checked_at: string | null;
+  country: string;
 };
 
-const empty = { name: "", panel_url: "", username: "", password: "" };
+const empty = { name: "", panel_url: "", username: "", password: "", country: "" };
+
+const COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: "RU", flag: "🇷🇺", name: "Россия" },
+  { code: "CZ", flag: "🇨🇿", name: "Чехия" },
+  { code: "DE", flag: "🇩🇪", name: "Германия" },
+  { code: "NL", flag: "🇳🇱", name: "Нидерланды" },
+  { code: "FR", flag: "🇫🇷", name: "Франция" },
+  { code: "GB", flag: "🇬🇧", name: "Великобритания" },
+  { code: "US", flag: "🇺🇸", name: "США" },
+  { code: "CA", flag: "🇨🇦", name: "Канада" },
+  { code: "JP", flag: "🇯🇵", name: "Япония" },
+  { code: "SG", flag: "🇸🇬", name: "Сингапур" },
+  { code: "TR", flag: "🇹🇷", name: "Турция" },
+  { code: "UA", flag: "🇺🇦", name: "Украина" },
+  { code: "PL", flag: "🇵🇱", name: "Польша" },
+  { code: "FI", flag: "🇫🇮", name: "Финляндия" },
+  { code: "SE", flag: "🇸🇪", name: "Швеция" },
+  { code: "NO", flag: "🇳🇴", name: "Норвегия" },
+  { code: "ES", flag: "🇪🇸", name: "Испания" },
+  { code: "IT", flag: "🇮🇹", name: "Италия" },
+  { code: "CH", flag: "🇨🇭", name: "Швейцария" },
+  { code: "AT", flag: "🇦🇹", name: "Австрия" },
+  { code: "KZ", flag: "🇰🇿", name: "Казахстан" },
+  { code: "CN", flag: "🇨🇳", name: "Китай" },
+  { code: "HK", flag: "🇭🇰", name: "Гонконг" },
+  { code: "IN", flag: "🇮🇳", name: "Индия" },
+  { code: "BR", flag: "🇧🇷", name: "Бразилия" },
+  { code: "AE", flag: "🇦🇪", name: "ОАЭ" },
+  { code: "LV", flag: "🇱🇻", name: "Латвия" },
+  { code: "LT", flag: "🇱🇹", name: "Литва" },
+  { code: "EE", flag: "🇪🇪", name: "Эстония" },
+];
+const countryByCode = (c: string) => COUNTRIES.find((x) => x.code === c.toUpperCase());
 
 const detectFlag = (name: string): string => {
   if (FLAG_RE.test(name)) return "";
@@ -57,7 +91,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const load = async () => {
     const { data, error } = await supabase
       .from("panels")
-      .select("id, name, panel_url, username, password, status, status_message, last_checked_at")
+      .select("id, name, panel_url, username, password, status, status_message, last_checked_at, country")
       .order("created_at", { ascending: true });
     if (error) return toast.error("Не удалось загрузить панели");
     setPanels((data ?? []) as Panel[]);
@@ -85,6 +119,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       panel_url: form.panel_url.trim(),
       username: form.username.trim(),
       password: form.password,
+      country: form.country.trim().toUpperCase(),
       host,
       public_host: host,
     });
@@ -128,6 +163,14 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
     if (error) return toast.error("Ошибка: " + error.message);
     toast.success("Название обновлено — изменится во всех подписках");
     setEditingId(null);
+    load();
+    onChanged?.();
+  };
+
+  const setCountry = async (p: Panel, code: string) => {
+    const { error } = await supabase.from("panels").update({ country: code.toUpperCase() }).eq("id", p.id);
+    if (error) return toast.error("Ошибка: " + error.message);
+    toast.success("Страна обновлена — применится при обновлении подписки");
     load();
     onChanged?.();
   };
@@ -219,25 +262,20 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
 
         <div className="grid gap-4 md:grid-cols-2">
           <div className="md:col-span-2">
-            <Label className="text-xs text-muted-foreground">Название</Label>
+            <Label className="text-xs text-muted-foreground">Страна (определяет флаг и название для пользователей)</Label>
             <div className="flex gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button type="button" variant="outline" className="shrink-0 px-3 text-lg" title="Выбрать флаг">
-                    {(form.name.match(FLAG_RE)?.[0]) || "🏳️"}
+                  <Button type="button" variant="outline" className="shrink-0 px-3" title="Выбрать страну">
+                    {form.country ? `${countryByCode(form.country)?.flag ?? "🏳️"} ${form.country}` : "🏳️ Страна"}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-56">
-                  {FLAG_MAP.map(({ flag, keys }) => (
-                    <DropdownMenuItem
-                      key={flag}
-                      onClick={() => {
-                        const cleaned = form.name.replace(FLAG_RE, "").trimStart();
-                        update("name", `${flag} ${cleaned}`.trimEnd());
-                      }}
-                    >
-                      <span className="text-lg mr-2">{flag}</span>
-                      <span className="capitalize">{keys[0]}</span>
+                  {COUNTRIES.map((c) => (
+                    <DropdownMenuItem key={c.code} onClick={() => update("country", c.code)}>
+                      <span className="text-lg mr-2">{c.flag}</span>
+                      <span>{c.name}</span>
+                      <span className="ml-auto text-xs text-muted-foreground">{c.code}</span>
                     </DropdownMenuItem>
                   ))}
                 </DropdownMenuContent>
@@ -245,10 +283,13 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
               <Input
                 value={form.name}
                 onChange={(e) => update("name", e.target.value)}
-                placeholder="🇨🇿 Чехия #1"
+                placeholder="Внутреннее название (для админки)"
                 className="flex-1"
               />
             </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Пользователю показывается «{form.country ? `${countryByCode(form.country)?.flag} ${countryByCode(form.country)?.name}` : "🏳️ Страна"}», а название — только для тебя в админке.
+            </p>
           </div>
           <div className="md:col-span-2">
             <Label className="text-xs text-muted-foreground">URL панели</Label>
@@ -311,7 +352,26 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                         </>
                       ) : (
                         <>
-                          <span className="font-semibold truncate">{withFlag(p.name)}</span>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-base" title="Сменить страну">
+                                {countryByCode(p.country)?.flag ?? "🏳️"}
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="max-h-80 overflow-y-auto w-56">
+                              {COUNTRIES.map((c) => (
+                                <DropdownMenuItem key={c.code} onClick={() => setCountry(p, c.code)}>
+                                  <span className="text-lg mr-2">{c.flag}</span>
+                                  <span>{c.name}</span>
+                                  <span className="ml-auto text-xs text-muted-foreground">{c.code}</span>
+                                </DropdownMenuItem>
+                              ))}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                          <span className="font-semibold truncate">{p.name}</span>
+                          {p.country && countryByCode(p.country) && (
+                            <span className="text-xs text-muted-foreground">→ {countryByCode(p.country)!.flag} {countryByCode(p.country)!.name}</span>
+                          )}
                           <Button size="sm" variant="ghost" onClick={() => startEdit(p)} className="h-6 px-1.5">
                             <Pencil className="size-3 text-muted-foreground" />
                           </Button>

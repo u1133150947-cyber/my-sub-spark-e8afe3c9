@@ -20,6 +20,7 @@ function buildVless(
   },
   sniOverride?: string,
   overrides?: Map<string, string>,
+  panelInfo?: { name?: string; country?: string },
 ) {
   if (inbound.protocol !== "vless") {
     // Only vless supported for now
@@ -72,29 +73,48 @@ function buildVless(
   }
 
   const overrideKey = `${inbound.panel ?? ""}:${inbound.inbound_id ?? ""}`;
-  const raw = String(overrides?.get(overrideKey) ?? mapRemark(inbound.remark) ?? "").trim();
-  const panelName = String((inbound as any).panel_name ?? "").trim();
-  let cleanRemark = raw.replace(/^[\s\-—–:|]+/, "").trim();
-  cleanRemark = cleanRemark.replace(/^[a-z]{2}[\s\-—–:|]+/i, "").trim();
-  const norm = (s: string) => s.toLowerCase().replace(/[\p{Extended_Pictographic}\p{Emoji_Component}\p{P}\p{S}]/gu, "").replace(/\s+/g, " ").trim();
-  let display = cleanRemark || raw;
-  if (panelName) {
-    const np = norm(panelName), nr = norm(cleanRemark);
-    if (!nr) display = panelName;
-    else if (nr === np || nr.startsWith(np)) display = cleanRemark;
-    else display = `${panelName} (${cleanRemark})`;
-  }
+  const label = String(overrides?.get(overrideKey) ?? "").trim();
+  const country = String(panelInfo?.country ?? "").trim().toUpperCase();
+  const ci = country ? COUNTRY_INFO[country] : undefined;
+  const prefix = ci
+    ? `${ci.flag} ${ci.name}`
+    : String(panelInfo?.name ?? "").trim() || String((inbound as any).panel_name ?? "").trim();
+  const display = label ? `${prefix} — ${label}` : prefix;
   return `vless://${uuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`;
 }
 
-// Friendly remark overrides for subscription display
-function mapRemark(remark: string): string {
-  const map: Record<string, string> = {
-    YouTubeRU: "🇷🇺 YouTube без рекламы",
-    dpBeget_ru: "🇨🇿 Чехия",
-  };
-  return map[remark] ?? remark;
-}
+const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
+  RU: { flag: "🇷🇺", name: "Россия" },
+  CZ: { flag: "🇨🇿", name: "Чехия" },
+  DE: { flag: "🇩🇪", name: "Германия" },
+  NL: { flag: "🇳🇱", name: "Нидерланды" },
+  FR: { flag: "🇫🇷", name: "Франция" },
+  GB: { flag: "🇬🇧", name: "Великобритания" },
+  UK: { flag: "🇬🇧", name: "Великобритания" },
+  US: { flag: "🇺🇸", name: "США" },
+  CA: { flag: "🇨🇦", name: "Канада" },
+  JP: { flag: "🇯🇵", name: "Япония" },
+  SG: { flag: "🇸🇬", name: "Сингапур" },
+  TR: { flag: "🇹🇷", name: "Турция" },
+  UA: { flag: "🇺🇦", name: "Украина" },
+  PL: { flag: "🇵🇱", name: "Польша" },
+  FI: { flag: "🇫🇮", name: "Финляндия" },
+  SE: { flag: "🇸🇪", name: "Швеция" },
+  NO: { flag: "🇳🇴", name: "Норвегия" },
+  ES: { flag: "🇪🇸", name: "Испания" },
+  IT: { flag: "🇮🇹", name: "Италия" },
+  CH: { flag: "🇨🇭", name: "Швейцария" },
+  AT: { flag: "🇦🇹", name: "Австрия" },
+  KZ: { flag: "🇰🇿", name: "Казахстан" },
+  CN: { flag: "🇨🇳", name: "Китай" },
+  HK: { flag: "🇭🇰", name: "Гонконг" },
+  IN: { flag: "🇮🇳", name: "Индия" },
+  BR: { flag: "🇧🇷", name: "Бразилия" },
+  AE: { flag: "🇦🇪", name: "ОАЭ" },
+  LV: { flag: "🇱🇻", name: "Латвия" },
+  LT: { flag: "🇱🇹", name: "Литва" },
+  EE: { flag: "🇪🇪", name: "Эстония" },
+};
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -130,14 +150,18 @@ Deno.serve(async (req) => {
       .select("panel, inbound_id, remark, protocol, port, host, stream_settings")
       .eq("subscription_id", sub.id);
 
-    // Fetch panel display names so we can prefix country/flag to remarks.
-    const panelNameMap = new Map<string, string>();
+    // Fetch panel display names + country code so we can prefix country/flag to remarks.
+    const panelInfoMap = new Map<string, { name: string; country: string }>();
     const slugs = Array.from(new Set((inbounds ?? []).map((ib: any) => ib.panel)));
     if (slugs.length) {
-      const { data: panelsRows } = await supabase.from("panels").select("slug, name").in("slug", slugs);
-      (panelsRows ?? []).forEach((p: any) => panelNameMap.set(p.slug, p.name));
+      const { data: panelsRows } = await supabase.from("panels").select("slug, name, country").in("slug", slugs);
+      (panelsRows ?? []).forEach((p: any) => panelInfoMap.set(p.slug, { name: p.name ?? "", country: p.country ?? "" }));
     }
-    for (const ib of (inbounds ?? []) as any[]) ib.panel_name = panelNameMap.get(ib.panel) ?? "";
+    for (const ib of (inbounds ?? []) as any[]) {
+      const info = panelInfoMap.get(ib.panel);
+      ib.panel_name = info?.name ?? "";
+      ib.panel_country = info?.country ?? "";
+    }
 
     // Load overrides for the panel+inbound pairs used by this subscription
     const overridesMap = new Map<string, string>();
@@ -161,7 +185,10 @@ Deno.serve(async (req) => {
       const sniOverride = whitelist.length > 0
         ? whitelist[Math.floor(Math.random() * whitelist.length)]
         : undefined;
-      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, sniOverride, overridesMap);
+      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, sniOverride, overridesMap, {
+        name: (ib as any).panel_name,
+        country: (ib as any).panel_country,
+      });
       if (link) lines.push(link);
     }
 

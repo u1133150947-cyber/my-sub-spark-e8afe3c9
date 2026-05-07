@@ -1,0 +1,1 @@
+ALTER TABLE public.panels ADD COLUMN IF NOT EXISTS country text NOT NULL DEFAULT '';
