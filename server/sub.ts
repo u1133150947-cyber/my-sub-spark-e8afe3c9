@@ -38,8 +38,14 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
     if (httpPath) params.set("path", httpPath);
   }
   const overrideKey = `${ib.panel ?? ""}:${ib.inbound_id ?? ""}`;
-  const remark = encodeURIComponent(overrides?.get(overrideKey) ?? ib.remark);
-  return `vless://${uuid}@${ib.host}:${ib.port}?${params.toString()}#${remark}`;
+  const rawRemark = overrides?.get(overrideKey) ?? ib.remark ?? "";
+  const panelName = (ib.panel_name ?? "").trim();
+  // Prepend panel name (with flag) so user-edited remarks keep the country.
+  let finalRemark = rawRemark;
+  if (panelName && !rawRemark.toLowerCase().includes(panelName.toLowerCase())) {
+    finalRemark = `${panelName} — ${rawRemark}`.trim();
+  }
+  return `vless://${uuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(finalRemark)}`;
 }
 
 export async function handleSub(req: Request, url: URL): Promise<Response> {
@@ -53,6 +59,16 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   const subDecoded = decodeRow("subscriptions", sub);
 
   const inbounds = db.queryEntries(`SELECT panel, inbound_id, remark, protocol, port, host, stream_settings FROM subscription_inbounds WHERE subscription_id = ?`, [sub.id]).map((r: any) => decodeRow("subscription_inbounds", r));
+
+  // Pull panel display names so we can prepend country/flag to the remark.
+  const panelNames = new Map<string, string>();
+  if (inbounds.length) {
+    const slugs = Array.from(new Set(inbounds.map((ib: any) => ib.panel)));
+    const ph = slugs.map(() => "?").join(",");
+    const rows = db.queryEntries(`SELECT slug, name FROM panels WHERE slug IN (${ph})`, slugs);
+    rows.forEach((r: any) => panelNames.set(r.slug, r.name));
+  }
+  for (const ib of inbounds as any[]) ib.panel_name = panelNames.get(ib.panel) ?? "";
 
   const overridesMap = new Map<string, string>();
   if (inbounds.length) {
