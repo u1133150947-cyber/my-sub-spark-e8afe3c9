@@ -340,12 +340,22 @@ const Index = () => {
       const { data, error } = await supabase.functions.invoke("panel?action=inbounds", {
         method: "GET",
       });
-      if (error) throw error;
+      if (error) { pushLog("error", "loadInbounds", `invoke error: ${error.message ?? error}`); throw error; }
+      if (data && typeof data === "object") {
+        for (const k of Object.keys(data)) {
+          const v: any = (data as any)[k];
+          if (v && typeof v === "object" && !Array.isArray(v) && k !== "_panels" && v.error) {
+            pushLog("error", "panel:" + k, `inbounds: ${v.error}`);
+          }
+        }
+      }
       const keys = Object.keys(data ?? {}).filter((k) => k !== "_panels" && Array.isArray((data as any)[k]) && k && k !== "null" && k !== "undefined");
       const meta = Array.isArray((data as any)?._panels)
         ? (data as any)._panels.filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined")
         : [];
       setInbounds({ ...(data ?? {}), _panels: meta.length ? meta : keys.map((slug) => ({ slug, name: slug })) });
+      const totalIb = keys.reduce((n, k) => n + (Array.isArray((data as any)[k]) ? (data as any)[k].length : 0), 0);
+      pushLog("info", "loadInbounds", `панелей=${meta.length || keys.length}, inbound'ов=${totalIb}`);
     } catch (e: any) {
       toast.error("Ошибка загрузки inbound'ов: " + (e?.message ?? e));
     } finally {
