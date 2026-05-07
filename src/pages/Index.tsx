@@ -25,6 +25,39 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 
+// ===== Глобальный лог ошибок/событий =====
+type AppLog = { ts: number; level: "error" | "warn" | "info"; source: string; message: string };
+const APP_LOGS: AppLog[] = [];
+const APP_LOG_LISTENERS = new Set<() => void>();
+const APP_LOG_MAX = 500;
+function pushLog(level: AppLog["level"], source: string, message: string) {
+  APP_LOGS.push({ ts: Date.now(), level, source, message });
+  if (APP_LOGS.length > APP_LOG_MAX) APP_LOGS.splice(0, APP_LOGS.length - APP_LOG_MAX);
+  APP_LOG_LISTENERS.forEach((fn) => { try { fn(); } catch {} });
+}
+// Перехват toast.error/warning + console.error/warn + window.onerror
+if (typeof window !== "undefined" && !(window as any).__appLogPatched) {
+  (window as any).__appLogPatched = true;
+  const origErr = toast.error.bind(toast);
+  const origWarn = (toast as any).warning?.bind(toast);
+  (toast as any).error = (msg: any, opts?: any) => {
+    const text = typeof msg === "string" ? msg : (msg?.message ?? JSON.stringify(msg));
+    pushLog("error", "toast", String(text) + (opts?.description ? `\n${opts.description}` : ""));
+    return origErr(msg, opts);
+  };
+  if (origWarn) (toast as any).warning = (msg: any, opts?: any) => {
+    const text = typeof msg === "string" ? msg : (msg?.message ?? JSON.stringify(msg));
+    pushLog("warn", "toast", String(text) + (opts?.description ? `\n${opts.description}` : ""));
+    return origWarn(msg, opts);
+  };
+  const ce = console.error.bind(console);
+  console.error = (...args: any[]) => { pushLog("error", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); ce(...args); };
+  const cw = console.warn.bind(console);
+  console.warn = (...args: any[]) => { pushLog("warn", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); cw(...args); };
+  window.addEventListener("error", (e) => pushLog("error", "window", `${e.message} @ ${e.filename}:${e.lineno}`));
+  window.addEventListener("unhandledrejection", (e: any) => pushLog("error", "promise", String(e?.reason?.message ?? e?.reason ?? e)));
+}
+
 const COUNTRIES: { code: string; flag: string; name: string }[] = [
   { code: "RU", flag: "🇷🇺", name: "Россия" },
   { code: "CZ", flag: "🇨🇿", name: "Чехия" },
