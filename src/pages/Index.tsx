@@ -160,6 +160,8 @@ const Index = () => {
   const [rawImportName, setRawImportName] = useState("");
   const [rawImportDomain, setRawImportDomain] = useState("");
   const [rawImporting, setRawImporting] = useState(false);
+  const [importLog, setImportLog] = useState<string[]>([]);
+  const [importLogOpen, setImportLogOpen] = useState(false);
 
   const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
@@ -635,10 +637,16 @@ const Index = () => {
 
   const importSubs = async (file: File) => {
     setImporting(true);
+    const L: string[] = [];
+    const log = (s: string) => { L.push(s); console.log("[import]", s); };
+    setImportLog([]);
+    log(`=== Импорт подписок ${new Date().toISOString()} ===`);
+    log(`Файл: ${file.name} (${file.size} bytes)`);
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
       const list: any[] = parsed?.subscriptions ?? (Array.isArray(parsed) ? parsed : []);
+      log(`Найдено в файле: ${list.length} подписок`);
       if (!list.length) throw new Error("Пустой файл импорта");
       if (!confirm(`Импортировать ${list.length} подписок? Будут созданы новые клиенты на панелях.`)) {
         setImporting(false);
@@ -647,6 +655,7 @@ const Index = () => {
       const fallbackAll = confirm(
         "Если inbound не найден по имени — создать подписку на ВСЕХ доступных inbound'ах текущих панелей?\n\nOK = да (рекомендуется при разных названиях панелей)\nОтмена = пропускать такие подписки"
       );
+      log(`fallbackAll=${fallbackAll}`);
       // Загружаем актуальные inbounds для матчинга по remark (т.к. slug панелей и id могут отличаться)
       let live: InboundsResp | null = inbounds;
       if (!live) {
@@ -655,6 +664,7 @@ const Index = () => {
         live = data;
       }
       const livePanels = (live?._panels as PanelMeta[]) ?? [];
+      log(`Панели (${livePanels.length}): ${livePanels.map(p=>p.slug).join(", ")}`);
       // Нормализация remark: убираем эмодзи, флаги, пунктуацию, пробелы
       const norm = (s: string) =>
         (s || "")
@@ -688,13 +698,17 @@ const Index = () => {
           }
         }
       }
+      log(`Live inbound'ов всего: ${allLive.length}`);
+      for (const l of allLive) log(`  - panel=${l.panel} id=${l.inboundId} remark="${l.remark}" norm="${l.nrm}"`);
       let ok = 0;
       const errors: string[] = [];
       for (const item of list) {
         try {
           const name = String(item.name || "").trim();
+          log(`\n--- Подписка "${name}" ---`);
           if (!name) { errors.push("пустое имя"); continue; }
           const rawSelections: any[] = item.inbounds ?? [];
+          log(`  исходные inbound'ы (${rawSelections.length}): ${JSON.stringify(rawSelections)}`);
           const selections: { panel: string; inboundId: number }[] = [];
           const missing: string[] = [];
           const seen = new Set<string>();
@@ -705,6 +719,7 @@ const Index = () => {
             const exact = byPanelId.get(exactKey);
             if (exact) {
               const k = `${exact.panel}:${exact.inboundId}`;
+              log(`    [exact] "${x.remark}" -> ${k}`);
               if (!seen.has(k)) { seen.add(k); selections.push(exact); }
               continue;
             }
@@ -712,6 +727,7 @@ const Index = () => {
             const rk = String(x.remark || "").trim().toLowerCase();
             const matches = rk ? byRemark.get(rk) : undefined;
             if (matches && matches.length) {
+              log(`    [remark] "${x.remark}" -> ${matches.map(m=>`${m.panel}:${m.inboundId}`).join(",")}`);
               for (const m of matches) {
                 const k = `${m.panel}:${m.inboundId}`;
                 if (!seen.has(k)) { seen.add(k); selections.push(m); }
@@ -728,11 +744,13 @@ const Index = () => {
                 .map((l) => ({ panel: l.panel, inboundId: l.inboundId }));
             }
             if (fuzzy && fuzzy.length) {
+              log(`    [fuzzy nk="${nk}"] "${x.remark}" -> ${fuzzy.map(m=>`${m.panel}:${m.inboundId}`).join(",")}`);
               for (const m of fuzzy) {
                 const k = `${m.panel}:${m.inboundId}`;
                 if (!seen.has(k)) { seen.add(k); selections.push(m); }
               }
             } else {
+              log(`    [MISS nk="${nk}"] "${x.remark}" не найден`);
               missing.push(x.remark || `${x.panel}#${x.inbound_id}`);
             }
           }
@@ -741,29 +759,44 @@ const Index = () => {
               const all = Array.from(byPanelId.values());
               if (all.length) {
                 for (const m of all) selections.push(m);
+                log(`  fallback: использованы все ${all.length} inbound'ов`);
                 errors.push(`${name}: использованы все доступные inbound'ы (исходные: ${missing.join(", ")})`);
               }
             }
           }
           if (!selections.length) {
+            log(`  SKIP: нет inbound'ов`);
             errors.push(`${name}: не нашёл inbound'ы (${missing.join(", ") || "пусто"})`);
             continue;
           }
           const expiryMs = Number(item.expiry_ms || 0);
           const days = expiryMs > 0 ? Math.max(1, Math.ceil((expiryMs - Date.now()) / 86400000)) : 0;
           const totalGB = item.total_bytes ? Math.round(Number(item.total_bytes) / 1024 / 1024 / 1024) : 0;
+          log(`  -> create: days=${days} GB=${totalGB} selections=${selections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
           const { data, error } = await supabase.functions.invoke("panel?action=create", {
             method: "POST",
             body: { name, days, totalGB, selections },
           });
-          if (error) throw error;
-          if (data?.error) throw new Error(data.error);
+          if (error) {
+            log(`  ERROR invoke: ${error.message ?? error}`);
+            log(`  ERROR detail: ${JSON.stringify(error)}`);
+            throw error;
+          }
+          if (data?.error) {
+            log(`  ERROR data: ${data.error}`);
+            log(`  data: ${JSON.stringify(data).slice(0,500)}`);
+            throw new Error(data.error);
+          }
+          log(`  OK: ${JSON.stringify(data).slice(0,300)}`);
           ok++;
           if (missing.length) errors.push(`${name}: пропущены inbound'ы (${missing.join(", ")})`);
         } catch (e: any) {
+          log(`  EXCEPTION: ${e?.message ?? e}`);
           errors.push(`${item?.name ?? "?"}: ${e?.message ?? e}`);
         }
       }
+      log(`\n=== Итог: ok=${ok}, ошибок/предупреждений=${errors.length} ===`);
+      for (const e of errors) log(`  ! ${e}`);
       if (errors.length) {
         toast.warning(`Импорт: ${ok} успешно, ${errors.length} с предупреждениями`, {
           description: errors.slice(0, 8).join("\n"),
@@ -773,8 +806,11 @@ const Index = () => {
       }
       loadSubs();
     } catch (e: any) {
+      log(`FATAL: ${e?.message ?? e}`);
       toast.error("Ошибка импорта: " + (e?.message ?? e));
     } finally {
+      setImportLog(L);
+      setImportLogOpen(true);
       setImporting(false);
     }
   };
@@ -1320,6 +1356,38 @@ const Index = () => {
               style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
               {rawImporting ? <Loader2 className="size-4 animate-spin" /> : "Создать"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={importLogOpen} onOpenChange={setImportLogOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Лог импорта подписок</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            readOnly
+            value={importLog.join("\n")}
+            className="min-h-[60vh] font-mono text-xs"
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              navigator.clipboard.writeText(importLog.join("\n"));
+              toast.success("Лог скопирован");
+            }}>
+              <Copy className="size-4 mr-1" /> Скопировать
+            </Button>
+            <Button variant="outline" onClick={() => {
+              const blob = new Blob([importLog.join("\n")], { type: "text/plain" });
+              const u = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = u; a.download = `import-log-${Date.now()}.txt`;
+              document.body.appendChild(a); a.click(); a.remove();
+              URL.revokeObjectURL(u);
+            }}>
+              <Download className="size-4 mr-1" /> Скачать
+            </Button>
+            <Button onClick={() => setImportLogOpen(false)}>Закрыть</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
