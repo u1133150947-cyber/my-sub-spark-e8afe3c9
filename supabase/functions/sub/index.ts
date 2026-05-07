@@ -60,7 +60,8 @@ function buildVless(
     if (publicKey) params.set("pbk", publicKey);
     const fingerprint = settings.fingerprint || r.fingerprint;
     if (fingerprint) params.set("fp", fingerprint);
-    params.set("flow", "xtls-rprx-vision");
+    // flow=xtls-rprx-vision валиден только для TCP
+    if (network === "tcp") params.set("flow", "xtls-rprx-vision");
   }
   // TLS
   if (security === "tls" && ss.tlsSettings) {
