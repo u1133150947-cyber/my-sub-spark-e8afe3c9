@@ -285,7 +285,10 @@ const Index = () => {
       .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at, raw_links")
       .order("created_at", { ascending: false });
     if (error) return toast.error("Не удалось загрузить подписки");
-    setSubs(data ?? []);
+    setSubs(((data ?? []) as any[]).map((s) => ({
+      ...s,
+      raw_links: Array.isArray(s.raw_links) ? s.raw_links : [],
+    })));
   };
 
   const loadInbounds = async () => {
