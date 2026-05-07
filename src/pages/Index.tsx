@@ -163,7 +163,8 @@ const Index = () => {
   const [importLog, setImportLog] = useState<string[]>([]);
   const [importLogOpen, setImportLogOpen] = useState(false);
 
-  const panelMeta: PanelMeta[] = (inbounds?._panels as PanelMeta[]) ?? [];
+  const panelMeta: PanelMeta[] = (((inbounds?._panels as PanelMeta[]) ?? [])
+    .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
   const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
   const inboundLabel = (panel: string, id: number, fallback: string) =>
     overrides[`${panel}:${id}`] || fallback || `inbound #${id}`;
