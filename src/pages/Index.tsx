@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, ArrowUp, ArrowDown, Eye } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -139,6 +139,7 @@ const Index = () => {
   const [editGB, setEditGB] = useState<string>("");
   const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
+  const [editOrder, setEditOrder] = useState<string[]>([]);
   const [editSniText, setEditSniText] = useState<string>("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
@@ -371,17 +372,22 @@ const Index = () => {
     setEditSniText(Array.isArray(wl) ? wl.join("\n") : "");
     const { data } = await supabase
       .from("subscription_inbounds")
-      .select("panel, inbound_id, remark")
-      .eq("subscription_id", s.id);
-    const keys = new Set((data ?? []).map((l: any) => `${l.panel}:${l.inbound_id}`));
+      .select("panel, inbound_id, remark, sort_order, created_at")
+      .eq("subscription_id", s.id)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    const orderedKeys = (data ?? []).map((l: any) => `${l.panel}:${l.inbound_id}`);
+    const keys = new Set(orderedKeys);
     setEditExisting(keys);
     setEditSelected(new Set(keys));
+    setEditOrder(orderedKeys);
   };
 
   const closeEdit = () => {
     setEditingId(null);
     setEditSelected(new Set());
     setEditExisting(new Set());
+    setEditOrder([]);
     setEditSniText("");
   };
 
@@ -389,6 +395,22 @@ const Index = () => {
     setEditSelected((prev) => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+    setEditOrder((prev) => {
+      if (prev.includes(key)) return prev.filter((k) => k !== key);
+      return [...prev, key];
+    });
+  };
+
+  const moveOrder = (key: string, dir: -1 | 1) => {
+    setEditOrder((prev) => {
+      const idx = prev.indexOf(key);
+      if (idx < 0) return prev;
+      const j = idx + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = prev.slice();
+      [next[idx], next[j]] = [next[j], next[idx]];
       return next;
     });
   };
