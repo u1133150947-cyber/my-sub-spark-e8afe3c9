@@ -82,6 +82,7 @@ type Subscription = {
   total_bytes: number;
   hits: number;
   created_at: string;
+  raw_links?: string[];
 };
 
 type InboundClient = { email: string; id?: string; enable?: boolean };
@@ -281,7 +282,7 @@ const Index = () => {
   const loadSubs = async () => {
     const { data, error } = await supabase
       .from("subscriptions")
-      .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at")
+      .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at, raw_links")
       .order("created_at", { ascending: false });
     if (error) return toast.error("Не удалось загрузить подписки");
     setSubs(data ?? []);
