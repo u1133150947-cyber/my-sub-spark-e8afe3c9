@@ -196,6 +196,12 @@ const Index = () => {
   const [rawImporting, setRawImporting] = useState(false);
   const [importLog, setImportLog] = useState<string[]>([]);
   const [importLogOpen, setImportLogOpen] = useState(false);
+  const [appLogs, setAppLogs] = useState<AppLog[]>(APP_LOGS.slice());
+  useEffect(() => {
+    const fn = () => setAppLogs(APP_LOGS.slice());
+    APP_LOG_LISTENERS.add(fn);
+    return () => { APP_LOG_LISTENERS.delete(fn); };
+  }, []);
 
   const panelMeta: PanelMeta[] = (((inbounds?._panels as PanelMeta[]) ?? [])
     .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
