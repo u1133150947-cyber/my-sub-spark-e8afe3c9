@@ -1226,19 +1226,113 @@ const Index = () => {
               </Button>
             </div>
           </div>
+          {subs.length > 0 && (
+            <Card className="p-3 mb-3 border-border flex flex-wrap items-center gap-2" style={{ background: "var(--gradient-card)" }}>
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="size-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={subsSearch}
+                  onChange={(e) => setSubsSearch(e.target.value)}
+                  placeholder="Поиск по имени, email или slug…"
+                  className="pl-8 h-9"
+                />
+              </div>
+              <Select value={subsSort} onValueChange={setSubsSort}>
+                <SelectTrigger className="w-[200px] h-9">
+                  <ArrowUpDown className="size-3.5 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="created_desc">Сначала новые</SelectItem>
+                  <SelectItem value="created_asc">Сначала старые</SelectItem>
+                  <SelectItem value="name_asc">Имя ↑ (A→Я)</SelectItem>
+                  <SelectItem value="name_desc">Имя ↓ (Я→A)</SelectItem>
+                  <SelectItem value="hits_desc">Больше hits</SelectItem>
+                  <SelectItem value="hits_asc">Меньше hits</SelectItem>
+                  <SelectItem value="expiry_asc">Скоро истекают</SelectItem>
+                  <SelectItem value="expiry_desc">Позже истекают</SelectItem>
+                  <SelectItem value="traffic_desc">Больше трафика</SelectItem>
+                </SelectContent>
+              </Select>
+              {(() => {
+                const visible = subs.filter((s) => {
+                  const q = subsSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return s.name.toLowerCase().includes(q) || s.client_email.toLowerCase().includes(q) || s.slug.toLowerCase().includes(q);
+                });
+                const allSelected = visible.length > 0 && visible.every((s) => subsSelected.has(s.id));
+                return (
+                  <label className="flex items-center gap-2 text-sm cursor-pointer px-2">
+                    <Checkbox
+                      checked={allSelected}
+                      onCheckedChange={(v) => {
+                        const next = new Set(subsSelected);
+                        if (v) visible.forEach((s) => next.add(s.id));
+                        else visible.forEach((s) => next.delete(s.id));
+                        setSubsSelected(next);
+                      }}
+                    />
+                    Выбрать все ({visible.length})
+                  </label>
+                );
+              })()}
+              {subsSelected.size > 0 && (
+                <>
+                  <span className="text-xs text-muted-foreground">Выбрано: {subsSelected.size}</span>
+                  <Button variant="outline" size="sm" onClick={() => setSubsSelected(new Set())}>
+                    Сбросить
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={bulkDeleteSubs} disabled={bulkDeleting}>
+                    {bulkDeleting ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <Trash2 className="size-3.5 mr-1" />}
+                    Удалить выбранные
+                  </Button>
+                </>
+              )}
+            </Card>
+          )}
           {subs.length === 0 ? (
             <Card className="p-10 text-center text-muted-foreground border-dashed">
               Подписок пока нет.
             </Card>
           ) : (
             <div className="grid gap-3">
-              {subs.map((s) => {
+              {(() => {
+                const q = subsSearch.trim().toLowerCase();
+                const filtered = subs.filter((s) =>
+                  !q || s.name.toLowerCase().includes(q) || s.client_email.toLowerCase().includes(q) || s.slug.toLowerCase().includes(q)
+                );
+                const sorted = [...filtered].sort((a, b) => {
+                  switch (subsSort) {
+                    case "created_asc": return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                    case "name_asc": return a.name.localeCompare(b.name, "ru");
+                    case "name_desc": return b.name.localeCompare(a.name, "ru");
+                    case "hits_desc": return b.hits - a.hits;
+                    case "hits_asc": return a.hits - b.hits;
+                    case "expiry_asc": return (a.expiry_ms || Infinity) - (b.expiry_ms || Infinity);
+                    case "expiry_desc": return (b.expiry_ms || 0) - (a.expiry_ms || 0);
+                    case "traffic_desc": return b.total_bytes - a.total_bytes;
+                    default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                  }
+                });
+                if (sorted.length === 0) {
+                  return <Card className="p-6 text-center text-muted-foreground border-dashed">Ничего не найдено</Card>;
+                }
+                return sorted.map((s) => {
                 const url = subUrl(s.slug);
                 const happ = happUrl(s.slug);
                 const status = expiryStatus(s);
                 return (
                   <Card key={s.id} id={`sub-${s.id}`} className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
                     <div className="flex flex-col md:flex-row md:items-center gap-4">
+                      <Checkbox
+                        className="self-start md:self-center mt-1 md:mt-0"
+                        checked={subsSelected.has(s.id)}
+                        onCheckedChange={(v) => {
+                          const next = new Set(subsSelected);
+                          if (v) next.add(s.id); else next.delete(s.id);
+                          setSubsSelected(next);
+                        }}
+                      />
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="font-semibold truncate">{s.name}</span>
@@ -1284,42 +1378,6 @@ const Index = () => {
                         <Button variant="secondary" size="sm" onClick={() => copy(url)}>
                           <Copy className="size-3.5 mr-1" /> URL
                         </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              size="sm"
-                              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
-                            >
-                              <Share2 className="size-3.5 mr-1" /> Открыть в…
-                              <ChevronDown className="size-3 ml-1" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuLabel>Импорт в клиент</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {CLIENT_LINKS.map((c) => {
-                              const link = c.build(url);
-                              return (
-                                <DropdownMenuItem key={c.label} asChild>
-                                  <a href={link} className="cursor-pointer flex items-center justify-between gap-2">
-                                    <span>
-                                      <span className="mr-2">{c.emoji}</span>
-                                      {c.label}
-                                    </span>
-                                    <Copy
-                                      className="size-3.5 text-muted-foreground hover:text-foreground"
-                                      onClick={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        copy(link);
-                                      }}
-                                    />
-                                  </a>
-                                </DropdownMenuItem>
-                              );
-                            })}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
                         <Button variant="outline" size="sm" onClick={() => setActiveQr(activeQr === s.id ? null : s.id)}>
                           QR
                         </Button>
