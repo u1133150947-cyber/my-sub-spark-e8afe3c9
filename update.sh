@@ -28,11 +28,40 @@ command -v bun  >/dev/null 2>&1 || die "Bun не установлен — сна
 
 log "Синхронизирую файлы в $APP_DIR"
 mkdir -p "$APP_DIR" "$DB_DIR"
+ENV_BACKUP=""
+if [[ -f "$APP_DIR/.env" ]]; then
+  ENV_BACKUP=$(mktemp)
+  cp "$APP_DIR/.env" "$ENV_BACKUP"
+fi
 rsync -a --delete \
-  --exclude node_modules --exclude .git --exclude data --exclude dist \
+  --exclude node_modules --exclude .git --exclude data --exclude dist --exclude .env \
   ./ "$APP_DIR/"
 
 cd "$APP_DIR"
+
+if [[ -n "$ENV_BACKUP" && -f "$ENV_BACKUP" ]]; then
+  cp "$ENV_BACKUP" .env
+  rm -f "$ENV_BACKUP"
+fi
+
+if [[ ! -f .env ]]; then
+  warn ".env не найден — создаю безопасный локальный .env, чтобы фронт не падал чёрным экраном"
+  PUBLIC_URL=${PUBLIC_URL:-}
+  if [[ -z "$PUBLIC_URL" && -f /etc/caddy/Caddyfile ]]; then
+    CADDY_HOST=$(awk '/^[^ \t#].*\{/{print $1; exit}' /etc/caddy/Caddyfile | tr -d '{' || true)
+    if [[ -n "$CADDY_HOST" && "$CADDY_HOST" != :* ]]; then PUBLIC_URL="https://$CADDY_HOST"; fi
+  fi
+  if [[ -z "$PUBLIC_URL" ]]; then
+    PUBLIC_HOST=$(curl -fsS https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}')
+    PUBLIC_URL="http://$PUBLIC_HOST"
+  fi
+  cat > .env <<EOF
+VITE_SUPABASE_URL=$PUBLIC_URL
+VITE_SUPABASE_PUBLISHABLE_KEY=local-anon-key
+VITE_SUPABASE_PROJECT_ID=local
+VITE_SUB_BASE_URL=$PUBLIC_URL/sub
+EOF
+fi
 
 log "bun install"
 bun install --silent
