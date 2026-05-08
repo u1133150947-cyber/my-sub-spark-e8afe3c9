@@ -241,6 +241,25 @@ Deno.serve(async (req) => {
       if (link) lines.push(link);
     }
 
+    // Append external subs attached to this subscription
+    try {
+      const { data: linksRows } = await supabase
+        .from("subscription_external_subs")
+        .select("external_sub_id")
+        .eq("subscription_id", sub.id);
+      const extIds = Array.from(new Set((linksRows ?? []).map((r: any) => r.external_sub_id).filter(Boolean)));
+      if (extIds.length) {
+        const { data: exts } = await supabase
+          .from("external_subs")
+          .select("raw_links")
+          .in("id", extIds);
+        for (const e of exts ?? []) {
+          const arr = Array.isArray((e as any).raw_links) ? (e as any).raw_links : [];
+          for (const l of arr) if (typeof l === "string" && l.trim()) lines.push(l.trim());
+        }
+      }
+    } catch (_) { /* ignore */ }
+
     const body = btoa(lines.join("\n"));
 
     // Fire-and-forget hit counter
