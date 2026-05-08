@@ -169,7 +169,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     const link = buildVless(sub.client_uuid, sub.client_email, ib, sniOverride, overridesMap);
     if (link) lines.push(link);
   }
-  const body = btoa(lines.join("\n"));
+  const body = base64Utf8(lines.join("\n"));
 
   db.query(`UPDATE subscriptions SET hits = hits + 1, last_accessed_at = datetime('now') WHERE id = ?`, [sub.id]);
 
@@ -179,7 +179,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
 
   const total = Number(sub.total_bytes ?? 0);
   const expire = sub.expiry_ms ? Math.floor(Number(sub.expiry_ms) / 1000) : 0;
-  const profileTitle = "base64:" + btoa(unescape(encodeURIComponent(sub.name)));
+  const profileTitle = "base64:" + base64Utf8(sub.name);
 
   let announceText = "";
   const expiryMs = Number(sub.expiry_ms ?? 0);
@@ -194,7 +194,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
       announceText = `⏳ Осталось ${d} ${word}`;
     }
   }
-  const announce = "base64:" + btoa(unescape(encodeURIComponent(announceText)));
+  const announce = "base64:" + base64Utf8(announceText);
 
   return new Response(body, {
     status: 200,
