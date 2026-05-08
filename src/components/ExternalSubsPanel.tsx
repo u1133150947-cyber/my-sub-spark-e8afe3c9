@@ -25,6 +25,28 @@ type Link = { subscription_id: string; external_sub_id: string };
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const PANEL_FN = `${SUPABASE_URL}/functions/v1/panel`;
 
+const COUNTRIES: { code: string; emoji: string; label: string }[] = [
+  { code: "RU", emoji: "🇷🇺", label: "Россия" },
+  { code: "CZ", emoji: "🇨🇿", label: "Чехия" },
+  { code: "DE", emoji: "🇩🇪", label: "Германия" },
+  { code: "AT", emoji: "🇦🇹", label: "Австрия" },
+  { code: "NL", emoji: "🇳🇱", label: "Нидерланды" },
+  { code: "US", emoji: "🇺🇸", label: "США" },
+  { code: "GB", emoji: "🇬🇧", label: "Великобритания" },
+  { code: "FR", emoji: "🇫🇷", label: "Франция" },
+  { code: "FI", emoji: "🇫🇮", label: "Финляндия" },
+  { code: "SE", emoji: "🇸🇪", label: "Швеция" },
+  { code: "PL", emoji: "🇵🇱", label: "Польша" },
+  { code: "TR", emoji: "🇹🇷", label: "Турция" },
+  { code: "JP", emoji: "🇯🇵", label: "Япония" },
+  { code: "SG", emoji: "🇸🇬", label: "Сингапур" },
+  { code: "HK", emoji: "🇭🇰", label: "Гонконг" },
+  { code: "KZ", emoji: "🇰🇿", label: "Казахстан" },
+  { code: "BY", emoji: "🇧🇾", label: "Беларусь" },
+  { code: "UA", emoji: "🇺🇦", label: "Украина" },
+  { code: "OTHER", emoji: "🌍", label: "Другое" },
+];
+
 export function ExternalSubsPanel() {
   const [items, setItems] = useState<ExternalSub[]>([]);
   const [subs, setSubs] = useState<SubscriptionLite[]>([]);
@@ -35,9 +57,9 @@ export function ExternalSubsPanel() {
 
   // form: single link add
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("🌍");
+  const [country, setCountry] = useState<string>("RU");
   const [linkText, setLinkText] = useState("");
-  const [targetSubId, setTargetSubId] = useState<string>("none");
+  const [targetSubId, setTargetSubId] = useState<string>("none"); // "none" | "all" | <subId>
   const [creating, setCreating] = useState(false);
 
   const linksByExt = useMemo(() => {
@@ -82,25 +104,61 @@ export function ExternalSubsPanel() {
     }
     setCreating(true);
     try {
+      const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
       const { data, error } = await supabase.from("external_subs").insert({
-        name: name.trim(), emoji: emoji.trim() || "🌍",
+        name: name.trim(), emoji: c.emoji,
         source_url: "", raw_links: [link], notes: "",
       }).select("id").single();
       if (error) throw error;
-      if (targetSubId && targetSubId !== "none" && data?.id) {
-        const r = await supabase.from("subscription_external_subs").insert({
-          subscription_id: targetSubId, external_sub_id: data.id,
-        });
-        if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
+      if (data?.id) {
+        if (targetSubId === "all" && subs.length) {
+          const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: data.id }));
+          const r = await supabase.from("subscription_external_subs").insert(rows);
+          if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
+          toast.success(`Привязано ко всем (${subs.length})`);
+        } else if (targetSubId !== "none") {
+          const r = await supabase.from("subscription_external_subs").insert({
+            subscription_id: targetSubId, external_sub_id: data.id,
+          });
+          if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
+          toast.success("Сервер добавлен и привязан");
+        } else {
+          toast.success("Сервер добавлен");
+        }
       }
-      toast.success("Сервер добавлен");
-      setName(""); setEmoji("🌍"); setLinkText(""); setTargetSubId("none");
+      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none");
       loadAll();
     } catch (e: any) {
       toast.error("Ошибка добавления", { description: e?.message ?? String(e) });
     } finally {
       setCreating(false);
     }
+  }
+
+  async function attachAll(extId: string) {
+    if (!subs.length) { toast.error("Нет подписок"); return; }
+    setBusy(extId);
+    try {
+      const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: extId }));
+      const r = await supabase.from("subscription_external_subs").insert(rows);
+      if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
+      toast.success(`Привязано ко всем (${subs.length})`);
+      loadAll();
+    } catch (e: any) {
+      toast.error("Не удалось", { description: e?.message ?? String(e) });
+    } finally { setBusy(null); }
+  }
+
+  async function detachAll(extId: string) {
+    setBusy(extId);
+    try {
+      const r = await supabase.from("subscription_external_subs").delete().eq("external_sub_id", extId);
+      if (r.error) throw r.error;
+      toast.success("Отвязано у всех");
+      loadAll();
+    } catch (e: any) {
+      toast.error("Не удалось", { description: e?.message ?? String(e) });
+    } finally { setBusy(null); }
   }
 
   async function onRefresh(item: ExternalSub) {
@@ -161,20 +219,33 @@ export function ExternalSubsPanel() {
           <Globe2 className="size-4 text-primary" /> Добавить сторонний сервер
         </h2>
         <div className="grid md:grid-cols-6 gap-3">
-          <div className="md:col-span-1">
-            <Label>Флаг / эмодзи</Label>
-            <Input value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="🇩🇪" maxLength={4} />
+          <div className="md:col-span-2">
+            <Label>Страна (определяет флаг и название для пользователей)</Label>
+            <Select value={country} onValueChange={setCountry}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {COUNTRIES.map((c) => (
+                  <SelectItem key={c.code} value={c.code}>
+                    <span className="mr-2">{c.emoji}</span>{c.label}
+                    <span className="ml-2 text-xs text-muted-foreground">{c.code}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <div className="md:col-span-3">
-            <Label>Название</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="🇩🇪 Игровой Германия" />
+          <div className="md:col-span-2">
+            <Label>Внутреннее название (для админки)</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Игровой DE 🔒" />
           </div>
           <div className="md:col-span-2">
             <Label>Привязать к подписке</Label>
             <Select value={targetSubId} onValueChange={setTargetSubId}>
-              <SelectTrigger><SelectValue placeholder="— не привязывать —" /></SelectTrigger>
+              <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">— не привязывать —</SelectItem>
+                <SelectItem value="all">★ Добавить всем подпискам</SelectItem>
                 {subs.map((s) => (
                   <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
                 ))}
@@ -187,6 +258,9 @@ export function ExternalSubsPanel() {
               placeholder="vless://uuid@host:443?...#name" />
           </div>
         </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Флаг и страна показываются пользователям из имени ссылки (после <code>#</code>), а название — только для тебя в админке.
+        </p>
         <div className="mt-4">
           <Button onClick={onCreate} disabled={creating}>
             {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
@@ -233,6 +307,16 @@ export function ExternalSubsPanel() {
                     </div>
                   </button>
                   <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={busy === it.id || !subs.length}
+                      onClick={() => attachAll(it.id)} title="Привязать ко всем подпискам">
+                      Всем
+                    </Button>
+                    {attached.size > 0 && (
+                      <Button size="sm" variant="outline" disabled={busy === it.id}
+                        onClick={() => detachAll(it.id)} title="Отвязать у всех">
+                        Отвязать
+                      </Button>
+                    )}
                     {it.source_url && (
                       <Button size="sm" variant="outline" disabled={busy === it.id} onClick={() => onRefresh(it)} title="Обновить из источника">
                         {busy === it.id ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
