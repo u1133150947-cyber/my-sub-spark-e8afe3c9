@@ -8,7 +8,7 @@ import { db, decodeRow, encodeRow, tableColumns, uid } from "./db.ts";
 
 const ALLOWED = new Set([
   "panels", "subscriptions", "subscription_inbounds",
-  "inbound_overrides", "client_mappings", "traffic_snapshots",
+  "inbound_overrides", "client_mappings", "traffic_snapshots", "audit_log",
 ]);
 
 const OP_MAP: Record<string, string> = {
