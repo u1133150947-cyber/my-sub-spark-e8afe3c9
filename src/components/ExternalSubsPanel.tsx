@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, RefreshCw, Link2, Globe2, ChevronDown, ChevronRight } from "lucide-react";
+import { Loader2, Plus, Trash2, RefreshCw, Link2, Globe2, ChevronDown, ChevronRight, Pencil } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 
 type ExternalSub = {
@@ -70,6 +71,12 @@ export function ExternalSubsPanel() {
   const [targetSubId, setTargetSubId] = useState<string>("none"); // "none" | "all" | <subId>
   const [creating, setCreating] = useState(false);
 
+  // edit dialog state
+  const [editing, setEditing] = useState<ExternalSub | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editCountry, setEditCountry] = useState("RU");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   const linksByExt = useMemo(() => {
     const m = new Map<string, Set<string>>();
     for (const l of links) {
@@ -125,8 +132,8 @@ export function ExternalSubsPanel() {
       if (createdId) {
         if (targetSubId === "all" && subs.length) {
           const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: createdId }));
-          const r = await supabase.from("subscription_external_subs").insert(rows);
-          if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
+          const r = await supabase.from("subscription_external_subs").upsert(rows, { onConflict: "subscription_id,external_sub_id", ignoreDuplicates: true });
+          if (r.error) throw r.error;
           toast.success(`Привязано ко всем (${subs.length})`);
         } else if (targetSubId !== "none") {
           const r = await supabase.from("subscription_external_subs").insert({
@@ -152,10 +159,16 @@ export function ExternalSubsPanel() {
     if (!subs.length) { toast.error("Нет подписок"); return; }
     setBusy(extId);
     try {
-      const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: extId }));
-      const r = await supabase.from("subscription_external_subs").insert(rows);
-      if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
-      toast.success(`Привязано ко всем (${subs.length})`);
+      const already = linksByExt.get(extId) ?? new Set<string>();
+      const missing = subs.filter((s) => !already.has(s.id));
+      if (!missing.length) {
+        toast.success(`Уже привязано ко всем (${subs.length})`);
+      } else {
+        const rows = missing.map((s) => ({ subscription_id: s.id, external_sub_id: extId }));
+        const r = await supabase.from("subscription_external_subs").upsert(rows, { onConflict: "subscription_id,external_sub_id", ignoreDuplicates: true });
+        if (r.error) throw r.error;
+        toast.success(`Добавлено ${missing.length} из ${subs.length}`);
+      }
       loadAll();
     } catch (e: any) {
       toast.error("Не удалось", { description: e?.message ?? String(e) });
@@ -212,8 +225,11 @@ export function ExternalSubsPanel() {
   async function toggleAttach(extId: string, subId: string, attach: boolean) {
     try {
       if (attach) {
-        const { error } = await supabase.from("subscription_external_subs").insert({ subscription_id: subId, external_sub_id: extId });
-        if (error && !/duplicate|unique/i.test(error.message)) throw error;
+        const { error } = await supabase.from("subscription_external_subs").upsert(
+          { subscription_id: subId, external_sub_id: extId },
+          { onConflict: "subscription_id,external_sub_id", ignoreDuplicates: true },
+        );
+        if (error) throw error;
       } else {
         const { error } = await supabase.from("subscription_external_subs").delete()
           .eq("subscription_id", subId).eq("external_sub_id", extId);
@@ -223,6 +239,33 @@ export function ExternalSubsPanel() {
     } catch (e: any) {
       toast.error("Не удалось", { description: e?.message ?? String(e) });
     }
+  }
+
+  function openEdit(it: ExternalSub) {
+    setEditing(it);
+    setEditName(it.name ?? "");
+    const found = COUNTRIES.find((c) => c.emoji === it.emoji);
+    setEditCountry(found?.code ?? "OTHER");
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    if (!editName.trim()) { toast.error("Введите название"); return; }
+    setSavingEdit(true);
+    try {
+      const c = COUNTRIES.find((x) => x.code === editCountry) ?? COUNTRIES[0];
+      const displayName = `${c.emoji} ${editName.trim()}`;
+      const newLinks = (editing.raw_links ?? []).map((l) => rewriteLinkName(l, displayName));
+      const { error } = await supabase.from("external_subs").update({
+        name: editName.trim(), emoji: c.emoji, raw_links: newLinks,
+      }).eq("id", editing.id);
+      if (error) throw error;
+      toast.success("Сохранено");
+      setEditing(null);
+      loadAll();
+    } catch (e: any) {
+      toast.error("Ошибка сохранения", { description: e?.message ?? String(e) });
+    } finally { setSavingEdit(false); }
   }
 
   return (
@@ -320,6 +363,10 @@ export function ExternalSubsPanel() {
                     </div>
                   </button>
                   <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={busy === it.id}
+                      onClick={() => openEdit(it)} title="Редактировать название и флаг">
+                      <Pencil className="size-4" />
+                    </Button>
                     <Button size="sm" variant="outline" disabled={busy === it.id || !subs.length}
                       onClick={() => attachAll(it.id)} title="Привязать ко всем подпискам">
                       Всем
@@ -374,6 +421,43 @@ export function ExternalSubsPanel() {
           })}
         </div>
       </Card>
+
+      <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setEditing(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Редактировать сервер</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <Label>Страна (флаг)</Label>
+              <Select value={editCountry} onValueChange={setEditCountry}>
+                <SelectTrigger><SelectValue placeholder="Выберите страну" /></SelectTrigger>
+                <SelectContent>
+                  {COUNTRIES.map((c) => (
+                    <SelectItem key={c.code} value={c.code} textValue={`${c.emoji} ${c.label}`}>
+                      <span className="mr-2">{c.emoji}</span>{c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Название сервера</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} placeholder="США-каскад" />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Имя ссылки будет переписано в «{`{флаг} {название}`}» для всех ключей этой подписки.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)} disabled={savingEdit}>Отмена</Button>
+            <Button onClick={saveEdit} disabled={savingEdit}>
+              {savingEdit ? <Loader2 className="size-4 animate-spin" /> : null}
+              Сохранить
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
