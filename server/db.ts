@@ -94,6 +94,22 @@ CREATE TABLE IF NOT EXISTS traffic_snapshots (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ts_created ON traffic_snapshots(created_at);
+
+CREATE TABLE IF NOT EXISTS audit_log (
+  id TEXT PRIMARY KEY,
+  ts TEXT NOT NULL DEFAULT (datetime('now')),
+  level TEXT NOT NULL DEFAULT 'info',
+  action TEXT NOT NULL,
+  panel_slug TEXT,
+  subscription_id TEXT,
+  status TEXT,
+  duration_ms INTEGER,
+  error TEXT,
+  request_id TEXT,
+  meta TEXT NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
+CREATE INDEX IF NOT EXISTS idx_audit_level ON audit_log(level);
 `);
 
 // Lightweight migrations for legacy DBs.
