@@ -231,14 +231,14 @@ export function ExternalSubsPanel() {
         </h2>
         <div className="grid md:grid-cols-6 gap-3">
           <div className="md:col-span-2">
-            <Label>Страна (определяет флаг и название для пользователей)</Label>
+            <Label>Страна (флаг для пользователей)</Label>
             <Select value={country} onValueChange={setCountry}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Выберите страну" />
               </SelectTrigger>
               <SelectContent>
                 {COUNTRIES.map((c) => (
-                  <SelectItem key={c.code} value={c.code}>
+                  <SelectItem key={c.code} value={c.code} textValue={`${c.emoji} ${c.label}`}>
                     <span className="mr-2">{c.emoji}</span>{c.label}
                     <span className="ml-2 text-xs text-muted-foreground">{c.code}</span>
                   </SelectItem>
@@ -247,18 +247,18 @@ export function ExternalSubsPanel() {
             </Select>
           </div>
           <div className="md:col-span-2">
-            <Label>Внутреннее название (для админки)</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Игровой DE 🔒" />
+            <Label>Название сервера (видит клиент после флага)</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="США-каскад" />
           </div>
           <div className="md:col-span-2">
             <Label>Привязать к подписке</Label>
             <Select value={targetSubId} onValueChange={setTargetSubId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Выберите подписку" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">— не привязывать —</SelectItem>
                 <SelectItem value="all">★ Добавить всем подпискам</SelectItem>
                 {subs.map((s) => (
-                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  <SelectItem key={s.id} value={s.id} textValue={s.name}>{s.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -270,7 +270,7 @@ export function ExternalSubsPanel() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          Флаг и страна показываются пользователям из имени ссылки (после <code>#</code>), а название — только для тебя в админке.
+          Имя ссылки (после <code>#</code>) автоматически переписывается в «{`{флаг} {название}`}», например 🇺🇸 США-каскад.
         </p>
         <div className="mt-4">
           <Button onClick={onCreate} disabled={creating}>
