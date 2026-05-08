@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 
@@ -1517,29 +1518,57 @@ const Index = () => {
                                   })}
                                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
                                     {(() => {
-                                      const available: { key: string; label: string }[] = [];
-                                      panelMeta.forEach(({ slug: panel }) => {
+                                      const totalAvail = panelMeta.reduce((sum, { slug: panel }) => {
                                         const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
-                                        if (!Array.isArray(list)) return;
-                                        list.forEach((ib) => {
-                                          const k = `${panel}:${ib.id}`;
-                                          if (!editSelected.has(k)) {
-                                            available.push({ key: k, label: `${panelLabel(panel)} · ${inboundLabel(panel, ib.id, ib.remark)}` });
-                                          }
-                                        });
-                                      });
+                                        return sum + (Array.isArray(list) ? list.filter((ib) => !editSelected.has(`${panel}:${ib.id}`)).length : 0);
+                                      }, 0);
                                       return (
-                                        <Select value="" onValueChange={(v) => { if (v) toggleEdit(v); }}>
-                                          <SelectTrigger className="h-8 w-auto min-w-[200px] text-xs">
-                                            <Plus className="size-3.5 mr-1" />
-                                            <SelectValue placeholder={available.length ? "Добавить inbound..." : "Все inbound'ы добавлены"} />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {available.map((o) => (
-                                              <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                        <Popover>
+                                          <PopoverTrigger asChild>
+                                            <Button variant="outline" size="sm" className="h-8 text-xs">
+                                              <Plus className="size-3.5 mr-1" />
+                                              Добавить inbound {totalAvail > 0 ? `(${totalAvail})` : ""}
+                                            </Button>
+                                          </PopoverTrigger>
+                                          <PopoverContent className="w-[420px] max-h-[60vh] overflow-y-auto p-3" align="start">
+                                            <div className="text-xs text-muted-foreground mb-2">Отметьте, какие inbound'ы должны быть у клиента. Применится при «Сохранить».</div>
+                                            <div className="space-y-3">
+                                              {panelMeta.map(({ slug: panel }) => {
+                                                const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
+                                                return (
+                                                  <div key={panel}>
+                                                    <div className="flex items-center gap-2 mb-1.5 text-xs font-semibold">
+                                                      <Server className="size-3 text-primary" />
+                                                      {panelLabel(panel)}
+                                                      {!Array.isArray(list) && (
+                                                        <span className="text-destructive font-normal">
+                                                          {list && "error" in list ? `· ${list.error}` : "· загрузка..."}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                    {Array.isArray(list) && list.length > 0 ? (
+                                                      <div className="space-y-1 pl-1">
+                                                        {list.map((ib) => {
+                                                          const k = `${panel}:${ib.id}`;
+                                                          const checked = editSelected.has(k);
+                                                          return (
+                                                            <label key={k} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-secondary/40 rounded px-1.5 py-1">
+                                                              <Checkbox checked={checked} onCheckedChange={() => toggleEdit(k)} />
+                                                              <span className="flex-1 truncate">{inboundLabel(panel, ib.id, ib.remark)}</span>
+                                                              <span className="text-[10px] text-muted-foreground uppercase">{ib.protocol}:{ib.port}</span>
+                                                            </label>
+                                                          );
+                                                        })}
+                                                      </div>
+                                                    ) : Array.isArray(list) ? (
+                                                      <div className="text-xs text-muted-foreground pl-1">Нет inbound'ов</div>
+                                                    ) : null}
+                                                  </div>
+                                                );
+                                              })}
+                                            </div>
+                                          </PopoverContent>
+                                        </Popover>
                                       );
                                     })()}
                                     <Button variant="outline" size="sm" onClick={() => saveOrder(s)}>
