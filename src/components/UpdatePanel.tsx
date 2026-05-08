@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Upload, Download } from "lucide-react";
 import { toast } from "sonner";
+import { APP_VERSION, APP_VERSION_DATE } from "@/version";
 
 export function UpdatePanel() {
   const [file, setFile] = useState<File | null>(null);
@@ -41,9 +42,15 @@ export function UpdatePanel() {
 
   return (
     <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
-      <h2 className="text-lg font-semibold mb-2 flex items-center gap-2">
-        <Download className="size-4 text-primary" /> Обновление панели
-      </h2>
+      <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+        <h2 className="text-lg font-semibold flex items-center gap-2">
+          <Download className="size-4 text-primary" /> Обновление панели
+        </h2>
+        <div className="text-xs px-2 py-1 rounded-md bg-secondary border border-border">
+          Текущая версия: <span className="font-semibold text-primary">{APP_VERSION}</span>
+          <span className="text-muted-foreground"> · {APP_VERSION_DATE}</span>
+        </div>
+      </div>
       <p className="text-xs text-muted-foreground mb-4">
         Загрузите архив новой версии (<code>.zip</code> или <code>.tar.gz</code>). Сервер распакует, пересоберёт фронт и перезапустится автоматически.
         База данных в <code>data/</code> и настройки сохраняются.
