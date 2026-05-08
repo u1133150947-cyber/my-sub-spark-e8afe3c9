@@ -536,6 +536,7 @@ const Index = () => {
     setEditDays("");
     setEditGB("");
     setEditSlug(s.slug);
+    if (!inbounds) loadInbounds();
     // load current whitelist
     const { data: subRow } = await supabase
       .from("subscriptions")
