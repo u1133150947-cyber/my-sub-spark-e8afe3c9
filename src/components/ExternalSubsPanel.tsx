@@ -113,9 +113,11 @@ export function ExternalSubsPanel() {
     setCreating(true);
     try {
       const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
+      const displayName = `${c.emoji} ${name.trim()}`;
+      const finalLink = rewriteLinkName(link, displayName);
       const { data, error } = await supabase.from("external_subs").insert({
         name: name.trim(), emoji: c.emoji,
-        source_url: "", raw_links: [link], notes: "",
+        source_url: "", raw_links: [finalLink], notes: "",
       }).select("id").single();
       if (error) throw error;
       if (data?.id) {
@@ -129,7 +131,8 @@ export function ExternalSubsPanel() {
             subscription_id: targetSubId, external_sub_id: data.id,
           });
           if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
-          toast.success("Сервер добавлен и привязан");
+          const subName = subs.find((s) => s.id === targetSubId)?.name ?? "";
+          toast.success(`Сервер добавлен и привязан${subName ? ` к «${subName}»` : ""}`);
         } else {
           toast.success("Сервер добавлен");
         }
