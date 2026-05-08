@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 
 type ExternalSub = {
@@ -32,11 +33,11 @@ export function ExternalSubsPanel() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
 
-  // form
+  // form: single link add
   const [name, setName] = useState("");
-  const [emoji, setEmoji] = useState("🌐");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [pasteText, setPasteText] = useState("");
+  const [emoji, setEmoji] = useState("🌍");
+  const [linkText, setLinkText] = useState("");
+  const [targetSubId, setTargetSubId] = useState<string>("none");
   const [creating, setCreating] = useState(false);
 
   const linksByExt = useMemo(() => {
@@ -71,31 +72,29 @@ export function ExternalSubsPanel() {
 
   useEffect(() => { loadAll(); }, []);
 
-  async function parseLinks(): Promise<string[]> {
-    const r = await fetch(`${PANEL_FN}?action=parseExternal`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ url: sourceUrl, text: pasteText }),
-    });
-    const j = await r.json();
-    if (!r.ok || j.error) throw new Error(j.error ?? `HTTP ${r.status}`);
-    return j.links ?? [];
-  }
-
   async function onCreate() {
+    const link = linkText.trim();
     if (!name.trim()) { toast.error("Введите название"); return; }
-    if (!sourceUrl.trim() && !pasteText.trim()) { toast.error("Укажите URL или вставьте ключи"); return; }
+    if (!link) { toast.error("Вставьте ключ (vless:// / hysteria2:// / vmess:// / trojan://)"); return; }
+    if (!/^(vless|vmess|trojan|hysteria2|hy2|ss):\/\//i.test(link)) {
+      toast.error("Неподдерживаемый формат ключа");
+      return;
+    }
     setCreating(true);
     try {
-      const linksParsed = await parseLinks();
-      if (!linksParsed.length) { toast.error("Не удалось извлечь ни одной ссылки"); return; }
-      const { error } = await supabase.from("external_subs").insert({
-        name: name.trim(), emoji: emoji.trim() || "🌐",
-        source_url: sourceUrl.trim(), raw_links: linksParsed, notes: "",
-      });
+      const { data, error } = await supabase.from("external_subs").insert({
+        name: name.trim(), emoji: emoji.trim() || "🌍",
+        source_url: "", raw_links: [link], notes: "",
+      }).select("id").single();
       if (error) throw error;
-      toast.success(`Добавлено: ${linksParsed.length} серверов`);
-      setName(""); setEmoji("🌐"); setSourceUrl(""); setPasteText("");
+      if (targetSubId && targetSubId !== "none" && data?.id) {
+        const r = await supabase.from("subscription_external_subs").insert({
+          subscription_id: targetSubId, external_sub_id: data.id,
+        });
+        if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
+      }
+      toast.success("Сервер добавлен");
+      setName(""); setEmoji("🌍"); setLinkText(""); setTargetSubId("none");
       loadAll();
     } catch (e: any) {
       toast.error("Ошибка добавления", { description: e?.message ?? String(e) });
@@ -159,32 +158,39 @@ export function ExternalSubsPanel() {
     <div className="space-y-6">
       <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
         <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-          <Globe2 className="size-4 text-primary" /> Добавить стороннюю подписку
+          <Globe2 className="size-4 text-primary" /> Добавить сторонний сервер
         </h2>
-        <div className="grid md:grid-cols-3 gap-3">
-          <div>
+        <div className="grid md:grid-cols-6 gap-3">
+          <div className="md:col-span-1">
+            <Label>Флаг / эмодзи</Label>
+            <Input value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="🇩🇪" maxLength={4} />
+          </div>
+          <div className="md:col-span-3">
             <Label>Название</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="VPN Prime" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="🇩🇪 Игровой Германия" />
           </div>
-          <div>
-            <Label>Эмодзи / иконка</Label>
-            <Input value={emoji} onChange={(e) => setEmoji(e.target.value)} placeholder="🌐" maxLength={4} />
+          <div className="md:col-span-2">
+            <Label>Привязать к подписке</Label>
+            <Select value={targetSubId} onValueChange={setTargetSubId}>
+              <SelectTrigger><SelectValue placeholder="— не привязывать —" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— не привязывать —</SelectItem>
+                {subs.map((s) => (
+                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          <div className="md:col-span-3">
-            <Label>URL подписки</Label>
-            <Input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)}
-              placeholder="https://subs.vpnprime.ru/subs/..." />
-          </div>
-          <div className="md:col-span-3">
-            <Label>… или вставьте ключи (vless://, vmess://, hysteria2://, либо xray-JSON)</Label>
-            <Textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={4}
-              placeholder="vless://...&#10;hysteria2://..." />
+          <div className="md:col-span-6">
+            <Label>Ключ (vless:// / hysteria2:// / vmess:// / trojan://)</Label>
+            <Textarea value={linkText} onChange={(e) => setLinkText(e.target.value)} rows={3}
+              placeholder="vless://uuid@host:443?...#name" />
           </div>
         </div>
         <div className="mt-4">
           <Button onClick={onCreate} disabled={creating}>
             {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            Распарсить и добавить
+            Добавить сервер
           </Button>
         </div>
       </Card>
