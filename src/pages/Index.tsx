@@ -13,6 +13,7 @@ import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
 import { OnlineClients } from "@/components/OnlineClients";
 import { UpdatePanel } from "@/components/UpdatePanel";
+import { ExternalSubsPanel } from "@/components/ExternalSubsPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
