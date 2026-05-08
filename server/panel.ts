@@ -8,6 +8,134 @@ import {
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
+// ===== External (3rd-party) subscription parsing =====
+const SCHEME_RE = /^(vless|vmess|trojan|ss|ssr|hysteria|hysteria2|hy2|tuic):\/\//i;
+
+function tryB64Decode(s: string): string | null {
+  const t = s.trim().replace(/\s+/g, "");
+  if (!/^[A-Za-z0-9+/=_-]+$/.test(t) || t.length < 16) return null;
+  try {
+    const norm = t.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = norm + "===".slice((norm.length + 3) % 4);
+    const dec = atob(pad);
+    if (/vless:|vmess:|trojan:|ss:|hysteria:|hy2:|tuic:/i.test(dec)) return dec;
+    return null;
+  } catch { return null; }
+}
+
+function extractLinksFromText(text: string): string[] {
+  const out: string[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    const t = line.trim();
+    if (SCHEME_RE.test(t)) out.push(t);
+  }
+  return out;
+}
+
+function obToVless(ob: any, name: string): string | null {
+  const u = ob?.settings?.vnext?.[0];
+  const usr = u?.users?.[0];
+  if (!u || !usr?.id) return null;
+  const ss = ob.streamSettings ?? {};
+  const params = new URLSearchParams();
+  params.set("type", ss.network ?? "tcp");
+  params.set("security", ss.security ?? "none");
+  params.set("encryption", "none");
+  if (ss.security === "reality" && ss.realitySettings) {
+    const r = ss.realitySettings;
+    if (r.serverName) params.set("sni", r.serverName);
+    if (r.publicKey) params.set("pbk", r.publicKey);
+    if (r.shortId) params.set("sid", r.shortId);
+    if (r.fingerprint) params.set("fp", r.fingerprint);
+  }
+  if (ss.security === "tls" && ss.tlsSettings) {
+    if (ss.tlsSettings.serverName) params.set("sni", ss.tlsSettings.serverName);
+    if (Array.isArray(ss.tlsSettings.alpn)) params.set("alpn", ss.tlsSettings.alpn.join(","));
+    if (ss.tlsSettings.fingerprint) params.set("fp", ss.tlsSettings.fingerprint);
+  }
+  if (usr.flow) params.set("flow", usr.flow);
+  if (ss.network === "ws" && ss.wsSettings) {
+    if (ss.wsSettings.path) params.set("path", ss.wsSettings.path);
+    if (ss.wsSettings.headers?.Host) params.set("host", ss.wsSettings.headers.Host);
+  }
+  if (ss.network === "grpc" && ss.grpcSettings?.serviceName) params.set("serviceName", ss.grpcSettings.serviceName);
+  if ((ss.network === "xhttp" || ss.network === "splithttp") && ss.xhttpSettings) {
+    if (ss.xhttpSettings.path) params.set("path", ss.xhttpSettings.path);
+    if (ss.xhttpSettings.mode) params.set("mode", ss.xhttpSettings.mode);
+  }
+  return `vless://${usr.id}@${u.address}:${u.port}?${params.toString()}#${encodeURIComponent(name)}`;
+}
+
+function obToHy2(ob: any, name: string): string | null {
+  const s = ob?.settings ?? {};
+  const ss = ob.streamSettings ?? {};
+  const auth = ss?.hysteriaSettings?.auth ?? s?.auth_str ?? s?.password;
+  if (!s.address || !s.port || !auth) return null;
+  const params = new URLSearchParams();
+  if (ss.tlsSettings?.serverName) params.set("sni", ss.tlsSettings.serverName);
+  if (Array.isArray(ss.tlsSettings?.alpn)) params.set("alpn", ss.tlsSettings.alpn.join(","));
+  if (ss.tlsSettings?.fingerprint) params.set("fp", ss.tlsSettings.fingerprint);
+  return `hysteria2://${encodeURIComponent(String(auth))}@${s.address}:${s.port}/?${params.toString()}#${encodeURIComponent(name)}`;
+}
+
+function obToTrojan(ob: any, name: string): string | null {
+  const srv = ob?.settings?.servers?.[0];
+  if (!srv?.address || !srv?.port || !srv?.password) return null;
+  const ss = ob.streamSettings ?? {};
+  const params = new URLSearchParams();
+  if (ss.tlsSettings?.serverName) params.set("sni", ss.tlsSettings.serverName);
+  return `trojan://${encodeURIComponent(srv.password)}@${srv.address}:${srv.port}?${params.toString()}#${encodeURIComponent(name)}`;
+}
+
+function xrayConfigToLinks(cfg: any): string[] {
+  const out: string[] = [];
+  const baseName = (cfg?.remarks ?? cfg?.meta?.serverDescription ?? "server").toString().trim();
+  const obs = Array.isArray(cfg?.outbounds) ? cfg.outbounds : [];
+  const useful = obs.filter((o: any) => o?.protocol && !["freedom", "blackhole", "dns"].includes(o.protocol));
+  for (const ob of useful) {
+    const tag = ob.tag ?? "";
+    const isAuto = /^auto-/i.test(tag);
+    const name = useful.length > 1 || isAuto ? `${baseName} · ${tag}` : baseName;
+    let link: string | null = null;
+    if (ob.protocol === "vless") link = obToVless(ob, name);
+    else if (ob.protocol === "hysteria" || ob.protocol === "hysteria2") link = obToHy2(ob, name);
+    else if (ob.protocol === "trojan") link = obToTrojan(ob, name);
+    if (link) out.push(link);
+  }
+  return out;
+}
+
+function extractExternalLinks(raw: string): string[] {
+  const trimmed = raw.trim();
+  // 1) JSON xray config(s)
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    try {
+      const j = JSON.parse(trimmed);
+      const arr = Array.isArray(j) ? j : [j];
+      const out: string[] = [];
+      for (const cfg of arr) out.push(...xrayConfigToLinks(cfg));
+      // Dedup
+      const seen = new Set<string>();
+      const dedup: string[] = [];
+      for (const l of out) {
+        const k = l.split("#")[0];
+        if (seen.has(k)) continue;
+        seen.add(k);
+        dedup.push(l);
+      }
+      if (dedup.length) return dedup;
+    } catch {}
+  }
+  // 2) Plain text with vless:// / vmess:// / etc lines
+  const direct = extractLinksFromText(trimmed);
+  if (direct.length) return direct;
+  // 3) Base64-encoded list
+  const dec = tryB64Decode(trimmed);
+  if (dec) return extractLinksFromText(dec);
+  return [];
+}
+
+
 function row<T = any>(sql: string, args: unknown[] = []): T | undefined {
   const r = db.queryEntries(sql, args as any)[0];
   return r as T | undefined;
