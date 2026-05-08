@@ -414,6 +414,33 @@ Deno.serve(async (req) => {
         mapByPanelEmail.set(`${m.panel}::${m.client_email}`, { sid: m.subscription_id, name: sub?.name ?? m.label ?? null });
       });
 
+      // Fallback indexes for legacy/external clients whose email doesn't appear in subscription_inbounds:
+      // 1) by subscriptions.client_email exact match
+      // 2) by subscriptions.client_email as prefix of online email (panel/inbound suffix can differ)
+      // 3) by leading "name_" prefix matching subscriptions.name
+      const subByEmail = new Map<string, { sid: string; name: string }>();
+      const subByPrefix: { prefix: string; sid: string; name: string }[] = [];
+      const subByName = new Map<string, { sid: string; name: string }>();
+      (subsRows ?? []).forEach((s: any) => {
+        if (s.client_email) {
+          subByEmail.set(s.client_email, { sid: s.id, name: s.name });
+          subByPrefix.push({ prefix: s.client_email + "_", sid: s.id, name: s.name });
+        }
+        if (s.name) subByName.set(String(s.name).toLowerCase(), { sid: s.id, name: s.name });
+      });
+      const resolveFallback = (email: string): { sid: string; name: string } | null => {
+        const direct = subByEmail.get(email);
+        if (direct) return direct;
+        const pref = subByPrefix.find((p) => email.startsWith(p.prefix));
+        if (pref) return { sid: pref.sid, name: pref.name };
+        const head = email.split("_")[0];
+        if (head) {
+          const byName = subByName.get(head.toLowerCase());
+          if (byName) return byName;
+        }
+        return null;
+      };
+
       await Promise.all(all.map(async (p) => {
         try {
           const res = await panelFetch(p.slug, "/panel/api/inbounds/onlines", { method: "POST" });
@@ -423,7 +450,14 @@ Deno.serve(async (req) => {
           for (const email of emails) {
             const info = emailToInfo.get(email);
             const manual = mapByPanelEmail.get(`${p.slug}::${email}`);
-            result.push({ panel: p.slug, email, subscription_id: info?.sid ?? manual?.sid ?? null, sub_name: info?.name ?? manual?.name ?? null, remark: info?.remark ?? null });
+            const fb = !info && !manual ? resolveFallback(email) : null;
+            result.push({
+              panel: p.slug,
+              email,
+              subscription_id: info?.sid ?? manual?.sid ?? fb?.sid ?? null,
+              sub_name: info?.name ?? manual?.name ?? fb?.name ?? null,
+              remark: info?.remark ?? null,
+            });
           }
         } catch (e) {
           errors[p.slug] = e instanceof Error ? e.message : String(e);
