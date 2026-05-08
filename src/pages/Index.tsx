@@ -1443,9 +1443,6 @@ const Index = () => {
                                             <div className="flex-1 min-w-0">
                                               <div className="text-sm truncate">
                                                 {inboundLabel(panel, ib.id, ib.remark)}
-                                                {wasExisting && (
-                                                  <span className="ml-2 text-[10px] uppercase text-muted-foreground">активно</span>
-                                                )}
                                               </div>
                                               <div className="text-xs text-muted-foreground">
                                                 {ib.protocol.toUpperCase()} · :{ib.port}
