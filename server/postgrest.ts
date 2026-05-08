@@ -15,6 +15,14 @@ const OP_MAP: Record<string, string> = {
   eq: "=", neq: "!=", gt: ">", gte: ">=", lt: "<", lte: "<=", like: "LIKE", ilike: "LIKE",
 };
 
+// Columns that hold timestamps — comparisons must be normalized via datetime()
+// because the local SQLite store writes "YYYY-MM-DD HH:MM:SS" while the
+// supabase-js client compares against ISO "YYYY-MM-DDTHH:MM:SS.sssZ".
+const TS_COLS = new Set([
+  "created_at", "updated_at", "ts", "checked_at", "last_accessed_at", "last_checked_at", "expires_at",
+]);
+const RANGE_OPS = new Set(["gt", "gte", "lt", "lte", "eq", "neq"]);
+
 function isIdent(s: string) { return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s); }
 
 type Filter = { col: string; sql: string; args: unknown[] };
@@ -37,7 +45,11 @@ function parseFilters(table: string, params: URLSearchParams): Filter[] {
     } else if (op === "is") {
       filters.push({ col: key, sql: val === "null" ? `${key} IS NULL` : `${key} IS NOT NULL`, args: [] });
     } else if (OP_MAP[op]) {
-      filters.push({ col: key, sql: `${key} ${OP_MAP[op]} ?`, args: [val] });
+      if (TS_COLS.has(key) && RANGE_OPS.has(op)) {
+        filters.push({ col: key, sql: `datetime(${key}) ${OP_MAP[op]} datetime(?)`, args: [val] });
+      } else {
+        filters.push({ col: key, sql: `${key} ${OP_MAP[op]} ?`, args: [val] });
+      }
     }
   }
   return filters;
