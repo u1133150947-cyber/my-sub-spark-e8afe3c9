@@ -7,6 +7,10 @@ const corsHeaders = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function base64Utf8(value: string): string {
+  return btoa(String.fromCharCode(...new TextEncoder().encode(value)));
+}
+
 function cleanUuid(...values: unknown[]): string {
   for (const value of values) {
     const candidate = String(value ?? "").trim();
@@ -260,7 +264,7 @@ Deno.serve(async (req) => {
       }
     } catch (_) { /* ignore */ }
 
-    const body = btoa(lines.join("\n"));
+    const body = base64Utf8(lines.join("\n"));
 
     // Fire-and-forget hit counter
     supabase
@@ -285,7 +289,7 @@ Deno.serve(async (req) => {
     const total = sub.total_bytes ?? 0; // 0 = unlimited
     const expire = sub.expiry_ms ? Math.floor(sub.expiry_ms / 1000) : 0;
 
-    const profileTitle = "base64:" + btoa(unescape(encodeURIComponent(sub.name)));
+    const profileTitle = "base64:" + base64Utf8(sub.name);
 
     // Announce text under the title (Happ supports Announce header)
     let announceText = "";
@@ -306,7 +310,7 @@ Deno.serve(async (req) => {
         announceText = `⏳ Осталось ${d} ${word}`;
       }
     }
-    const announce = "base64:" + btoa(unescape(encodeURIComponent(announceText)));
+    const announce = "base64:" + base64Utf8(announceText);
 
     return new Response(body, {
       status: 200,
