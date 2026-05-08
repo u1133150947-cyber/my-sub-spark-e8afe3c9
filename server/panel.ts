@@ -69,6 +69,24 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       links.forEach((l) => { const sub = subsRows.find((s) => s.id === l.subscription_id); emailToInfo.set(l.client_email, { sid: l.subscription_id, name: sub?.name ?? "?", remark: l.remark }); });
       const mapByPE = new Map<string, any>();
       mappings.forEach((m) => { const sub = subsRows.find((s) => s.id === m.subscription_id); mapByPE.set(`${m.panel}::${m.client_email}`, { sid: m.subscription_id, name: sub?.name ?? m.label ?? null }); });
+      // Fallback: match online emails to subscriptions when subscription_inbounds is missing the entry
+      // (e.g. clients created on the panel before re-adding it, so client_email suffix differs).
+      const subByEmail = new Map<string, any>();
+      const subByPrefix: { prefix: string; sid: string; name: string }[] = [];
+      const subByName = new Map<string, any>();
+      subsRows.forEach((s) => {
+        if (s.client_email) {
+          subByEmail.set(s.client_email, { sid: s.id, name: s.name });
+          subByPrefix.push({ prefix: s.client_email + "_", sid: s.id, name: s.name });
+        }
+        if (s.name) subByName.set(String(s.name).toLowerCase(), { sid: s.id, name: s.name });
+      });
+      const fallback = (email: string) => {
+        const d = subByEmail.get(email); if (d) return d;
+        const p = subByPrefix.find((x) => email.startsWith(x.prefix)); if (p) return { sid: p.sid, name: p.name };
+        const head = email.split("_")[0]; if (head) { const n = subByName.get(head.toLowerCase()); if (n) return n; }
+        return null;
+      };
       await Promise.all(all.map(async (p) => {
         try {
           const r = await panelFetch(p.slug, "/panel/api/inbounds/onlines", { method: "POST" });
@@ -76,7 +94,8 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           if (!j.success) { errors[p.slug] = j.msg ?? "error"; return; }
           for (const email of (j.obj ?? []) as string[]) {
             const info = emailToInfo.get(email); const manual = mapByPE.get(`${p.slug}::${email}`);
-            result.push({ panel: p.slug, email, subscription_id: info?.sid ?? manual?.sid ?? null, sub_name: info?.name ?? manual?.name ?? null, remark: info?.remark ?? null });
+            const fb = !info && !manual ? fallback(email) : null;
+            result.push({ panel: p.slug, email, subscription_id: info?.sid ?? manual?.sid ?? fb?.sid ?? null, sub_name: info?.name ?? manual?.name ?? fb?.name ?? null, remark: info?.remark ?? null });
           }
         } catch (e) { errors[p.slug] = e instanceof Error ? e.message : String(e); }
       }));
