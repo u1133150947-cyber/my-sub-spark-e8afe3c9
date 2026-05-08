@@ -1434,12 +1434,10 @@ const Index = () => {
                                   </div>
                                   {Array.isArray(list) && list.length > 0 ? (
                                     <div className="space-y-2">
-                                      {list.map((ib) => {
-                                        const key = `${panel}:${ib.id}`;
-                                        const wasExisting = editExisting.has(key);
-                                        const expectedEmail = `${s.client_email}_${panel}${ib.id}`;
-                                        const panelClient = ib.clients?.find((c) => c.email === expectedEmail || c.email?.startsWith(`${s.client_email}_`));
-                                        return (
+                                       {list.map((ib) => {
+                                         const key = `${panel}:${ib.id}`;
+                                         const wasExisting = editExisting.has(key);
+                                         return (
                                           <label key={key} className="flex items-center gap-2 cursor-pointer">
                                             <Checkbox checked={editSelected.has(key)} onCheckedChange={() => toggleEdit(key)} />
                                             <div className="flex-1 min-w-0">
@@ -1448,17 +1446,9 @@ const Index = () => {
                                                 {wasExisting && (
                                                   <span className="ml-2 text-[10px] uppercase text-muted-foreground">активно</span>
                                                 )}
-                                                {panelClient && (
-                                                  <span className={`ml-2 text-[10px] uppercase ${panelClient.enable === false ? "text-destructive" : "text-emerald-500"}`}>
-                                                    на панели{panelClient.enable === false ? " (off)" : ""}
-                                                  </span>
-                                                )}
                                               </div>
                                               <div className="text-xs text-muted-foreground">
                                                 {ib.protocol.toUpperCase()} · :{ib.port}
-                                                {panelClient && (
-                                                  <span className="ml-2 text-muted-foreground/70 truncate">· {panelClient.email}</span>
-                                                )}
                                               </div>
                                             </div>
                                           </label>
