@@ -1507,10 +1507,41 @@ const Index = () => {
                                           onClick={() => moveOrder(key, 1)}>
                                           <ArrowDown className="size-3.5" />
                                         </Button>
+                                        <Button variant="ghost" size="icon" className="size-7 text-destructive hover:text-destructive"
+                                          title="Удалить inbound (применится при Сохранить)"
+                                          onClick={() => toggleEdit(key)}>
+                                          <Trash2 className="size-3.5" />
+                                        </Button>
                                       </div>
                                     );
                                   })}
-                                  <div className="flex justify-end pt-2">
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2">
+                                    {(() => {
+                                      const available: { key: string; label: string }[] = [];
+                                      panelMeta.forEach(({ slug: panel }) => {
+                                        const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
+                                        if (!Array.isArray(list)) return;
+                                        list.forEach((ib) => {
+                                          const k = `${panel}:${ib.id}`;
+                                          if (!editSelected.has(k)) {
+                                            available.push({ key: k, label: `${panelLabel(panel)} · ${inboundLabel(panel, ib.id, ib.remark)}` });
+                                          }
+                                        });
+                                      });
+                                      return (
+                                        <Select value="" onValueChange={(v) => { if (v) toggleEdit(v); }}>
+                                          <SelectTrigger className="h-8 w-auto min-w-[200px] text-xs">
+                                            <Plus className="size-3.5 mr-1" />
+                                            <SelectValue placeholder={available.length ? "Добавить inbound..." : "Все inbound'ы добавлены"} />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {available.map((o) => (
+                                              <SelectItem key={o.key} value={o.key}>{o.label}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      );
+                                    })()}
                                     <Button variant="outline" size="sm" onClick={() => saveOrder(s)}>
                                       <Check className="size-3.5 mr-1" /> Сохранить порядок
                                     </Button>
