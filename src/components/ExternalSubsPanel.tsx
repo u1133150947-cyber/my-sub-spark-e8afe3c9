@@ -47,6 +47,14 @@ const COUNTRIES: { code: string; emoji: string; label: string }[] = [
   { code: "OTHER", emoji: "🌍", label: "Другое" },
 ];
 
+function rewriteLinkName(link: string, displayName: string): string {
+  const s = link.trim();
+  if (!s) return s;
+  const hashIdx = s.indexOf("#");
+  const base = hashIdx >= 0 ? s.slice(0, hashIdx) : s;
+  return `${base}#${encodeURIComponent(displayName)}`;
+}
+
 export function ExternalSubsPanel() {
   const [items, setItems] = useState<ExternalSub[]>([]);
   const [subs, setSubs] = useState<SubscriptionLite[]>([]);
