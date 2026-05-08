@@ -133,6 +133,39 @@ export type Database = {
           },
         ]
       }
+      external_subs: {
+        Row: {
+          created_at: string
+          emoji: string
+          id: string
+          name: string
+          notes: string
+          raw_links: Json
+          source_url: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          name: string
+          notes?: string
+          raw_links?: Json
+          source_url?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          emoji?: string
+          id?: string
+          name?: string
+          notes?: string
+          raw_links?: Json
+          source_url?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       inbound_overrides: {
         Row: {
           created_at: string
@@ -256,6 +289,27 @@ export type Database = {
           template?: string
           updated_at?: string
           username?: string
+        }
+        Relationships: []
+      }
+      subscription_external_subs: {
+        Row: {
+          created_at: string
+          external_sub_id: string
+          id: string
+          subscription_id: string
+        }
+        Insert: {
+          created_at?: string
+          external_sub_id: string
+          id?: string
+          subscription_id: string
+        }
+        Update: {
+          created_at?: string
+          external_sub_id?: string
+          id?: string
+          subscription_id?: string
         }
         Relationships: []
       }

@@ -13,6 +13,7 @@ import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
 import { OnlineClients } from "@/components/OnlineClients";
 import { UpdatePanel } from "@/components/UpdatePanel";
+import { ExternalSubsPanel } from "@/components/ExternalSubsPanel";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -1044,12 +1045,13 @@ const Index = () => {
           if (v === "create") { loadInbounds(); loadEmailMap(); }
           if (v === "logs") loadServerLogs();
         }}>
-          <TabsList className="grid w-full max-w-4xl grid-cols-7">
+          <TabsList className="grid w-full max-w-5xl grid-cols-8">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
             <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
             <TabsTrigger value="create">➕ Новый</TabsTrigger>
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
+            <TabsTrigger value="external">🌐 Сторонние</TabsTrigger>
             <TabsTrigger value="update">🔄 Обновление</TabsTrigger>
             <TabsTrigger value="logs" onClick={() => { const t = Date.now(); setLastSeenLogTs(t); localStorage.setItem("logs_last_seen", String(t)); }}>
               🪵 Логи{(() => {
@@ -1591,6 +1593,10 @@ const Index = () => {
 
           <TabsContent value="servers" className="mt-0">
             <PanelsManager onChanged={loadInbounds} />
+          </TabsContent>
+
+          <TabsContent value="external" className="mt-0">
+            <ExternalSubsPanel />
           </TabsContent>
 
           <TabsContent value="update" className="mt-0">

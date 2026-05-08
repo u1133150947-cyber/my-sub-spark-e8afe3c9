@@ -146,6 +146,20 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     const host = url.searchParams.get("host") || req.headers.get("x-forwarded-host") || url.host;
     for (const l of rawLinks) lines.push(withHost(String(l), host));
   }
+
+  // Append linked external subs (3rd-party VPN servers).
+  try {
+    const linked = db.queryEntries(
+      `SELECT e.raw_links FROM subscription_external_subs ses JOIN external_subs e ON e.id = ses.external_sub_id WHERE ses.subscription_id = ?`,
+      [sub.id],
+    ) as any[];
+    for (const r of linked) {
+      let arr: any[] = [];
+      try { arr = JSON.parse(r.raw_links ?? "[]"); } catch {}
+      if (Array.isArray(arr)) for (const l of arr) if (typeof l === "string" && l) lines.push(l);
+    }
+  } catch {}
+
   for (const ib of inbounds as any[]) {
     const sniOverride = whitelist.length ? whitelist[Math.floor(Math.random() * whitelist.length)] : undefined;
     const link = buildVless(sub.client_uuid, sub.client_email, ib, sniOverride, overridesMap);
