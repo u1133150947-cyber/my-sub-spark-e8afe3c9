@@ -432,6 +432,24 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       return json({ logs });
     }
 
+    if (action === "parseExternal" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const inUrl = String(body.url ?? "").trim();
+      const inText = String(body.text ?? "").trim();
+      let raw = inText;
+      if (!raw && inUrl) {
+        try {
+          const r = await fetch(inUrl, { headers: { "User-Agent": "v2rayN/6.0" } });
+          raw = await r.text();
+        } catch (e: any) {
+          return json({ error: `fetch error: ${e?.message ?? e}` }, 400);
+        }
+      }
+      if (!raw) return json({ error: "Empty url/text" }, 400);
+      const links = extractExternalLinks(raw);
+      return json({ links });
+    }
+
     return json({ error: "Unknown action" }, 400);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
