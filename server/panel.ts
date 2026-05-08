@@ -406,6 +406,32 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       return json({ removed, errors });
     }
 
+    if (action === "auditLog") {
+      const level = url.searchParams.get("level");
+      const act = url.searchParams.get("act");
+      const panel = url.searchParams.get("panel");
+      const search = url.searchParams.get("q");
+      const hours = Math.min(720, Number(url.searchParams.get("hours") ?? "24"));
+      const limit = Math.min(1000, Number(url.searchParams.get("limit") ?? "300"));
+      const sinceMs = Date.now() - hours * 3600 * 1000;
+      const since = new Date(sinceMs).toISOString().replace("T", " ").replace("Z", "");
+      const where: string[] = ["ts >= ?"]; const args: any[] = [since];
+      if (level) { where.push("level = ?"); args.push(level); }
+      if (act) { where.push("action = ?"); args.push(act); }
+      if (panel) { where.push("panel_slug = ?"); args.push(panel); }
+      if (search) { where.push("(error LIKE ? OR action LIKE ?)"); args.push(`%${search}%`, `%${search}%`); }
+      const logs = rows<any>(
+        `SELECT id, ts, level, action, panel_slug, subscription_id, status, duration_ms, error, request_id, meta FROM audit_log WHERE ${where.join(" AND ")} ORDER BY ts DESC LIMIT ?`,
+        [...args, limit],
+      ).map((r) => { try { r.meta = JSON.parse(r.meta ?? "{}"); } catch {} return r; });
+      // GC: keep last 30 days
+      try {
+        const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().replace("T", " ").replace("Z", "");
+        db.query(`DELETE FROM audit_log WHERE ts < ?`, [cutoff]);
+      } catch {}
+      return json({ logs });
+    }
+
     return json({ error: "Unknown action" }, 400);
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : "Unknown error" }, 500);
