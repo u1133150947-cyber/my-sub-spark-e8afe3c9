@@ -110,6 +110,27 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts);
 CREATE INDEX IF NOT EXISTS idx_audit_level ON audit_log(level);
+
+CREATE TABLE IF NOT EXISTS external_subs (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  emoji TEXT NOT NULL DEFAULT '🌐',
+  source_url TEXT NOT NULL DEFAULT '',
+  raw_links TEXT NOT NULL DEFAULT '[]',
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS subscription_external_subs (
+  id TEXT PRIMARY KEY,
+  subscription_id TEXT NOT NULL,
+  external_sub_id TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(subscription_id, external_sub_id)
+);
+CREATE INDEX IF NOT EXISTS idx_ses_sub ON subscription_external_subs(subscription_id);
+CREATE INDEX IF NOT EXISTS idx_ses_ext ON subscription_external_subs(external_sub_id);
 `);
 
 // Lightweight migrations for legacy DBs.
@@ -140,6 +161,7 @@ export function uid() { return crypto.randomUUID(); }
 const JSON_COLS: Record<string, string[]> = {
   subscriptions: ["sni_whitelist", "raw_links"],
   subscription_inbounds: ["stream_settings"],
+  external_subs: ["raw_links"],
 };
 
 export function decodeRow(table: string, row: Record<string, unknown>) {
