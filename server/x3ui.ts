@@ -1,7 +1,7 @@
 // 3X-UI HTTP client + helpers shared by the panel/sub handlers.
 import { db, decodeRow } from "./db.ts";
 
-type PanelRow = { id: string; slug: string; name: string; panel_url: string; username: string; password: string };
+type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
 
 const cookieCache = new Map<string, { cookie: string; ts: number }>();
 const COOKIE_TTL_MS = 30 * 60 * 1000;
@@ -10,7 +10,7 @@ const PANELS_TTL_MS = 30_000;
 
 export function getAllPanels(force = false): PanelRow[] {
   if (!force && Date.now() - panelsCache.ts < PANELS_TTL_MS && panelsCache.rows.length) return panelsCache.rows;
-  const rows = db.queryEntries(`SELECT id, slug, name, panel_url, username, password FROM panels ORDER BY created_at ASC`);
+  const rows = db.queryEntries(`SELECT id, slug, name, host, public_host, panel_url, username, password FROM panels ORDER BY created_at ASC`);
   panelsCache.rows = rows.map((r) => decodeRow("panels", r as Record<string, unknown>) as unknown as PanelRow);
   panelsCache.ts = Date.now();
   return panelsCache.rows;
@@ -144,4 +144,11 @@ export function randomSlug(len = 12) {
   crypto.getRandomValues(arr);
   return Array.from(arr, (n) => a[n % a.length]).join("");
 }
-export function hostFromUrl(u: string) { try { return new URL(u).hostname; } catch { return u; } }
+export function cleanHost(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try { return new URL(raw.includes("://") ? raw : `http://${raw}`).hostname; } catch {}
+  return raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+}
+export function hostFromUrl(u: string) { return cleanHost(u); }
+export function panelConnectionHost(p: PanelRow) { return cleanHost(p.public_host || p.host || hostFromUrl(p.panel_url)); }
