@@ -74,6 +74,9 @@ if ! grep -q '^ADMIN_BOT_TOKEN=' .env 2>/dev/null; then
     warn "ADMIN_BOT_TOKEN не задан — /login откроется, но код в Telegram не отправится"
   fi
 fi
+if [[ -n "${ADMIN_TELEGRAM_ID:-}" ]] && ! grep -q '^ADMIN_TELEGRAM_ID=' .env 2>/dev/null; then
+  printf 'ADMIN_TELEGRAM_ID=%s\n' "$ADMIN_TELEGRAM_ID" >> .env
+fi
 
 log "bun install"
 bun install --silent
