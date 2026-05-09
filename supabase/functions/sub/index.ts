@@ -32,7 +32,6 @@ function buildVless(
     panel?: string;
     inbound_id?: number;
   },
-  sniOverride?: string,
   overrides?: Map<string, string>,
   panelInfo?: { name?: string; country?: string },
 ) {
@@ -56,7 +55,7 @@ function buildVless(
   if (security === "reality" && ss.realitySettings) {
     const r = ss.realitySettings;
     const settings = r.settings ?? {};
-    const sni = sniOverride || (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
+    const sni = (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
     if (sni) params.set("sni", sni);
     const sid = (Array.isArray(r.shortIds) && r.shortIds[0]) || r.shortId;
     if (sid) params.set("sid", sid);
@@ -70,7 +69,7 @@ function buildVless(
   // TLS
   if (security === "tls" && ss.tlsSettings) {
     const t = ss.tlsSettings;
-    const sni = sniOverride || t.serverName;
+    const sni = t.serverName;
     if (sni) params.set("sni", sni);
     if (Array.isArray(t.alpn)) params.set("alpn", t.alpn.join(","));
     const fp = t.settings?.fingerprint;
@@ -235,20 +234,8 @@ Deno.serve(async (req) => {
         lines.push(hostOverride ? withHost(String(link), hostOverride) : String(link));
       }
     }
-    const whitelist: string[] = Array.isArray((sub as any).sni_whitelist)
-      ? (sub as any).sni_whitelist.filter((s: string) => typeof s === "string" && s.trim().length > 0)
-      : [];
-    // Deterministic SNI per subscription — stable across devices and refreshes.
-    let sniIdx = 0;
-    if (whitelist.length > 0) {
-      const seed = String(sub.client_uuid ?? sub.id ?? "");
-      let h = 0;
-      for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-      sniIdx = Math.abs(h) % whitelist.length;
-    }
     for (const ib of inbounds ?? []) {
-      const sniOverride = whitelist.length > 0 ? whitelist[sniIdx] : undefined;
-      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, sniOverride, overridesMap, {
+      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, overridesMap, {
         name: (ib as any).panel_name,
         country: (ib as any).panel_country,
       });
