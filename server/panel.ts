@@ -2,7 +2,7 @@
 import { db, decodeRow, uid } from "./db.ts";
 import {
   addClient, bustPanelsCache, getAllPanels, getClientExpiryByEmail, getClientTrafficsByEmail,
-  getPanelBySlug, hostFromUrl, listInbounds, panelCfg, panelFetch, randomSlug, updateClient, uuidv4, rawFetch,
+  getPanelBySlug, hostFromUrl, listInbounds, panelCfg, panelConnectionHost, panelFetch, randomSlug, updateClient, uuidv4, rawFetch,
 } from "./x3ui.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
@@ -315,7 +315,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const created: any[] = [], errors: any[] = [];
       for (const sel of validSelections) {
         try {
-          const cfg = panelCfg(getPanelBySlug(sel.panel));
+          const panelRow = getPanelBySlug(sel.panel);
           const ibs = await listInbounds(sel.panel);
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
@@ -324,7 +324,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
           await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId: subIdShort, flow });
           db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [uid(), sub!.id, sel.panel, ib.id, ib.remark ?? `${sel.panel}-${ib.id}`, ib.protocol, ib.port, hostFromUrl(cfg.url), JSON.stringify(stream), email]);
+            [uid(), sub!.id, sel.panel, ib.id, ib.remark ?? `${sel.panel}-${ib.id}`, ib.protocol, ib.port, panelConnectionHost(panelRow), JSON.stringify(stream), email]);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
         } catch (e) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: e instanceof Error ? e.message : String(e) }); }
       }
@@ -416,7 +416,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existing.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
         try {
-          const cfg = panelCfg(getPanelBySlug(sel.panel));
+          const panelRow = getPanelBySlug(sel.panel);
           const ibs = await listInbounds(sel.panel);
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
@@ -425,7 +425,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const email = `${sub.client_email}_${sel.panel}${ib.id}`;
           await addClient(sel.panel, sel.inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: subIdShort, flow });
           db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [uid(), sub.id, sel.panel, ib.id, ib.remark ?? `${sel.panel}-${ib.id}`, ib.protocol, ib.port, hostFromUrl(cfg.url), JSON.stringify(stream), email]);
+            [uid(), sub.id, sel.panel, ib.id, ib.remark ?? `${sel.panel}-${ib.id}`, ib.protocol, ib.port, panelConnectionHost(panelRow), JSON.stringify(stream), email]);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
         } catch (e) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: e instanceof Error ? e.message : String(e) }); }
       }
@@ -495,7 +495,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (!panel || !inboundId) return json({ error: "panel, inboundId required" }, 400);
       const allSubs = rows<any>(`SELECT id, slug, client_uuid, client_email, expiry_ms, total_bytes FROM subscriptions`);
       const have = new Set(rows<any>(`SELECT subscription_id FROM subscription_inbounds WHERE panel = ? AND inbound_id = ?`, [panel, inboundId]).map((l) => l.subscription_id));
-      const cfg = panelCfg(getPanelBySlug(panel));
+      const panelRow = getPanelBySlug(panel);
       const ibs = await listInbounds(panel);
       const ib = ibs.find((x: any) => x.id === inboundId);
       if (!ib) return json({ error: "inbound not found" }, 404);
@@ -508,7 +508,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const email = `${sub.client_email}_${panel}${ib.id}`;
           await addClient(panel, inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: String(sub.slug).slice(0, 16), flow });
           db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            [uid(), sub.id, panel, ib.id, ib.remark ?? `${panel}-${ib.id}`, ib.protocol, ib.port, hostFromUrl(cfg.url), JSON.stringify(stream), email]);
+            [uid(), sub.id, panel, ib.id, ib.remark ?? `${panel}-${ib.id}`, ib.protocol, ib.port, panelConnectionHost(panelRow), JSON.stringify(stream), email]);
           created.push(sub.id);
         } catch (e) { errors.push({ sub: sub.id, error: e instanceof Error ? e.message : String(e) }); }
       }));
