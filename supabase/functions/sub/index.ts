@@ -7,6 +7,13 @@ const corsHeaders = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function cleanHost(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try { return new URL(raw.includes("://") ? raw : `http://${raw}`).hostname; } catch {}
+  return raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+}
+
 function base64Utf8(value: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(value)));
 }
@@ -198,16 +205,21 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: true });
 
     // Fetch panel display names + country code so we can prefix country/flag to remarks.
-    const panelInfoMap = new Map<string, { name: string; country: string }>();
+    const panelInfoMap = new Map<string, { name: string; country: string; connectionHost: string }>();
     const slugs = Array.from(new Set((inbounds ?? []).map((ib: any) => ib.panel)));
     if (slugs.length) {
-      const { data: panelsRows } = await supabase.from("panels").select("slug, name, country").in("slug", slugs);
-      (panelsRows ?? []).forEach((p: any) => panelInfoMap.set(p.slug, { name: p.name ?? "", country: p.country ?? "" }));
+      const { data: panelsRows } = await supabase.from("panels").select("slug, name, country, host, public_host, panel_url").in("slug", slugs);
+      (panelsRows ?? []).forEach((p: any) => panelInfoMap.set(p.slug, {
+        name: p.name ?? "",
+        country: p.country ?? "",
+        connectionHost: cleanHost(p.public_host || p.host || p.panel_url || ""),
+      }));
     }
     for (const ib of (inbounds ?? []) as any[]) {
       const info = panelInfoMap.get(ib.panel);
       ib.panel_name = info?.name ?? "";
       ib.panel_country = info?.country ?? "";
+      if (info?.connectionHost) ib.host = info.connectionHost;
     }
 
     // Load overrides for the panel+inbound pairs used by this subscription
