@@ -67,7 +67,9 @@ export const StatsDashboard = () => {
   const chartData = useMemo(() => {
     if (snapshots.length === 0) return [];
     // Per subscription: compute deltas between consecutive cumulative snapshots,
-    // then aggregate positive deltas into hourly buckets (assigned to the later snapshot's hour).
+    // then SPREAD positive deltas proportionally across the hourly buckets
+    // they span. Without this, a long gap between refreshes dumps all the
+    // accumulated traffic into a single hour and produces fake spikes.
     const HOUR = 60 * 60 * 1000;
     const bySub = new Map<string, Snapshot[]>();
     for (const s of snapshots) {
@@ -76,13 +78,32 @@ export const StatsDashboard = () => {
       bySub.set(s.subscription_id, arr);
     }
     const buckets = new Map<number, number>();
+    const windowStart = Date.now() - 24 * 60 * 60 * 1000;
     for (const arr of bySub.values()) {
       arr.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
       for (let i = 1; i < arr.length; i++) {
         const delta = Number(arr[i].used_bytes) - Number(arr[i - 1].used_bytes);
         if (delta <= 0) continue; // counter reset / no growth
-        const hour = Math.floor(new Date(arr[i].created_at).getTime() / HOUR) * HOUR;
-        buckets.set(hour, (buckets.get(hour) ?? 0) + delta);
+        const tA = new Date(arr[i - 1].created_at).getTime();
+        const tB = new Date(arr[i].created_at).getTime();
+        const span = Math.max(1, tB - tA);
+        // Clip to the visible 24h window so an old previous snapshot doesn't
+        // dilute today's traffic across yesterday.
+        const from = Math.max(tA, windowStart);
+        const to = tB;
+        if (to <= from) continue;
+        const effectiveDelta = delta * ((to - from) / span);
+        // Walk each hour bucket the [from, to) interval touches and assign
+        // a portion proportional to the overlap.
+        let cursor = from;
+        while (cursor < to) {
+          const bucketStart = Math.floor(cursor / HOUR) * HOUR;
+          const bucketEnd = bucketStart + HOUR;
+          const overlap = Math.min(to, bucketEnd) - cursor;
+          const portion = effectiveDelta * (overlap / (to - from));
+          buckets.set(bucketStart, (buckets.get(bucketStart) ?? 0) + portion);
+          cursor = bucketEnd;
+        }
       }
     }
     // Fill the last 24 hourly slots so the chart has a steady X-axis.
