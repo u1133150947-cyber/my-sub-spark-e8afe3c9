@@ -63,6 +63,21 @@ VITE_SUB_BASE_URL=$PUBLIC_URL/sub
 EOF
 fi
 
+if ! grep -q '^ADMIN_BOT_TOKEN=' .env 2>/dev/null; then
+  if [[ -z "${ADMIN_BOT_TOKEN:-}" ]]; then
+    read -rsp "Telegram bot token для входа в админку (можно оставить пустым и добавить позже в /opt/sub-manager/.env): " ADMIN_BOT_TOKEN || true
+    echo
+  fi
+  if [[ -n "${ADMIN_BOT_TOKEN:-}" ]]; then
+    printf 'ADMIN_BOT_TOKEN=%s\n' "$ADMIN_BOT_TOKEN" >> .env
+  else
+    warn "ADMIN_BOT_TOKEN не задан — /login откроется, но код в Telegram не отправится"
+  fi
+fi
+if [[ -n "${ADMIN_TELEGRAM_ID:-}" ]] && ! grep -q '^ADMIN_TELEGRAM_ID=' .env 2>/dev/null; then
+  printf 'ADMIN_TELEGRAM_ID=%s\n' "$ADMIN_TELEGRAM_ID" >> .env
+fi
+
 log "bun install"
 bun install --silent
 
@@ -70,10 +85,22 @@ log "bun run build"
 bun run build
 [[ -d dist ]] || die "Сборка не создала dist/"
 
+if [[ -f /etc/systemd/system/sub-manager.service ]] && ! grep -q '^EnvironmentFile=-/opt/sub-manager/.env' /etc/systemd/system/sub-manager.service; then
+  log "Подключаю .env к systemd-сервису"
+  sed -i '/^WorkingDirectory=\/opt\/sub-manager$/a EnvironmentFile=-/opt/sub-manager/.env' /etc/systemd/system/sub-manager.service
+  systemctl daemon-reload
+fi
+
 log "Перезапускаю sub-manager"
 systemctl restart sub-manager
 sleep 1
 systemctl --no-pager --lines=0 status sub-manager || true
+
+if [[ -f /etc/caddy/Caddyfile ]]; then
+  log "Проверяю доступ к Telegram-auth endpoint в Caddy"
+  sed -i 's#@protected not path /sub/\* /functions/v1/sub\*#@protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*#g' /etc/caddy/Caddyfile
+  caddy reload --config /etc/caddy/Caddyfile || systemctl restart caddy || true
+fi
 
 echo
 echo "${G}[✓] Обновлено${N}"

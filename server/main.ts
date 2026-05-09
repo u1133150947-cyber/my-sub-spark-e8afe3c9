@@ -5,6 +5,7 @@ import { handleRest } from "./postgrest.ts";
 import { handlePanel } from "./panel.ts";
 import { handleSub } from "./sub.ts";
 import { handleUpdate } from "./update.ts";
+import { handleAdminAuth } from "./adminAuth.ts";
 import { contentType } from "https://deno.land/std@0.224.0/media_types/mod.ts";
 import { extname, join, normalize } from "https://deno.land/std@0.224.0/path/mod.ts";
 
@@ -54,6 +55,9 @@ Deno.serve({ port: PORT }, async (req) => {
   }
   if (url.pathname.startsWith("/functions/v1/panel")) {
     return withCors(await handlePanel(req, url));
+  }
+  if (url.pathname.startsWith("/functions/v1/admin-auth")) {
+    return withCors(await handleAdminAuth(req));
   }
   if (url.pathname.startsWith("/rest/v1/")) {
     return withCors(await handleRest(req, url));

@@ -133,6 +133,30 @@ CREATE TABLE IF NOT EXISTS subscription_external_subs (
 );
 CREATE INDEX IF NOT EXISTS idx_ses_sub ON subscription_external_subs(subscription_id);
 CREATE INDEX IF NOT EXISTS idx_ses_ext ON subscription_external_subs(external_sub_id);
+
+CREATE TABLE IF NOT EXISTS admin_login_codes (
+  id TEXT PRIMARY KEY,
+  code_hash TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_admin_login_codes_hash ON admin_login_codes(code_hash);
+CREATE INDEX IF NOT EXISTS idx_admin_login_codes_created ON admin_login_codes(created_at);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  id TEXT PRIMARY KEY,
+  token TEXT NOT NULL UNIQUE,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_token ON admin_sessions(token);
+
+CREATE TABLE IF NOT EXISTS admin_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 `);
 
 // Lightweight migrations for legacy DBs.
