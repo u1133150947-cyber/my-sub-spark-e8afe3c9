@@ -95,6 +95,9 @@ fi
 if [[ -n "${ADMIN_BOT_TOKEN:-}" ]]; then
   printf 'ADMIN_BOT_TOKEN=%s\n' "$ADMIN_BOT_TOKEN" >> .env
 fi
+if [[ -n "${ADMIN_TELEGRAM_ID:-}" ]]; then
+  printf 'ADMIN_TELEGRAM_ID=%s\n' "$ADMIN_TELEGRAM_ID" >> .env
+fi
 bun install --silent
 bun run build
 
