@@ -300,7 +300,12 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     for (const l of rawLinks) lines.push(hostOverride ? withHost(String(l), hostOverride) : String(l));
   }
 
-  // Append linked external subs (3rd-party VPN servers).
+  for (const ib of inbounds as any[]) {
+    lines.push(...buildVless(sub.client_uuid, sub.client_email, ib, overridesMap));
+  }
+
+  // Append linked external subs (3rd-party VPN servers) AFTER own inbounds,
+  // so the user's main vless servers stay at the top of the list.
   try {
     const linked = db.queryEntries(
       `SELECT e.raw_links FROM subscription_external_subs ses JOIN external_subs e ON e.id = ses.external_sub_id WHERE ses.subscription_id = ?`,
@@ -313,9 +318,6 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     }
   } catch {}
 
-  for (const ib of inbounds as any[]) {
-    lines.push(...buildVless(sub.client_uuid, sub.client_email, ib, overridesMap));
-  }
   const body = base64Utf8(lines.join("\n"));
 
   db.query(`UPDATE subscriptions SET hits = hits + 1, last_accessed_at = datetime('now') WHERE id = ?`, [sub.id]);
