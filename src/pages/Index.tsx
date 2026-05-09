@@ -591,6 +591,8 @@ const Index = () => {
       return {
         key: `ext:${r.external_sub_id}`,
         sort_order: effective,
+        _ses_sort: sesSort,
+        _global_sort: extMeta[r.external_sub_id] ?? 1000,
       };
     });
 
@@ -600,6 +602,31 @@ const Index = () => {
     setEditExisting(keys);
     setEditSelected(new Set(keys));
     setEditOrder(orderedKeys);
+
+    // === DEBUG: подробный лог открытия редактора порядка ===
+    console.group(`[ORDER-EDITOR OPEN] sub=${s.slug} (${s.id})`);
+    console.log("inbounds (raw из БД):", data);
+    console.log("inboundItems:", inboundItems);
+    console.log("subscription_external_subs (raw из БД):", extLinks);
+    console.log("external_subs.sort_order (глобальные):", extMeta);
+    console.log("extItems (с применённым fallback):", extItems);
+    console.log("итоговый orderedKeys (что увидит пользователь):", orderedKeys);
+    console.groupEnd();
+    try {
+      await supabase.from("audit_log").insert({
+        action: "order_editor_open",
+        subscription_id: s.id,
+        level: "debug",
+        meta: {
+          slug: s.slug,
+          inboundItems,
+          extLinks,
+          extMeta,
+          extItems,
+          orderedKeys,
+        } as any,
+      } as any);
+    } catch (e) { console.warn("audit_log insert failed", e); }
   };
 
   const closeEdit = () => {
@@ -631,6 +658,11 @@ const Index = () => {
       if (j < 0 || j >= prev.length) return prev;
       const next = prev.slice();
       [next[idx], next[j]] = [next[j], next[idx]];
+      console.group(`[ORDER-EDITOR MOVE] key=${key} dir=${dir}`);
+      console.log("before:", prev);
+      console.log("after :", next);
+      console.log(`swap indexes: ${idx} <-> ${j}`);
+      console.groupEnd();
       return next;
     });
   };
@@ -638,27 +670,58 @@ const Index = () => {
   const persistEditOrder = async (subscriptionId: string) => {
     const orderedSelected = editOrder.filter((k) => editSelected.has(k));
     if (!orderedSelected.length) return;
+    const writes: Array<{ key: string; table: string; sort_order: number; ok: boolean; error?: string }> = [];
+    console.group(`[ORDER-EDITOR SAVE] sub=${subscriptionId} count=${orderedSelected.length}`);
+    console.log("orderedSelected:", orderedSelected);
     for (let i = 0; i < orderedSelected.length; i++) {
       const k = orderedSelected[i];
       if (k.startsWith("ext:")) {
         const extId = k.slice(4);
-        const { error } = await supabase
+        const { error, data: upd } = await supabase
           .from("subscription_external_subs")
           .update({ sort_order: i } as any)
           .eq("subscription_id", subscriptionId)
-          .eq("external_sub_id", extId);
+          .eq("external_sub_id", extId)
+          .select();
+        writes.push({ key: k, table: "subscription_external_subs", sort_order: i, ok: !error, error: error?.message });
+        console.log(`  [${i}] UPDATE ses ext=${extId} -> sort_order=${i}`, { error, updated: upd });
         if (error) throw error;
       } else {
         const [panel, idStr] = k.split(":");
-        const { error } = await supabase
+        const { error, data: upd } = await supabase
           .from("subscription_inbounds")
           .update({ sort_order: i } as any)
           .eq("subscription_id", subscriptionId)
           .eq("panel", panel)
-          .eq("inbound_id", Number(idStr));
+          .eq("inbound_id", Number(idStr))
+          .select();
+        writes.push({ key: k, table: "subscription_inbounds", sort_order: i, ok: !error, error: error?.message });
+        console.log(`  [${i}] UPDATE sub_inb ${panel}:${idStr} -> sort_order=${i}`, { error, updated: upd });
         if (error) throw error;
       }
     }
+    // Verify: re-read after save
+    const { data: verSes } = await supabase
+      .from("subscription_external_subs")
+      .select("external_sub_id, sort_order")
+      .eq("subscription_id", subscriptionId)
+      .order("sort_order", { ascending: true });
+    const { data: verInb } = await supabase
+      .from("subscription_inbounds")
+      .select("panel, inbound_id, sort_order")
+      .eq("subscription_id", subscriptionId)
+      .order("sort_order", { ascending: true });
+    console.log("VERIFY subscription_external_subs:", verSes);
+    console.log("VERIFY subscription_inbounds:", verInb);
+    console.groupEnd();
+    try {
+      await supabase.from("audit_log").insert({
+        action: "order_editor_save",
+        subscription_id: subscriptionId,
+        level: "debug",
+        meta: { orderedSelected, writes, verifySes: verSes, verifyInb: verInb } as any,
+      } as any);
+    } catch (e) { console.warn("audit_log insert failed", e); }
   };
 
   const saveEdit = async (s: Subscription) => {
