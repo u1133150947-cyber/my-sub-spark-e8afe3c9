@@ -29,10 +29,14 @@ export function UpdatePanel() {
     setChecking(true);
     try {
       const r = await fetch("/api/version");
-      const d = await r.json();
-      setInfo(d);
+      const ct = r.headers.get("content-type") ?? "";
+      if (!r.ok || !ct.includes("application/json")) {
+        setInfo(null);
+        return; // dev/preview: эндпоинта нет, тихо игнорируем
+      }
+      setInfo(await r.json());
     } catch (e: any) {
-      toast.error("Не удалось проверить GitHub: " + (e?.message ?? e));
+      setInfo(null);
     } finally {
       setChecking(false);
     }
@@ -127,7 +131,9 @@ export function UpdatePanel() {
             {info.remote_message && <div className="text-muted-foreground truncate">«{info.remote_message.split("\n")[0]}»</div>}
           </div>
         ) : (
-          <div className="text-xs text-muted-foreground mb-3">Загрузка информации…</div>
+          <div className="text-xs text-muted-foreground mb-3">
+            Доступно только на развёрнутом сервере (через <code>install.sh</code>). В превью Lovable эндпоинт <code>/api/version</code> отсутствует.
+          </div>
         )}
 
         {info?.update_available ? (
