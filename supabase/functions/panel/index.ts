@@ -9,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-type PanelRow = { id: string; slug: string; name: string; panel_url: string; username: string; password: string };
+type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
 type PanelKey = string;
 
 const supabaseAdmin = createClient(
@@ -27,7 +27,7 @@ async function getAllPanels(): Promise<PanelRow[]> {
   if (Date.now() - panelsCache.ts < PANELS_CACHE_TTL_MS && panelsCache.rows.length) return panelsCache.rows;
   const { data, error } = await supabaseAdmin
     .from("panels")
-    .select("id, slug, name, panel_url, username, password")
+    .select("id, slug, name, host, public_host, panel_url, username, password")
     .order("created_at", { ascending: true });
   if (error) throw new Error(`load panels: ${error.message}`);
   panelsCache.rows = (data ?? []) as PanelRow[];
@@ -246,7 +246,14 @@ function randomSlug(len = 12) {
   crypto.getRandomValues(arr);
   return Array.from(arr, (n) => a[n % a.length]).join("");
 }
-function hostFromUrl(u: string) { try { return new URL(u).hostname; } catch { return u; } }
+function cleanHost(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try { return new URL(raw.includes("://") ? raw : `http://${raw}`).hostname; } catch {}
+  return raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+}
+function hostFromUrl(u: string) { return cleanHost(u); }
+function panelConnectionHost(p: PanelRow) { return cleanHost(p.public_host || p.host || hostFromUrl(p.panel_url)); }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
