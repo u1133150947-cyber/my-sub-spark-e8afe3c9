@@ -348,10 +348,9 @@ Deno.serve(async (req) => {
           const meta = byMeta.get((r as any).external_sub_id);
           if (ls.length) {
             const sesSort = Number((r as any).sort_order ?? 1000);
-            // Per-subscription order is the single source of truth.
-            // Newly attached items default to 1000 → end of the list, which is
-            // predictable. Admin reorders them via the subscription editor.
-            const sortOrder = sesSort;
+            // Per-subscription override wins if explicitly set (≠ default 1000),
+            // otherwise use the global external_subs.sort_order from "Сторонние".
+            const sortOrder = sesSort !== 1000 ? sesSort : (meta?.sort_order ?? 1000);
             items.push({
               sort_order: sortOrder,
               created_at: String((r as any).created_at ?? meta?.created_at ?? ""),
