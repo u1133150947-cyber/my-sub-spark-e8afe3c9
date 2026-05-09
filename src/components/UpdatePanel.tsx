@@ -15,6 +15,7 @@ type VersionInfo = {
   remote_commit: string | null;
   remote_date: string | null;
   remote_message: string | null;
+  remote_error?: string | null;
   update_available: boolean;
 };
 
@@ -136,11 +137,16 @@ export function UpdatePanel() {
         {info ? (
           <div className="text-xs space-y-1 mb-3">
             <div className="text-muted-foreground">Репозиторий: <code className="text-foreground">{info.repo}</code> · ветка <code className="text-foreground">{info.branch}</code></div>
-            <div>На сервере: <code className="text-foreground">{info.local_commit?.slice(0, 7) ?? "—"}</code></div>
+            <div>На сервере: <code className="text-foreground">{info.local_commit?.slice(0, 7) ?? "—"}</code>
+              {!info.local_commit && <span className="text-muted-foreground"> (создай файл <code>/opt/sub-manager/VERSION</code>)</span>}
+            </div>
             <div>В GitHub: <code className="text-foreground">{info.remote_commit?.slice(0, 7) ?? "—"}</code>
               {info.remote_date && <span className="text-muted-foreground"> · {new Date(info.remote_date).toLocaleString()}</span>}
             </div>
             {info.remote_message && <div className="text-muted-foreground truncate">«{info.remote_message.split("\n")[0]}»</div>}
+            {info.remote_error && (
+              <div className="text-destructive break-all">⚠ Ошибка GitHub: {info.remote_error}</div>
+            )}
           </div>
         ) : (
           <div className="text-xs text-muted-foreground mb-3">
