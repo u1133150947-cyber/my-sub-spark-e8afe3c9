@@ -326,6 +326,9 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       .eq("id", credsPanel.id);
     setCredsSaving(false);
     if (error) return toast.error("Ошибка: " + error.message);
+    if (credsPanel.slug) {
+      await supabase.from("subscription_inbounds").update({ host: publicHost } as any).eq("panel", credsPanel.slug);
+    }
     toast.success("Доступы обновлены — slug сохранён, подписки продолжат работать");
     setCredsPanel(null);
     load();
