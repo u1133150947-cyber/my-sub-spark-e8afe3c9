@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS subscription_external_subs (
   id TEXT PRIMARY KEY,
   subscription_id TEXT NOT NULL,
   external_sub_id TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 1000,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(subscription_id, external_sub_id)
 );
@@ -141,6 +142,10 @@ try {
 try {
   const cols = db.queryEntries(`PRAGMA table_info(subscription_inbounds)`).map((r: any) => r.name);
   if (!cols.includes("sort_order")) db.execute(`ALTER TABLE subscription_inbounds ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`);
+} catch {}
+try {
+  const cols = db.queryEntries(`PRAGMA table_info(subscription_external_subs)`).map((r: any) => r.name);
+  if (!cols.includes("sort_order")) db.execute(`ALTER TABLE subscription_external_subs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1000`);
 } catch {}
 try {
   const cols = db.queryEntries(`PRAGMA table_info(subscriptions)`).map((r: any) => r.name);
