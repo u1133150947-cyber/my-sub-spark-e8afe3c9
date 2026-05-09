@@ -57,6 +57,21 @@ function rewriteLinkName(link: string, displayName: string): string {
   return `${base}#${encodeURIComponent(displayName)}`;
 }
 
+// Fake vless link used when the entry is just a visual header / separator,
+// not a real connectable server. The host 127.0.0.1 is intentional so clients
+// can't actually connect — the entry only exists to show its #name.
+function buildHeaderLink(displayName: string): string {
+  return `vless://00000000-0000-0000-0000-000000000000@127.0.0.1:1?type=tcp&security=none#${encodeURIComponent(displayName)}`;
+}
+
+const HEADER_TEMPLATES: { emoji: string; label: string }[] = [
+  { emoji: "🔥", label: "Акция" },
+  { emoji: "⭐", label: "Премиум" },
+  { emoji: "📢", label: "Новости" },
+  { emoji: "▼", label: "Бесплатные ▼" },
+  { emoji: "━", label: "━━━━━━━━━━" },
+];
+
 export function ExternalSubsPanel() {
   const [items, setItems] = useState<ExternalSub[]>([]);
   const [subs, setSubs] = useState<SubscriptionLite[]>([]);
@@ -71,6 +86,7 @@ export function ExternalSubsPanel() {
   const [linkText, setLinkText] = useState("");
   const [targetSubId, setTargetSubId] = useState<string>("none"); // "none" | "all" | <subId>
   const [creating, setCreating] = useState(false);
+  const [isHeader, setIsHeader] = useState(false);
 
   // edit dialog state
   const [editing, setEditing] = useState<ExternalSub | null>(null);
@@ -123,18 +139,20 @@ export function ExternalSubsPanel() {
   async function onCreate() {
     const link = linkText.trim();
     if (!name.trim()) { toast.error("Введите название"); return; }
-    if (!link) { toast.error("Вставьте ключ (vless:// / hysteria2:// / vmess:// / trojan://)"); return; }
-    if (!/^(vless|vmess|trojan|hysteria2|hy2|ss):\/\//i.test(link)) {
-      toast.error("Неподдерживаемый формат ключа");
-      return;
+    if (!isHeader) {
+      if (!link) { toast.error("Вставьте ключ (vless:// / hysteria2:// / vmess:// / trojan://)"); return; }
+      if (!/^(vless|vmess|trojan|hysteria2|hy2|ss):\/\//i.test(link)) {
+        toast.error("Неподдерживаемый формат ключа");
+        return;
+      }
     }
     setCreating(true);
     try {
       const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
-      const displayName = `${c.emoji} ${name.trim()}`;
-      const finalLink = rewriteLinkName(link, displayName);
+      const displayName = isHeader ? name.trim() : `${c.emoji} ${name.trim()}`;
+      const finalLink = isHeader ? buildHeaderLink(displayName) : rewriteLinkName(link, displayName);
       const { data, error } = await supabase.from("external_subs").insert({
-        name: name.trim(), emoji: c.emoji,
+        name: name.trim(), emoji: isHeader ? "📝" : c.emoji,
         source_url: "", raw_links: [finalLink], notes: "",
       }).select("id").single();
       if (error) throw error;
@@ -162,7 +180,7 @@ export function ExternalSubsPanel() {
           toast.success("Сервер добавлен");
         }
       }
-      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none");
+      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none"); setIsHeader(false);
       loadAll();
     } catch (e: any) {
       toast.error("Ошибка добавления", { description: e?.message ?? String(e) });
@@ -350,8 +368,24 @@ export function ExternalSubsPanel() {
         <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
           <Globe2 className="size-4 text-primary" /> Добавить сторонний сервер
         </h2>
+        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-md border border-border bg-muted/30">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Checkbox checked={isHeader} onCheckedChange={(v) => setIsHeader(!!v)} />
+            <span className="text-sm font-medium">Это заголовок / текст (без ключа)</span>
+          </label>
+          {isHeader && (
+            <div className="flex flex-wrap gap-2">
+              {HEADER_TEMPLATES.map((t) => (
+                <Button key={t.label} type="button" size="sm" variant="outline"
+                  onClick={() => setName(`${t.emoji} ${t.label}`)}>
+                  {t.emoji} {t.label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="grid md:grid-cols-6 gap-3">
-          <div className="md:col-span-2">
+          <div className="md:col-span-2" hidden={isHeader}>
             <Label>Страна (флаг для пользователей)</Label>
             <Select value={country} onValueChange={setCountry}>
               <SelectTrigger>
@@ -367,9 +401,10 @@ export function ExternalSubsPanel() {
               </SelectContent>
             </Select>
           </div>
-          <div className="md:col-span-2">
-            <Label>Название сервера (видит клиент после флага)</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="США-каскад" />
+          <div className={isHeader ? "md:col-span-4" : "md:col-span-2"}>
+            <Label>{isHeader ? "Текст заголовка (как увидит клиент)" : "Название сервера (видит клиент после флага)"}</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder={isHeader ? "🔥 Акция -50%" : "США-каскад"} />
           </div>
           <div className="md:col-span-2">
             <Label>Привязать к подписке</Label>
@@ -384,19 +419,21 @@ export function ExternalSubsPanel() {
               </SelectContent>
             </Select>
           </div>
-          <div className="md:col-span-6">
+          <div className="md:col-span-6" hidden={isHeader}>
             <Label>Ключ (vless:// / hysteria2:// / vmess:// / trojan://)</Label>
             <Textarea value={linkText} onChange={(e) => setLinkText(e.target.value)} rows={3}
               placeholder="vless://uuid@host:443?...#name" />
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          Имя ссылки (после <code>#</code>) автоматически переписывается в «{`{флаг} {название}`}», например 🇺🇸 США-каскад.
+          {isHeader
+            ? "Заголовок появится в списке клиента как «сервер» с этим именем, но без рабочего подключения. Используйте для разделителей и баннеров. Позицию меняйте стрелками ↑↓ ниже."
+            : <>Имя ссылки (после <code>#</code>) автоматически переписывается в «{`{флаг} {название}`}», например 🇺🇸 США-каскад.</>}
         </p>
         <div className="mt-4">
           <Button onClick={onCreate} disabled={creating}>
             {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            Добавить сервер
+            {isHeader ? "Добавить заголовок" : "Добавить сервер"}
           </Button>
         </div>
       </Card>
