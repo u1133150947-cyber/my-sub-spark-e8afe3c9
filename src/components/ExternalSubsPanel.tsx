@@ -223,13 +223,20 @@ export function ExternalSubsPanel() {
   }
 
   async function toggleAttach(extId: string, subId: string, attach: boolean) {
+    // optimistic UI update so the checkbox reflects the click immediately
+    setLinks((prev) => {
+      if (attach) {
+        if (prev.some((l) => l.external_sub_id === extId && l.subscription_id === subId)) return prev;
+        return [...prev, { external_sub_id: extId, subscription_id: subId }];
+      }
+      return prev.filter((l) => !(l.external_sub_id === extId && l.subscription_id === subId));
+    });
     try {
       if (attach) {
-        const { error } = await supabase.from("subscription_external_subs").upsert(
-          { subscription_id: subId, external_sub_id: extId },
-          { onConflict: "subscription_id,external_sub_id", ignoreDuplicates: true },
-        );
-        if (error) throw error;
+        const { error } = await supabase
+          .from("subscription_external_subs")
+          .insert({ subscription_id: subId, external_sub_id: extId });
+        if (error && !/duplicate|unique/i.test(error.message)) throw error;
       } else {
         const { error } = await supabase.from("subscription_external_subs").delete()
           .eq("subscription_id", subId).eq("external_sub_id", extId);
@@ -238,6 +245,7 @@ export function ExternalSubsPanel() {
       loadAll();
     } catch (e: any) {
       toast.error("Не удалось", { description: e?.message ?? String(e) });
+      loadAll();
     }
   }
 
