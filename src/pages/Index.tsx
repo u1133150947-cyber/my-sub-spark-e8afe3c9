@@ -185,11 +185,25 @@ const CLIENT_LINKS: { label: string; emoji: string; build: (u: string) => string
   { label: "NekoBox", emoji: "🐱", build: (u) => `sn://subscription?url=${encodeURIComponent(u)}` },
 ];
 
+const DEFAULT_EXTERNAL_SORT = 1000;
+const PINNED_SORT = -1000;
+const isPinnedSort = (v: number) => Number.isFinite(v) && v < 0;
+const effectiveExternalSort = (perSubSort: number, globalSort: number) => {
+  if (isPinnedSort(globalSort)) {
+    if (perSubSort === DEFAULT_EXTERNAL_SORT) return globalSort;
+    if (isPinnedSort(perSubSort)) return perSubSort;
+    return PINNED_SORT + Math.max(1, perSubSort);
+  }
+  if (isPinnedSort(perSubSort)) return perSubSort;
+  return perSubSort !== DEFAULT_EXTERNAL_SORT ? perSubSort : globalSort;
+};
+
 const Index = () => {
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [inbounds, setInbounds] = useState<InboundsResp | null>(null);
   const [loadingInbounds, setLoadingInbounds] = useState(false);
   const [name, setName] = useState("");
+  const [createSlug, setCreateSlug] = useState("");
   const [days, setDays] = useState(30);
   const [totalGB, setTotalGB] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -204,7 +218,7 @@ const Index = () => {
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [editOrder, setEditOrder] = useState<string[]>([]);
   const [editSniText, setEditSniText] = useState<string>("");
-  const [editExternals, setEditExternals] = useState<Record<string, { name: string; emoji: string; raw_links: string[] }>>({});
+  const [editExternals, setEditExternals] = useState<Record<string, { name: string; emoji: string; raw_links: string[]; sort_order: number }>>({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("subs");
@@ -465,6 +479,8 @@ const Index = () => {
   const create = async () => {
     if (!name.trim()) return toast.error("Введите имя клиента");
     if (selected.size === 0) return toast.error("Выберите хотя бы один inbound");
+    const desiredSlug = createSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (createSlug.trim() && desiredSlug.length < 4) return toast.error("URL должен быть минимум 4 символа (a-z 0-9)");
 
     const selections = Array.from(selected).map((s) => {
       const [panel, id] = s.split(":");
@@ -475,7 +491,7 @@ const Index = () => {
     try {
       const { data, error } = await supabase.functions.invoke("panel?action=create", {
         method: "POST",
-        body: { name: name.trim(), days, totalGB, selections },
+        body: { name: name.trim(), days, totalGB, selections, ...(desiredSlug ? { slug: desiredSlug } : {}) },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -487,6 +503,7 @@ const Index = () => {
         });
       }
       setName("");
+      setCreateSlug("");
       setSelected(new Set());
       loadSubs();
     } catch (e: any) {
@@ -572,7 +589,7 @@ const Index = () => {
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
     const extIds = (extLinks ?? []).map((r: any) => r.external_sub_id);
-    const extMap: Record<string, { name: string; emoji: string; raw_links: string[] }> = {};
+    const extMap: Record<string, { name: string; emoji: string; raw_links: string[]; sort_order: number }> = {};
     const extMeta: Record<string, number> = {};
     if (extIds.length) {
       const { data: exts } = await supabase
@@ -584,22 +601,20 @@ const Index = () => {
           name: (e as any).name ?? "",
           emoji: (e as any).emoji ?? "🌐",
           raw_links: Array.isArray((e as any).raw_links) ? (e as any).raw_links : [],
+          sort_order: Number((e as any).sort_order ?? DEFAULT_EXTERNAL_SORT),
         };
-        extMeta[(e as any).id] = Number((e as any).sort_order ?? 1000);
+        extMeta[(e as any).id] = Number((e as any).sort_order ?? DEFAULT_EXTERNAL_SORT);
       }
     }
     setEditExternals(extMap);
     const extItems = (extLinks ?? []).map((r: any) => {
-      const sesSort = Number(r.sort_order ?? 1000);
-      // Per-subscription override wins if explicitly set (≠ default 1000).
-      // Otherwise fall back to global external_subs.sort_order so that
-      // "сторонние" added globally appear in the configured global order.
-      const effective = sesSort !== 1000 ? sesSort : (extMeta[r.external_sub_id] ?? 1000);
+      const sesSort = Number(r.sort_order ?? DEFAULT_EXTERNAL_SORT);
+      const effective = effectiveExternalSort(sesSort, extMeta[r.external_sub_id] ?? DEFAULT_EXTERNAL_SORT);
       return {
         key: `ext:${r.external_sub_id}`,
         sort_order: effective,
         _ses_sort: sesSort,
-        _global_sort: extMeta[r.external_sub_id] ?? 1000,
+        _global_sort: extMeta[r.external_sub_id] ?? DEFAULT_EXTERNAL_SORT,
       };
     });
 
@@ -1258,6 +1273,11 @@ const Index = () => {
             <div>
               <Label className="text-xs text-muted-foreground">Имя клиента</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Иван" maxLength={64} />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Принудительный URL</Label>
+              <Input value={createSlug} onChange={(e) => setCreateSlug(e.target.value)} placeholder="например ivan2026" maxLength={32} />
+              <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${createSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "авто"}`}</p>
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Срок (дней, 0 = безлимит)</Label>

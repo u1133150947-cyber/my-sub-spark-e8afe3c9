@@ -6,6 +6,19 @@ const corsHeaders = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEFAULT_EXTERNAL_SORT = 1000;
+const PINNED_SORT = -1000;
+function effectiveExternalSort(perSubSort: number, globalSort: number) {
+  const ses = Number.isFinite(perSubSort) ? perSubSort : DEFAULT_EXTERNAL_SORT;
+  const glob = Number.isFinite(globalSort) ? globalSort : DEFAULT_EXTERNAL_SORT;
+  if (glob < 0) {
+    if (ses === DEFAULT_EXTERNAL_SORT) return glob;
+    if (ses < 0) return ses;
+    return PINNED_SORT + Math.max(1, ses);
+  }
+  if (ses < 0) return ses;
+  return ses !== DEFAULT_EXTERNAL_SORT ? ses : glob;
+}
 
 function cleanHost(value: string) {
   const raw = String(value ?? "").trim();
@@ -347,10 +360,8 @@ Deno.serve(async (req) => {
           const ls = byId.get((r as any).external_sub_id) ?? [];
           const meta = byMeta.get((r as any).external_sub_id);
           if (ls.length) {
-            const sesSort = Number((r as any).sort_order ?? 1000);
-            // Per-subscription override wins if explicitly set (≠ default 1000),
-            // otherwise use the global external_subs.sort_order from "Сторонние".
-            const sortOrder = sesSort !== 1000 ? sesSort : (meta?.sort_order ?? 1000);
+            const sesSort = Number((r as any).sort_order ?? DEFAULT_EXTERNAL_SORT);
+            const sortOrder = effectiveExternalSort(sesSort, meta?.sort_order ?? DEFAULT_EXTERNAL_SORT);
             items.push({
               sort_order: sortOrder,
               created_at: String((r as any).created_at ?? meta?.created_at ?? ""),

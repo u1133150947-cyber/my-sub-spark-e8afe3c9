@@ -22,10 +22,19 @@ type ExternalSub = {
   sort_order?: number;
 };
 type SubscriptionLite = { id: string; name: string };
-type Link = { subscription_id: string; external_sub_id: string };
+type Link = { subscription_id: string; external_sub_id: string; sort_order?: number };
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const PANEL_FN = `${SUPABASE_URL}/functions/v1/panel`;
+const DEFAULT_EXTERNAL_SORT = 1000;
+const PINNED_SORT = -1000;
+const isPinnedSort = (v: number) => Number.isFinite(v) && v < 0;
+const linkSortFor = (item: ExternalSub, existing?: Link) => {
+  const globalSort = Number(item.sort_order ?? DEFAULT_EXTERNAL_SORT);
+  if (isPinnedSort(globalSort)) return Math.min(globalSort, PINNED_SORT);
+  const current = Number(existing?.sort_order ?? DEFAULT_EXTERNAL_SORT);
+  return isPinnedSort(current) ? current : DEFAULT_EXTERNAL_SORT;
+};
 
 const COUNTRIES: { code: string; emoji: string; label: string }[] = [
   { code: "RU", emoji: "🇷🇺", label: "Россия" },
@@ -114,7 +123,7 @@ export function ExternalSubsPanel() {
       const [ext, s, l] = await Promise.all([
         supabase.from("external_subs").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
         supabase.from("subscriptions").select("id,name").order("created_at", { ascending: false }),
-        supabase.from("subscription_external_subs").select("subscription_id,external_sub_id"),
+        supabase.from("subscription_external_subs").select("subscription_id,external_sub_id,sort_order"),
       ]);
       if (ext.error) throw ext.error;
       if (s.error) throw s.error;
@@ -152,10 +161,11 @@ export function ExternalSubsPanel() {
       const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
       const displayName = isHeader ? name.trim() : `${c.emoji} ${name.trim()}`;
       const finalLink = isHeader ? buildHeaderLink(displayName) : rewriteLinkName(link, displayName);
+      const initialSort = isHeader && pinTop ? PINNED_SORT : DEFAULT_EXTERNAL_SORT;
       const { data, error } = await supabase.from("external_subs").insert({
         name: name.trim(), emoji: isHeader ? "📝" : c.emoji,
         source_url: "", raw_links: [finalLink], notes: "",
-        ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
+        sort_order: initialSort,
       }).select("id").single();
       if (error) throw error;
       const createdId = Array.isArray(data) ? (data[0] as any)?.id : (data as any)?.id;
@@ -168,7 +178,7 @@ export function ExternalSubsPanel() {
               .from("subscription_external_subs")
               .insert({
                 subscription_id: s.id, external_sub_id: createdId,
-                ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
+                sort_order: initialSort,
               });
             if (!error) added++;
             else if (!/duplicate|unique/i.test(error.message)) throw error;
@@ -177,7 +187,7 @@ export function ExternalSubsPanel() {
         } else if (targetSubId !== "none") {
           const r = await supabase.from("subscription_external_subs").insert({
             subscription_id: targetSubId, external_sub_id: createdId,
-            ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
+            sort_order: initialSort,
           });
           if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
           const subName = subs.find((s) => s.id === targetSubId)?.name ?? "";
@@ -199,6 +209,7 @@ export function ExternalSubsPanel() {
     if (!subs.length) { toast.error("Нет подписок"); return; }
     setBusy(extId);
     try {
+      const item = items.find((x) => x.id === extId);
       const already = linksByExt.get(extId) ?? new Set<string>();
       const missing = subs.filter((s) => !already.has(s.id));
       if (!missing.length) {
@@ -208,7 +219,7 @@ export function ExternalSubsPanel() {
         for (const s of missing) {
           const { error } = await supabase
             .from("subscription_external_subs")
-            .insert({ subscription_id: s.id, external_sub_id: extId });
+            .insert({ subscription_id: s.id, external_sub_id: extId, sort_order: item ? linkSortFor(item) : DEFAULT_EXTERNAL_SORT });
           if (!error) added++;
           else if (!/duplicate|unique/i.test(error.message)) throw error;
         }
@@ -288,13 +299,21 @@ export function ExternalSubsPanel() {
     const j = idx + dir;
     if (j < 0 || j >= items.length) return;
     const a = items[idx], b = items[j];
+    if (isPinnedSort(Number(a.sort_order ?? DEFAULT_EXTERNAL_SORT)) !== isPinnedSort(Number(b.sort_order ?? DEFAULT_EXTERNAL_SORT))) {
+      toast.warning("Закреплённые текстовые блоки всегда остаются выше обычных серверов");
+      return;
+    }
     // Reorder locally for snappy UI, then renumber as 10, 20, 30…
     // These arrows only re-order the listing inside the "Сторонние" tab.
     // Per-subscription ordering (set in the subscription editor) is NOT
     // touched here — it is the source of truth for what the client sees.
     const next = items.slice();
     next[idx] = b; next[j] = a;
-    const renum = next.map((it, i) => ({ ...it, sort_order: (i + 1) * 10 }));
+    let normalPos = 0;
+    const renum = next.map((it, i) => {
+      const cur = Number(it.sort_order ?? DEFAULT_EXTERNAL_SORT);
+      return { ...it, sort_order: isPinnedSort(cur) ? (PINNED_SORT + i) : (++normalPos * 10) };
+    });
     setItems(renum);
     try {
       await Promise.all(renum.map((it) =>
@@ -328,9 +347,10 @@ export function ExternalSubsPanel() {
     });
     try {
       if (attach) {
+        const item = items.find((x) => x.id === extId);
         const { error } = await supabase
           .from("subscription_external_subs")
-          .insert({ subscription_id: subId, external_sub_id: extId });
+          .insert({ subscription_id: subId, external_sub_id: extId, sort_order: item ? linkSortFor(item) : DEFAULT_EXTERNAL_SORT });
         if (error && !/duplicate|unique/i.test(error.message)) throw error;
       } else {
         const { error } = await supabase.from("subscription_external_subs").delete()

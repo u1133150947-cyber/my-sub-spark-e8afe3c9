@@ -23,6 +23,19 @@ const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEFAULT_EXTERNAL_SORT = 1000;
+const PINNED_SORT = -1000;
+function effectiveExternalSort(perSubSort: number, globalSort: number) {
+  const ses = Number.isFinite(perSubSort) ? perSubSort : DEFAULT_EXTERNAL_SORT;
+  const glob = Number.isFinite(globalSort) ? globalSort : DEFAULT_EXTERNAL_SORT;
+  if (glob < 0) {
+    if (ses === DEFAULT_EXTERNAL_SORT) return glob;
+    if (ses < 0) return ses;
+    return PINNED_SORT + Math.max(1, ses);
+  }
+  if (ses < 0) return ses;
+  return ses !== DEFAULT_EXTERNAL_SORT ? ses : glob;
+}
 
 function cleanHost(value: string) {
   const raw = String(value ?? "").trim();
@@ -314,9 +327,8 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   try {
     const linked = db.queryEntries(
       `SELECT e.raw_links,
-              CASE WHEN ses.sort_order IS NOT NULL AND ses.sort_order <> 1000
-                   THEN ses.sort_order
-                   ELSE COALESCE(e.sort_order, 1000) END AS sort_order,
+              ses.sort_order AS ses_sort_order,
+              e.sort_order AS global_sort_order,
               ses.created_at
          FROM subscription_external_subs ses
          JOIN external_subs e ON e.id = ses.external_sub_id
@@ -329,7 +341,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
       const ls: string[] = [];
       if (Array.isArray(arr)) for (const l of arr) if (typeof l === "string" && l) ls.push(l);
       if (ls.length) items.push({
-        sort_order: Number(r.sort_order ?? 1000),
+        sort_order: effectiveExternalSort(Number(r.ses_sort_order ?? DEFAULT_EXTERNAL_SORT), Number(r.global_sort_order ?? DEFAULT_EXTERNAL_SORT)),
         created_at: String(r.created_at ?? ""),
         lines: ls,
       });
