@@ -147,8 +147,8 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   const lines: string[] = [];
   const rawLinks: string[] = Array.isArray((subDecoded as any).raw_links) ? (subDecoded as any).raw_links : [];
   if (rawLinks.length) {
-    const host = url.searchParams.get("host") || req.headers.get("x-forwarded-host") || url.host;
-    for (const l of rawLinks) lines.push(withHost(String(l), host));
+    const hostOverride = url.searchParams.get("host") || "";
+    for (const l of rawLinks) lines.push(hostOverride ? withHost(String(l), hostOverride) : String(l));
   }
 
   // Append linked external subs (3rd-party VPN servers).
@@ -164,8 +164,15 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     }
   } catch {}
 
+  let sniIdx = 0;
+  if (whitelist.length) {
+    const seed = String(sub.client_uuid ?? sub.id ?? "");
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+    sniIdx = Math.abs(h) % whitelist.length;
+  }
   for (const ib of inbounds as any[]) {
-    const sniOverride = whitelist.length ? whitelist[Math.floor(Math.random() * whitelist.length)] : undefined;
+    const sniOverride = whitelist.length ? whitelist[sniIdx] : undefined;
     const link = buildVless(sub.client_uuid, sub.client_email, ib, sniOverride, overridesMap);
     if (link) lines.push(link);
   }
