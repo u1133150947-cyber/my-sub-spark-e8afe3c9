@@ -18,6 +18,8 @@ import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 type Panel = {
   id: string;
   name: string;
+  host?: string;
+  public_host?: string;
   panel_url: string;
   username: string;
   password: string;
@@ -28,7 +30,7 @@ type Panel = {
   slug?: string;
 };
 
-const empty = { name: "", panel_url: "", username: "", password: "", country: "" };
+const empty = { name: "", panel_url: "", username: "", password: "", country: "", public_host: "" };
 
 const COUNTRIES: { code: string; flag: string; name: string }[] = [
   { code: "RU", flag: "🇷🇺", name: "Россия" },
@@ -62,6 +64,12 @@ const COUNTRIES: { code: string; flag: string; name: string }[] = [
   { code: "EE", flag: "🇪🇪", name: "Эстония" },
 ];
 const countryByCode = (c: string) => COUNTRIES.find((x) => x.code === c.toUpperCase());
+const cleanHost = (value: string) => {
+  const raw = value.trim();
+  if (!raw) return "";
+  try { return new URL(raw.includes("://") ? raw : `http://${raw}`).hostname; } catch {}
+  return raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+};
 
 const detectFlag = (name: string): string => {
   if (FLAG_RE.test(name)) return "";
@@ -85,7 +93,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [credsPanel, setCredsPanel] = useState<Panel | null>(null);
-  const [credsForm, setCredsForm] = useState({ panel_url: "", username: "", password: "" });
+  const [credsForm, setCredsForm] = useState({ panel_url: "", username: "", password: "", public_host: "" });
   const [credsSaving, setCredsSaving] = useState(false);
   const [credsTesting, setCredsTesting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -120,7 +128,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const load = async () => {
     const { data, error } = await supabase
       .from("panels")
-      .select("id, name, panel_url, username, password, status, status_message, last_checked_at, country, slug")
+        .select("id, name, host, public_host, panel_url, username, password, status, status_message, last_checked_at, country, slug")
       .order("created_at", { ascending: true });
     if (error) return toast.error("Не удалось загрузить панели");
     setPanels((data ?? []) as Panel[]);
@@ -212,12 +220,8 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       return toast.error("Заполните название, URL панели, логин и пароль");
     }
     setSaving(true);
-    let host = "";
-    try {
-      host = new URL(form.panel_url).hostname;
-    } catch {
-      host = form.panel_url;
-    }
+    const host = cleanHost(form.panel_url);
+    const publicHost = cleanHost(form.public_host) || host;
     const { error } = await supabase.from("panels").insert({
       name: form.name.trim(),
       panel_url: form.panel_url.trim(),
@@ -225,7 +229,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       password: form.password,
       country: form.country.trim().toUpperCase(),
       host,
-      public_host: host,
+      public_host: publicHost,
     });
     setSaving(false);
     if (error) return toast.error("Ошибка: " + error.message);
@@ -281,7 +285,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
 
   const openCreds = (p: Panel) => {
     setCredsPanel(p);
-    setCredsForm({ panel_url: p.panel_url, username: p.username, password: p.password });
+    setCredsForm({ panel_url: p.panel_url, username: p.username, password: p.password, public_host: p.public_host || p.host || cleanHost(p.panel_url) });
   };
 
   const testCreds = async () => {
@@ -306,8 +310,8 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       return toast.error("Заполните URL, логин и пароль");
     }
     setCredsSaving(true);
-    let host = credsPanel.panel_url;
-    try { host = new URL(credsForm.panel_url).hostname; } catch { host = credsForm.panel_url; }
+    const host = cleanHost(credsForm.panel_url);
+    const publicHost = cleanHost(credsForm.public_host) || host;
     const { error } = await supabase
       .from("panels")
       .update({
@@ -315,12 +319,16 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         username: credsForm.username.trim(),
         password: credsForm.password,
         host,
+        public_host: publicHost,
         status: "unknown",
         status_message: "",
       })
       .eq("id", credsPanel.id);
     setCredsSaving(false);
     if (error) return toast.error("Ошибка: " + error.message);
+    if (credsPanel.slug) {
+      await supabase.from("subscription_inbounds").update({ host: publicHost } as any).eq("panel", credsPanel.slug);
+    }
     toast.success("Доступы обновлены — slug сохранён, подписки продолжат работать");
     setCredsPanel(null);
     load();
@@ -401,6 +409,14 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
               value={form.panel_url}
               onChange={(e) => update("panel_url", e.target.value)}
               placeholder="https://1.2.3.4:54321/secret-path"
+            />
+          </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs text-muted-foreground">Хост подключения из 3X-UI</Label>
+            <Input
+              value={form.public_host}
+              onChange={(e) => update("public_host", e.target.value)}
+              placeholder="example.com или IP из подключения 3X-UI"
             />
           </div>
           <div>
@@ -523,6 +539,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                       )}
                     </div>
                     <code className="text-xs text-muted-foreground truncate block">{p.panel_url || "URL не задан"}</code>
+                    <div className="text-xs text-muted-foreground mt-1 truncate">Хост подключения: {p.public_host || p.host || cleanHost(p.panel_url) || "не задан"}</div>
                     {p.status === "error" && p.status_message && (
                       <div className="text-xs text-destructive mt-1 truncate">{p.status_message}</div>
                     )}
@@ -576,6 +593,14 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                 value={credsForm.panel_url}
                 onChange={(e) => setCredsForm((f) => ({ ...f, panel_url: e.target.value }))}
                 placeholder="https://1.2.3.4:54321/secret-path"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Хост подключения из 3X-UI</Label>
+              <Input
+                value={credsForm.public_host}
+                onChange={(e) => setCredsForm((f) => ({ ...f, public_host: e.target.value }))}
+                placeholder="example.com или IP из подключения 3X-UI"
               />
             </div>
             <div>

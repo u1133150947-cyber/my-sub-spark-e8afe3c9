@@ -9,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-type PanelRow = { id: string; slug: string; name: string; panel_url: string; username: string; password: string };
+type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
 type PanelKey = string;
 
 const supabaseAdmin = createClient(
@@ -27,7 +27,7 @@ async function getAllPanels(): Promise<PanelRow[]> {
   if (Date.now() - panelsCache.ts < PANELS_CACHE_TTL_MS && panelsCache.rows.length) return panelsCache.rows;
   const { data, error } = await supabaseAdmin
     .from("panels")
-    .select("id, slug, name, panel_url, username, password")
+    .select("id, slug, name, host, public_host, panel_url, username, password")
     .order("created_at", { ascending: true });
   if (error) throw new Error(`load panels: ${error.message}`);
   panelsCache.rows = (data ?? []) as PanelRow[];
@@ -246,7 +246,14 @@ function randomSlug(len = 12) {
   crypto.getRandomValues(arr);
   return Array.from(arr, (n) => a[n % a.length]).join("");
 }
-function hostFromUrl(u: string) { try { return new URL(u).hostname; } catch { return u; } }
+function cleanHost(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try { return new URL(raw.includes("://") ? raw : `http://${raw}`).hostname; } catch {}
+  return raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+}
+function hostFromUrl(u: string) { return cleanHost(u); }
+function panelConnectionHost(p: PanelRow) { return cleanHost(p.public_host || p.host || hostFromUrl(p.panel_url)); }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -477,7 +484,7 @@ Deno.serve(async (req) => {
       const { data: existing } = await supabase.from("subscription_inbounds").select("subscription_id").eq("panel", panel).eq("inbound_id", inboundId);
       const have = new Set((existing ?? []).map((l: any) => l.subscription_id));
 
-      const cfg = panelCfg(await getPanelBySlug(panel));
+      const panelRow = await getPanelBySlug(panel);
       const inboundsList = await listInbounds(panel);
       const ib = inboundsList.find((x: any) => x.id === inboundId);
       if (!ib) return new Response(JSON.stringify({ error: "inbound not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -495,7 +502,7 @@ Deno.serve(async (req) => {
           await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel, inbound_id: ib.id,
             remark: ib.remark ?? `${panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
-            host: hostFromUrl(cfg.url), stream_settings: stream, client_email: email,
+            host: panelConnectionHost(panelRow), stream_settings: stream, client_email: email,
           });
           created.push(sub.id);
         } catch (e) {
@@ -651,7 +658,7 @@ Deno.serve(async (req) => {
       const errors: any[] = [];
       for (const sel of validSelections) {
         try {
-          const cfg = panelCfg(await getPanelBySlug(sel.panel));
+          const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
           const ib = inbounds.find((x) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
@@ -665,7 +672,7 @@ Deno.serve(async (req) => {
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
             remark: ib.remark ?? `${sel.panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
-            host: hostFromUrl(cfg.url), stream_settings: stream, client_email: email,
+            host: panelConnectionHost(panelRow), stream_settings: stream, client_email: email,
           });
           if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
@@ -771,7 +778,7 @@ Deno.serve(async (req) => {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existingSet.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
         try {
-          const cfg = panelCfg(await getPanelBySlug(sel.panel));
+          const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
           const ib = inbounds.find((x) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
@@ -784,7 +791,7 @@ Deno.serve(async (req) => {
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
             remark: ib.remark ?? `${sel.panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
-            host: hostFromUrl(cfg.url), stream_settings: stream, client_email: email,
+            host: panelConnectionHost(panelRow), stream_settings: stream, client_email: email,
           });
           if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });

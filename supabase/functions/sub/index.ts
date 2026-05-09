@@ -7,6 +7,13 @@ const corsHeaders = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function cleanHost(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try { return new URL(raw.includes("://") ? raw : `http://${raw}`).hostname; } catch {}
+  return raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+}
+
 function base64Utf8(value: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(value)));
 }
@@ -32,7 +39,6 @@ function buildVless(
     panel?: string;
     inbound_id?: number;
   },
-  sniOverride?: string,
   overrides?: Map<string, string>,
   panelInfo?: { name?: string; country?: string },
 ) {
@@ -56,7 +62,7 @@ function buildVless(
   if (security === "reality" && ss.realitySettings) {
     const r = ss.realitySettings;
     const settings = r.settings ?? {};
-    const sni = sniOverride || (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
+    const sni = (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
     if (sni) params.set("sni", sni);
     const sid = (Array.isArray(r.shortIds) && r.shortIds[0]) || r.shortId;
     if (sid) params.set("sid", sid);
@@ -70,7 +76,7 @@ function buildVless(
   // TLS
   if (security === "tls" && ss.tlsSettings) {
     const t = ss.tlsSettings;
-    const sni = sniOverride || t.serverName;
+    const sni = t.serverName;
     if (sni) params.set("sni", sni);
     if (Array.isArray(t.alpn)) params.set("alpn", t.alpn.join(","));
     const fp = t.settings?.fingerprint;
@@ -199,16 +205,21 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: true });
 
     // Fetch panel display names + country code so we can prefix country/flag to remarks.
-    const panelInfoMap = new Map<string, { name: string; country: string }>();
+    const panelInfoMap = new Map<string, { name: string; country: string; connectionHost: string }>();
     const slugs = Array.from(new Set((inbounds ?? []).map((ib: any) => ib.panel)));
     if (slugs.length) {
-      const { data: panelsRows } = await supabase.from("panels").select("slug, name, country").in("slug", slugs);
-      (panelsRows ?? []).forEach((p: any) => panelInfoMap.set(p.slug, { name: p.name ?? "", country: p.country ?? "" }));
+      const { data: panelsRows } = await supabase.from("panels").select("slug, name, country, host, public_host, panel_url").in("slug", slugs);
+      (panelsRows ?? []).forEach((p: any) => panelInfoMap.set(p.slug, {
+        name: p.name ?? "",
+        country: p.country ?? "",
+        connectionHost: cleanHost(p.public_host || p.host || p.panel_url || ""),
+      }));
     }
     for (const ib of (inbounds ?? []) as any[]) {
       const info = panelInfoMap.get(ib.panel);
       ib.panel_name = info?.name ?? "";
       ib.panel_country = info?.country ?? "";
+      if (info?.connectionHost) ib.host = info.connectionHost;
     }
 
     // Load overrides for the panel+inbound pairs used by this subscription
@@ -235,20 +246,8 @@ Deno.serve(async (req) => {
         lines.push(hostOverride ? withHost(String(link), hostOverride) : String(link));
       }
     }
-    const whitelist: string[] = Array.isArray((sub as any).sni_whitelist)
-      ? (sub as any).sni_whitelist.filter((s: string) => typeof s === "string" && s.trim().length > 0)
-      : [];
-    // Deterministic SNI per subscription — stable across devices and refreshes.
-    let sniIdx = 0;
-    if (whitelist.length > 0) {
-      const seed = String(sub.client_uuid ?? sub.id ?? "");
-      let h = 0;
-      for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-      sniIdx = Math.abs(h) % whitelist.length;
-    }
     for (const ib of inbounds ?? []) {
-      const sniOverride = whitelist.length > 0 ? whitelist[sniIdx] : undefined;
-      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, sniOverride, overridesMap, {
+      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, overridesMap, {
         name: (ib as any).panel_name,
         country: (ib as any).panel_country,
       });
