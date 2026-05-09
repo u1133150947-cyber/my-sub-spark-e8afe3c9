@@ -59,6 +59,9 @@ function pushLog(level: AppLog["level"], source: string, message: string) {
 // Перехват toast.error/warning + console.error/warn + window.onerror
 if (typeof window !== "undefined" && !(window as any).__appLogPatched) {
   (window as any).__appLogPatched = true;
+  // Verbose console interception only when debug flag активен (localStorage.debug === '1').
+  // По умолчанию — НЕ оборачиваем console.error/warn, чтобы не шуметь в проде и не дублировать в audit_log.
+  const __debugOn = (() => { try { return localStorage.getItem("debug") === "1"; } catch { return false; } })();
   const origErr = toast.error.bind(toast);
   const origWarn = (toast as any).warning?.bind(toast);
   (toast as any).error = (msg: any, opts?: any) => {
@@ -71,10 +74,12 @@ if (typeof window !== "undefined" && !(window as any).__appLogPatched) {
     pushLog("warn", "toast", String(text) + (opts?.description ? `\n${opts.description}` : ""));
     return origWarn(msg, opts);
   };
-  const ce = console.error.bind(console);
-  console.error = (...args: any[]) => { pushLog("error", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); ce(...args); };
-  const cw = console.warn.bind(console);
-  console.warn = (...args: any[]) => { pushLog("warn", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); cw(...args); };
+  if (__debugOn) {
+    const ce = console.error.bind(console);
+    console.error = (...args: any[]) => { pushLog("error", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); ce(...args); };
+    const cw = console.warn.bind(console);
+    console.warn = (...args: any[]) => { pushLog("warn", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); cw(...args); };
+  }
   window.addEventListener("error", (e) => pushLog("error", "window", `${e.message} @ ${e.filename}:${e.lineno}`));
   window.addEventListener("unhandledrejection", (e: any) => pushLog("error", "promise", String(e?.reason?.message ?? e?.reason ?? e)));
 }
@@ -404,16 +409,17 @@ const Index = () => {
   const loadInbounds = async () => {
     setLoadingInbounds(true);
     try {
+      const __dbg = (() => { try { return localStorage.getItem("debug") === "1"; } catch { return false; } })();
       // Прямой fetch — обход возможных проблем supabase.functions.invoke с query-string
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string);
       const apikey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string);
       const fnBase = `${(import.meta.env.VITE_SUPABASE_URL as string).replace(/\/+$/, "")}/functions/v1`;
       const url = `${fnBase}/panel?action=inbounds`;
-      pushLog("info", "loadInbounds", `GET ${url}`);
+      if (__dbg) pushLog("info", "loadInbounds", `GET ${url}`);
       const r = await fetch(url, { method: "GET", headers: { Authorization: `Bearer ${token}`, apikey } });
       const text = await r.text();
-      pushLog("info", "loadInbounds", `HTTP ${r.status}, body len=${text.length}, head="${text.slice(0,200)}"`);
+      if (__dbg) pushLog("info", "loadInbounds", `HTTP ${r.status}, body len=${text.length}, head="${text.slice(0,200)}"`);
       let data: any = null;
       try { data = JSON.parse(text); } catch (e: any) {
         pushLog("error", "loadInbounds", `JSON parse error: ${e?.message ?? e}`);
@@ -432,10 +438,10 @@ const Index = () => {
       const meta = Array.isArray((data as any)?._panels)
         ? (data as any)._panels.filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined")
         : [];
-      pushLog("info", "loadInbounds", `raw _panels=${JSON.stringify(((data as any)?._panels) ?? null)}, keys=${JSON.stringify(keys)}`);
+      if (__dbg) pushLog("info", "loadInbounds", `raw _panels=${JSON.stringify(((data as any)?._panels) ?? null)}, keys=${JSON.stringify(keys)}`);
       setInbounds({ ...(data ?? {}), _panels: meta.length ? meta : keys.map((slug) => ({ slug, name: slug })) });
       const totalIb = keys.reduce((n, k) => n + (Array.isArray((data as any)[k]) ? (data as any)[k].length : 0), 0);
-      pushLog("info", "loadInbounds", `панелей=${meta.length || keys.length}, inbound'ов=${totalIb}`);
+      if (__dbg) pushLog("info", "loadInbounds", `панелей=${meta.length || keys.length}, inbound'ов=${totalIb}`);
     } catch (e: any) {
       toast.error("Ошибка загрузки inbound'ов: " + (e?.message ?? e));
     } finally {
