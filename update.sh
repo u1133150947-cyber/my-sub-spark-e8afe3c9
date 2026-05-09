@@ -85,6 +85,12 @@ log "bun run build"
 bun run build
 [[ -d dist ]] || die "Сборка не создала dist/"
 
+if [[ -f /etc/systemd/system/sub-manager.service ]] && ! grep -q '^EnvironmentFile=-/opt/sub-manager/.env' /etc/systemd/system/sub-manager.service; then
+  log "Подключаю .env к systemd-сервису"
+  sed -i '/^WorkingDirectory=\/opt\/sub-manager$/a EnvironmentFile=-/opt/sub-manager/.env' /etc/systemd/system/sub-manager.service
+  systemctl daemon-reload
+fi
+
 log "Перезапускаю sub-manager"
 systemctl restart sub-manager
 sleep 1
