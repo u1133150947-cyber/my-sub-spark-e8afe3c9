@@ -199,6 +199,7 @@ const Index = () => {
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [editOrder, setEditOrder] = useState<string[]>([]);
   const [editSniText, setEditSniText] = useState<string>("");
+  const [editExternals, setEditExternals] = useState<Record<string, { name: string; emoji: string; raw_links: string[] }>>({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("subs");
