@@ -12,6 +12,8 @@ const json = (b: unknown, status = 200) =>
 
 const APP_DIR = Deno.env.get("APP_DIR") ?? "/opt/sub-manager";
 const UPDATE_TOKEN = Deno.env.get("UPDATE_TOKEN") ?? ""; // optional extra check
+const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "u1133150947-cyber/my-sub-spark-df6a54d2";
+const GITHUB_BRANCH = Deno.env.get("GITHUB_BRANCH") ?? "main";
 
 function publicOrigin(req: Request, url: URL) {
   const proto = req.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "") ?? "https";
@@ -44,6 +46,113 @@ async function run(cmd: string[], cwd?: string): Promise<{ ok: boolean; out: str
     return { ok: code === 0, out };
   } catch (e) {
     return { ok: false, out: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+async function readLocalCommit(): Promise<string | null> {
+  try { return (await Deno.readTextFile(join(APP_DIR, "VERSION"))).trim() || null; } catch { return null; }
+}
+
+async function fetchLatestCommit(): Promise<{ sha: string; date: string; message: string } | null> {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/commits/${GITHUB_BRANCH}`, {
+      headers: { "Accept": "application/vnd.github+json", "User-Agent": "sub-manager" },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return { sha: String(j.sha ?? ""), date: String(j.commit?.author?.date ?? ""), message: String(j.commit?.message ?? "") };
+  } catch { return null; }
+}
+
+export async function handleVersion(_req: Request): Promise<Response> {
+  const local = await readLocalCommit();
+  const remote = await fetchLatestCommit();
+  return json({
+    repo: GITHUB_REPO,
+    branch: GITHUB_BRANCH,
+    local_commit: local,
+    remote_commit: remote?.sha ?? null,
+    remote_date: remote?.date ?? null,
+    remote_message: remote?.message ?? null,
+    update_available: !!(local && remote?.sha && !remote.sha.startsWith(local) && !local.startsWith(remote.sha)),
+  });
+}
+
+export async function handleUpdateFromGithub(req: Request, url: URL): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (UPDATE_TOKEN) {
+    const t = req.headers.get("x-update-token") ?? "";
+    if (t !== UPDATE_TOKEN) return json({ error: "bad token" }, 401);
+  }
+
+  const log: string[] = [];
+  const push = (s: string) => { log.push(s); console.log("[gh-update]", s); };
+
+  try {
+    const remote = await fetchLatestCommit();
+    if (!remote?.sha) throw new Error("не удалось получить последний коммит из GitHub");
+    push(`latest commit: ${remote.sha.slice(0, 7)} — ${remote.message.split("\n")[0]}`);
+
+    const tmpRoot = await Deno.makeTempDir({ prefix: "sub-mgr-gh-" });
+    const archivePath = join(tmpRoot, "src.tar.gz");
+    const tarUrl = `https://codeload.github.com/${GITHUB_REPO}/tar.gz/${remote.sha}`;
+    push(`downloading: ${tarUrl}`);
+    const dl = await fetch(tarUrl);
+    if (!dl.ok || !dl.body) throw new Error(`скачивание не удалось: HTTP ${dl.status}`);
+    await Deno.writeFile(archivePath, new Uint8Array(await dl.arrayBuffer()));
+
+    const extractDir = join(tmpRoot, "src");
+    await Deno.mkdir(extractDir);
+    const ext = await run(["tar", "-xzf", archivePath, "-C", extractDir]);
+    push(`extract: ${ext.ok ? "ok" : "FAIL"}\n${ext.out}`);
+    if (!ext.ok) throw new Error("extract failed");
+
+    let srcDir = extractDir;
+    const entries: Deno.DirEntry[] = [];
+    for await (const e of Deno.readDir(extractDir)) entries.push(e);
+    if (entries.length === 1 && entries[0].isDirectory) srcDir = join(extractDir, entries[0].name);
+    push(`src dir: ${srcDir}`);
+
+    try { await Deno.stat(join(srcDir, "package.json")); }
+    catch { throw new Error("в архиве GitHub нет package.json"); }
+
+    const sync = await run([
+      "rsync", "-a", "--delete",
+      "--exclude", "data", "--exclude", "node_modules",
+      "--exclude", ".git", "--exclude", "dist", "--exclude", ".env",
+      `${srcDir.replace(/\/?$/, "/")}`,
+      `${APP_DIR.replace(/\/?$/, "/")}`,
+    ]);
+    push(`rsync: ${sync.ok ? "ok" : "FAIL"}\n${sync.out}`);
+    if (!sync.ok) throw new Error("rsync failed");
+
+    const envCreated = await ensureEnv(req, url);
+    push(envCreated ? ".env recreated" : ".env preserved");
+
+    const inst = await run(["bun", "install", "--silent"], APP_DIR);
+    push(`bun install: ${inst.ok ? "ok" : "FAIL"}\n${inst.out}`);
+    if (!inst.ok) throw new Error("bun install failed");
+
+    const build = await run(["bun", "run", "build"], APP_DIR);
+    push(`bun run build: ${build.ok ? "ok" : "FAIL"}\n${build.out.slice(-2000)}`);
+    if (!build.ok) throw new Error("build failed");
+
+    await Deno.writeTextFile(join(APP_DIR, "VERSION"), remote.sha);
+    push(`VERSION = ${remote.sha}`);
+
+    try { await Deno.remove(tmpRoot, { recursive: true }); } catch {}
+
+    push("restarting service…");
+    queueMicrotask(async () => {
+      await new Promise((r) => setTimeout(r, 500));
+      await run(["systemctl", "restart", "sub-manager"]);
+    });
+
+    return json({ ok: true, commit: remote.sha, log: log.join("\n") });
+  } catch (e) {
+    push("ERROR: " + (e instanceof Error ? e.message : String(e)));
+    return json({ ok: false, log: log.join("\n") }, 500);
   }
 }
 
