@@ -1,5 +1,6 @@
 // Port of supabase/functions/sub/index.ts to local SQLite.
 import { db, decodeRow } from "./db.ts";
+import { listInbounds } from "./x3ui.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 
@@ -42,51 +43,161 @@ function cleanUuid(...values: unknown[]): string {
   return "";
 }
 
-function buildVless(uuid: string, email: string, ib: any, overrides?: Map<string, string>) {
-  if (ib.protocol !== "vless") return null;
+function findDeep(data: any, key: string): any {
+  if (!data || typeof data !== "object") return undefined;
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const found = findDeep(item, key);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, key)) return data[key];
+  for (const value of Object.values(data)) {
+    const found = findDeep(value, key);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function firstString(value: any): string {
+  if (Array.isArray(value)) return firstString(value.find((x) => String(x ?? "").trim()));
+  return String(value ?? "").trim();
+}
+
+function setParam(params: URLSearchParams, key: string, value: any) {
+  const v = firstString(value);
+  if (v) params.set(key, v);
+}
+
+function parseJsonObject(value: any) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch { return {}; }
+}
+
+function streamSnapshot(ib: any, clientEmail?: string, fallbackUuid?: string) {
+  const stream = parseJsonObject(ib.streamSettings ?? ib.stream_settings);
+  const settings = parseJsonObject(ib.settings);
+  const clients = Array.isArray(settings.clients) ? settings.clients : [];
+  const client = clients.find((c: any) => c?.email === clientEmail) || clients.find((c: any) => c?.id === fallbackUuid);
+  if (client) {
+    stream._clientUuid = client.id;
+    stream._clientFlow = client.flow ?? "";
+  }
+  stream._inboundListen = ib.listen ?? ib.Listen ?? "";
+  return stream;
+}
+
+async function refreshInboundsFromPanels(inbounds: any[], fallbackUuid: string) {
+  const panels = Array.from(new Set(inbounds.map((ib: any) => ib.panel).filter(Boolean)));
+  await Promise.all(panels.map(async (panel) => {
+    try {
+      const live = await listInbounds(panel);
+      const byId = new Map(live.map((ib: any) => [Number(ib.id), ib]));
+      for (const ib of inbounds.filter((x: any) => x.panel === panel)) {
+        const fresh = byId.get(Number(ib.inbound_id));
+        if (!fresh) continue;
+        ib.remark = fresh.remark ?? ib.remark;
+        ib.protocol = fresh.protocol ?? ib.protocol;
+        ib.port = Number(fresh.port ?? ib.port);
+        ib.stream_settings = streamSnapshot(fresh, ib.client_email, fallbackUuid);
+      }
+    } catch {}
+  }));
+}
+
+function applyPathAndHost(params: URLSearchParams, settings: any) {
+  if (!settings) return;
+  setParam(params, "path", settings.path);
+  setParam(params, "host", settings.host ?? settings.headers?.Host ?? settings.headers?.host);
+}
+
+function buildXhttpExtra(xhttp: any) {
+  if (!xhttp || typeof xhttp !== "object") return null;
+  const extra: Record<string, any> = {};
+  for (const field of ["xPaddingBytes", "xPaddingKey", "xPaddingHeader", "xPaddingPlacement", "xPaddingMethod", "sessionPlacement", "sessionKey", "seqPlacement", "seqKey", "uplinkDataPlacement", "uplinkDataKey", "scMaxEachPostBytes"]) {
+    if (typeof xhttp[field] === "string" && xhttp[field]) extra[field] = xhttp[field];
+  }
+  if (xhttp.xPaddingObfsMode === true) extra.xPaddingObfsMode = true;
+  const headers = xhttp.headers;
+  if (headers && typeof headers === "object") {
+    const clean: Record<string, any> = {};
+    for (const [k, v] of Object.entries(headers)) if (k.toLowerCase() !== "host") clean[k] = v;
+    if (Object.keys(clean).length) extra.headers = clean;
+  }
+  return Object.keys(extra).length ? extra : null;
+}
+
+function applyNetworkParams(params: URLSearchParams, ss: any, network: string) {
+  if (network === "tcp") {
+    const header = ss.tcpSettings?.header;
+    if (header?.type === "http") {
+      params.set("headerType", "http");
+      setParam(params, "path", header.request?.path?.[0]);
+      setParam(params, "host", header.request?.headers?.Host?.[0]);
+    }
+  } else if (network === "ws") {
+    applyPathAndHost(params, ss.wsSettings);
+  } else if (network === "grpc") {
+    setParam(params, "serviceName", ss.grpcSettings?.serviceName);
+    setParam(params, "authority", ss.grpcSettings?.authority);
+    if (ss.grpcSettings?.multiMode === true) params.set("mode", "multi");
+  } else if (network === "httpupgrade") {
+    applyPathAndHost(params, ss.httpupgradeSettings);
+  } else if (network === "xhttp" || network === "splithttp") {
+    const xhttp = ss.xhttpSettings ?? ss.splithttpSettings;
+    applyPathAndHost(params, xhttp);
+    setParam(params, "mode", xhttp?.mode);
+    setParam(params, "x_padding_bytes", xhttp?.xPaddingBytes);
+    const extra = buildXhttpExtra(xhttp);
+    if (extra) params.set("extra", JSON.stringify(extra));
+  } else if (network === "kcp") {
+    setParam(params, "headerType", ss.kcpSettings?.header?.type);
+    setParam(params, "seed", ss.kcpSettings?.seed);
+  }
+}
+
+function applyTlsParams(params: URLSearchParams, ss: any) {
+  const t = ss.tlsSettings ?? {};
+  params.set("security", "tls");
+  setParam(params, "sni", findDeep(t, "serverName"));
+  if (Array.isArray(t.alpn) && t.alpn.length) params.set("alpn", t.alpn.join(","));
+  setParam(params, "fp", findDeep(t.settings ?? t, "fingerprint"));
+}
+
+function applyRealityParams(params: URLSearchParams, ss: any) {
+  const r = ss.realitySettings ?? {};
+  const settings = r.settings ?? {};
+  params.set("security", "reality");
+  setParam(params, "sni", findDeep(r, "serverNames") ?? findDeep(r, "serverName"));
+  setParam(params, "sid", findDeep(r, "shortIds") ?? findDeep(r, "shortId"));
+  setParam(params, "pbk", findDeep(settings, "publicKey") ?? findDeep(r, "publicKey"));
+  setParam(params, "fp", findDeep(settings, "fingerprint") ?? findDeep(r, "fingerprint"));
+  setParam(params, "pqv", findDeep(settings, "mldsa65Verify") ?? findDeep(r, "mldsa65Verify"));
+  params.set("spx", firstString(findDeep(settings, "spiderX") ?? findDeep(r, "spiderX")) || "/");
+}
+
+function buildVless(uuid: string, email: string, ib: any, overrides?: Map<string, string>): string[] {
+  if (ib.protocol !== "vless") return [];
   const ss = ib.stream_settings ?? {};
   const effectiveUuid = cleanUuid(ss._clientUuid, ss.clientUuid, ss.uuid, ss.id, uuid);
-  if (!effectiveUuid) return null;
-  const network = ss.network ?? "tcp", security = ss.security ?? "none";
+  if (!effectiveUuid) return [];
+  const network = firstString(ss.network) || "tcp";
+  const security = firstString(ss.security) || "none";
   const params = new URLSearchParams();
-  params.set("type", network); params.set("security", security); params.set("encryption", "none");
-  if (security === "reality" && ss.realitySettings) {
-    const r = ss.realitySettings, settings = r.settings ?? {};
-    const sni = (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
-    if (sni) params.set("sni", sni);
-    const sid = (Array.isArray(r.shortIds) && r.shortIds[0]) || r.shortId;
-    if (sid) params.set("sid", sid);
-    const publicKey = settings.publicKey || r.publicKey;
-    if (publicKey) params.set("pbk", publicKey);
-    const fingerprint = settings.fingerprint || r.fingerprint;
-    if (fingerprint) params.set("fp", fingerprint);
-    if (network === "tcp") params.set("flow", "xtls-rprx-vision");
-  }
-  if (security === "tls" && ss.tlsSettings) {
-    const t = ss.tlsSettings;
-    const sni = t.serverName;
-    if (sni) params.set("sni", sni);
-    if (Array.isArray(t.alpn)) params.set("alpn", t.alpn.join(","));
-    if (t.settings?.fingerprint) params.set("fp", t.settings.fingerprint);
-  }
-  if (network === "ws" && ss.wsSettings) {
-    if (ss.wsSettings.path) params.set("path", ss.wsSettings.path);
-    if (ss.wsSettings.headers?.Host) params.set("host", ss.wsSettings.headers.Host);
-  }
-  if (network === "grpc" && ss.grpcSettings?.serviceName) params.set("serviceName", ss.grpcSettings.serviceName);
-  if ((network === "xhttp" || network === "splithttp") && ss.xhttpSettings) {
-    if (ss.xhttpSettings.path) params.set("path", ss.xhttpSettings.path);
-    if (ss.xhttpSettings.mode) params.set("mode", ss.xhttpSettings.mode);
-    const host = ss.xhttpSettings.headers?.Host;
-    if (host) params.set("host", Array.isArray(host) ? host[0] : host);
-  }
-  if (network === "tcp" && ss.tcpSettings?.header?.type) {
-    params.set("headerType", ss.tcpSettings.header.type);
-    const httpHost = ss.tcpSettings.header?.request?.headers?.Host?.[0];
-    if (httpHost) params.set("host", httpHost);
-    const httpPath = ss.tcpSettings.header?.request?.path?.[0];
-    if (httpPath) params.set("path", httpPath);
-  }
+  params.set("type", network);
+  params.set("encryption", firstString(ss._inboundSettings?.encryption) || "none");
+  applyNetworkParams(params, ss, network);
+  if (security === "tls") applyTlsParams(params, ss);
+  else if (security === "reality") applyRealityParams(params, ss);
+  else params.set("security", "none");
+  const flow = firstString(ss._clientFlow) || (security === "reality" && network === "tcp" ? "xtls-rprx-vision" : "");
+  if (network === "tcp" && flow) params.set("flow", flow);
+
   const overrideKey = `${ib.panel ?? ""}:${ib.inbound_id ?? ""}`;
   const label = String(overrides?.get(overrideKey) ?? "").trim();
   let display: string;
@@ -97,7 +208,20 @@ function buildVless(uuid: string, email: string, ib: any, overrides?: Map<string
     const ci = country ? COUNTRY_INFO[country] : undefined;
     display = ci ? `${ci.flag} ${ci.name}` : String(ib.panel_name ?? "").trim() || ib.remark;
   }
-  return `vless://${effectiveUuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(display)}`;
+
+  const external = Array.isArray(ss.externalProxy) ? ss.externalProxy : [];
+  if (external.length) {
+    return external.map((ep: any) => {
+      const next = new URLSearchParams(params);
+      const force = firstString(ep.forceTls);
+      if (force && force !== "same") next.set("security", force);
+      if (force === "none") for (const k of ["alpn", "sni", "fp"]) next.delete(k);
+      const remark = firstString(ep.remark) || display;
+      return `vless://${effectiveUuid}@${firstString(ep.dest) || ib.host}:${Number(ep.port ?? ib.port)}?${next.toString()}#${encodeURIComponent(remark)}`;
+    });
+  }
+
+  return [`vless://${effectiveUuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(display)}`];
 }
 
 function withHost(link: string, host: string) {
@@ -125,7 +249,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   if (!sub) return new Response("Subscription not found", { status: 404, headers: cors });
   const subDecoded = decodeRow("subscriptions", sub);
 
-  const inbounds = db.queryEntries(`SELECT panel, inbound_id, remark, protocol, port, host, stream_settings, sort_order, created_at FROM subscription_inbounds WHERE subscription_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC`, [sub.id]).map((r: any) => decodeRow("subscription_inbounds", r));
+  const inbounds = db.queryEntries(`SELECT panel, inbound_id, remark, protocol, port, host, stream_settings, client_email, sort_order, created_at FROM subscription_inbounds WHERE subscription_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC`, [sub.id]).map((r: any) => decodeRow("subscription_inbounds", r));
 
   // Pull panel display names + country code.
   const panelInfo = new Map<string, { name: string; country: string; connectionHost: string }>();
@@ -141,6 +265,8 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     ib.panel_country = info?.country ?? "";
     if (info?.connectionHost) ib.host = info.connectionHost;
   }
+
+  await refreshInboundsFromPanels(inbounds as any[], sub.client_uuid);
 
   const overridesMap = new Map<string, string>();
   if (inbounds.length) {
@@ -172,8 +298,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   } catch {}
 
   for (const ib of inbounds as any[]) {
-    const link = buildVless(sub.client_uuid, sub.client_email, ib, overridesMap);
-    if (link) lines.push(link);
+    lines.push(...buildVless(sub.client_uuid, sub.client_email, ib, overridesMap));
   }
   const body = base64Utf8(lines.join("\n"));
 
