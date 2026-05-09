@@ -161,10 +161,11 @@ export function ExternalSubsPanel() {
       const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
       const displayName = isHeader ? name.trim() : `${c.emoji} ${name.trim()}`;
       const finalLink = isHeader ? buildHeaderLink(displayName) : rewriteLinkName(link, displayName);
+      const initialSort = isHeader && pinTop ? PINNED_SORT : DEFAULT_EXTERNAL_SORT;
       const { data, error } = await supabase.from("external_subs").insert({
         name: name.trim(), emoji: isHeader ? "📝" : c.emoji,
         source_url: "", raw_links: [finalLink], notes: "",
-        ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
+        sort_order: initialSort,
       }).select("id").single();
       if (error) throw error;
       const createdId = Array.isArray(data) ? (data[0] as any)?.id : (data as any)?.id;
@@ -177,7 +178,7 @@ export function ExternalSubsPanel() {
               .from("subscription_external_subs")
               .insert({
                 subscription_id: s.id, external_sub_id: createdId,
-                ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
+                sort_order: initialSort,
               });
             if (!error) added++;
             else if (!/duplicate|unique/i.test(error.message)) throw error;
@@ -186,7 +187,7 @@ export function ExternalSubsPanel() {
         } else if (targetSubId !== "none") {
           const r = await supabase.from("subscription_external_subs").insert({
             subscription_id: targetSubId, external_sub_id: createdId,
-            ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
+            sort_order: initialSort,
           });
           if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
           const subName = subs.find((s) => s.id === targetSubId)?.name ?? "";
