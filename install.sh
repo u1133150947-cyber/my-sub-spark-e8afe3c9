@@ -88,6 +88,13 @@ VITE_SUPABASE_PUBLISHABLE_KEY=local-anon-key
 VITE_SUPABASE_PROJECT_ID=local
 VITE_SUB_BASE_URL=$PUBLIC_URL/sub
 EOF
+if [[ -z "${ADMIN_BOT_TOKEN:-}" ]]; then
+  read -rsp "Telegram bot token для входа в админку (можно оставить пустым и добавить позже в .env): " ADMIN_BOT_TOKEN || true
+  echo
+fi
+if [[ -n "${ADMIN_BOT_TOKEN:-}" ]]; then
+  printf 'ADMIN_BOT_TOKEN=%s\n' "$ADMIN_BOT_TOKEN" >> .env
+fi
 bun install --silent
 bun run build
 
@@ -124,7 +131,7 @@ $DOMAIN {
   request_body {
     max_size 200MB
   }
-  @protected not path /sub/* /functions/v1/sub*
+  @protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*
   basicauth @protected {
     $AUTH_USER $AUTH_HASH
   }
@@ -138,7 +145,7 @@ else
   request_body {
     max_size 200MB
   }
-  @protected not path /sub/* /functions/v1/sub*
+  @protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*
   basicauth @protected {
     $AUTH_USER $AUTH_HASH
   }
