@@ -484,7 +484,7 @@ Deno.serve(async (req) => {
       const { data: existing } = await supabase.from("subscription_inbounds").select("subscription_id").eq("panel", panel).eq("inbound_id", inboundId);
       const have = new Set((existing ?? []).map((l: any) => l.subscription_id));
 
-      const cfg = panelCfg(await getPanelBySlug(panel));
+      const panelRow = await getPanelBySlug(panel);
       const inboundsList = await listInbounds(panel);
       const ib = inboundsList.find((x: any) => x.id === inboundId);
       if (!ib) return new Response(JSON.stringify({ error: "inbound not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
@@ -502,7 +502,7 @@ Deno.serve(async (req) => {
           await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel, inbound_id: ib.id,
             remark: ib.remark ?? `${panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
-            host: hostFromUrl(cfg.url), stream_settings: stream, client_email: email,
+            host: panelConnectionHost(panelRow), stream_settings: stream, client_email: email,
           });
           created.push(sub.id);
         } catch (e) {
