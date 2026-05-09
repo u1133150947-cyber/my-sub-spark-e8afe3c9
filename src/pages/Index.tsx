@@ -627,6 +627,32 @@ const Index = () => {
     });
   };
 
+  const persistEditOrder = async (subscriptionId: string) => {
+    const orderedSelected = editOrder.filter((k) => editSelected.has(k));
+    if (!orderedSelected.length) return;
+    for (let i = 0; i < orderedSelected.length; i++) {
+      const k = orderedSelected[i];
+      if (k.startsWith("ext:")) {
+        const extId = k.slice(4);
+        const { error } = await supabase
+          .from("subscription_external_subs")
+          .update({ sort_order: i } as any)
+          .eq("subscription_id", subscriptionId)
+          .eq("external_sub_id", extId);
+        if (error) throw error;
+      } else {
+        const [panel, idStr] = k.split(":");
+        const { error } = await supabase
+          .from("subscription_inbounds")
+          .update({ sort_order: i } as any)
+          .eq("subscription_id", subscriptionId)
+          .eq("panel", panel)
+          .eq("inbound_id", Number(idStr));
+        if (error) throw error;
+      }
+    }
+  };
+
   const saveEdit = async (s: Subscription) => {
     setSavingEdit(true);
     try {
@@ -708,6 +734,8 @@ const Index = () => {
           });
         }
       }
+
+      await persistEditOrder(s.id);
 
       toast.success("Подписка обновлена");
       closeEdit();
