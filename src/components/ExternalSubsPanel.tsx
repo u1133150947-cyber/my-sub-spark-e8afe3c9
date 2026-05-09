@@ -351,7 +351,8 @@ export function ExternalSubsPanel() {
     setEditing(it);
     setEditName(it.name ?? "");
     const found = COUNTRIES.find((c) => c.emoji === it.emoji);
-    setEditCountry(found?.code ?? "OTHER");
+    // Если у записи нет валидного флага из списка — считаем «без флага»
+    setEditCountry(found?.code ?? "NONE");
   }
 
   async function saveEdit() {
@@ -359,11 +360,13 @@ export function ExternalSubsPanel() {
     if (!editName.trim()) { toast.error("Введите название"); return; }
     setSavingEdit(true);
     try {
-      const c = COUNTRIES.find((x) => x.code === editCountry) ?? COUNTRIES[0];
-      const displayName = `${c.emoji} ${editName.trim()}`;
+      const noFlag = editCountry === "NONE";
+      const c = noFlag ? null : (COUNTRIES.find((x) => x.code === editCountry) ?? COUNTRIES[0]);
+      const displayName = noFlag ? editName.trim() : `${c!.emoji} ${editName.trim()}`;
+      const newEmoji = noFlag ? "📝" : c!.emoji;
       const newLinks = (editing.raw_links ?? []).map((l) => rewriteLinkName(l, displayName));
       const { error } = await supabase.from("external_subs").update({
-        name: editName.trim(), emoji: c.emoji, raw_links: newLinks,
+        name: editName.trim(), emoji: newEmoji, raw_links: newLinks,
       }).eq("id", editing.id);
       if (error) throw error;
       toast.success("Сохранено");
