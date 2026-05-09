@@ -633,14 +633,20 @@ const Index = () => {
       // Compute additions and removals
       const toAdd: { panel: PanelKey; inboundId: number }[] = [];
       const toRemove: { panel: PanelKey; inboundId: number }[] = [];
+      const extToRemove: string[] = [];
       editSelected.forEach((k) => {
         if (!editExisting.has(k)) {
+          if (k.startsWith("ext:")) return; // can't add new ext from this UI
           const [p, id] = k.split(":");
           toAdd.push({ panel: p as PanelKey, inboundId: Number(id) });
         }
       });
       editExisting.forEach((k) => {
         if (!editSelected.has(k)) {
+          if (k.startsWith("ext:")) {
+            extToRemove.push(k.slice(4));
+            return;
+          }
           const [p, id] = k.split(":");
           toRemove.push({ panel: p as PanelKey, inboundId: Number(id) });
         }
@@ -676,6 +682,16 @@ const Index = () => {
         });
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
+      }
+
+      // Detach external subs
+      for (const extId of extToRemove) {
+        const { error } = await supabase
+          .from("subscription_external_subs")
+          .delete()
+          .eq("subscription_id", s.id)
+          .eq("external_sub_id", extId);
+        if (error) throw error;
       }
 
       // Add inbounds
