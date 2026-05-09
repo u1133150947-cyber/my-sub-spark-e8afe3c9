@@ -118,6 +118,7 @@ CREATE TABLE IF NOT EXISTS external_subs (
   source_url TEXT NOT NULL DEFAULT '',
   raw_links TEXT NOT NULL DEFAULT '[]',
   notes TEXT NOT NULL DEFAULT '',
+  sort_order INTEGER NOT NULL DEFAULT 1000,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -146,6 +147,10 @@ try {
 try {
   const cols = db.queryEntries(`PRAGMA table_info(subscription_external_subs)`).map((r: any) => r.name);
   if (!cols.includes("sort_order")) db.execute(`ALTER TABLE subscription_external_subs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1000`);
+} catch {}
+try {
+  const cols = db.queryEntries(`PRAGMA table_info(external_subs)`).map((r: any) => r.name);
+  if (!cols.includes("sort_order")) db.execute(`ALTER TABLE external_subs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1000`);
 } catch {}
 try {
   const cols = db.queryEntries(`PRAGMA table_info(subscriptions)`).map((r: any) => r.name);

@@ -324,25 +324,31 @@ Deno.serve(async (req) => {
     try {
       const { data: linksRows } = await supabase
         .from("subscription_external_subs")
-        .select("external_sub_id, sort_order, created_at")
+        .select("external_sub_id, created_at")
         .eq("subscription_id", sub.id);
       const rows = linksRows ?? [];
       const extIds = Array.from(new Set(rows.map((r: any) => r.external_sub_id).filter(Boolean)));
       if (extIds.length) {
         const { data: exts } = await supabase
           .from("external_subs")
-          .select("id, raw_links")
+          .select("id, raw_links, sort_order, created_at")
           .in("id", extIds);
         const byId = new Map<string, string[]>();
+        const byMeta = new Map<string, { sort_order: number; created_at: string }>();
         for (const e of exts ?? []) {
           const arr = Array.isArray((e as any).raw_links) ? (e as any).raw_links : [];
           byId.set((e as any).id, arr.filter((l: any) => typeof l === "string" && l.trim()).map((l: string) => l.trim()));
+          byMeta.set((e as any).id, {
+            sort_order: Number((e as any).sort_order ?? 1000),
+            created_at: String((e as any).created_at ?? ""),
+          });
         }
         for (const r of rows) {
           const ls = byId.get((r as any).external_sub_id) ?? [];
+          const meta = byMeta.get((r as any).external_sub_id);
           if (ls.length) items.push({
-            sort_order: Number((r as any).sort_order ?? 1000),
-            created_at: String((r as any).created_at ?? ""),
+            sort_order: meta?.sort_order ?? 1000,
+            created_at: meta?.created_at ?? String((r as any).created_at ?? ""),
             lines: ls,
           });
         }

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, RefreshCw, Link2, Globe2, ChevronDown, ChevronRight, Pencil } from "lucide-react";
+import { Loader2, Plus, Trash2, RefreshCw, Link2, Globe2, ChevronDown, ChevronRight, Pencil, ArrowUp, ArrowDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,7 @@ type ExternalSub = {
   raw_links: string[];
   notes: string;
   created_at: string;
+  sort_order?: number;
 };
 type SubscriptionLite = { id: string; name: string };
 type Link = { subscription_id: string; external_sub_id: string };
@@ -77,6 +78,10 @@ export function ExternalSubsPanel() {
   const [editCountry, setEditCountry] = useState("RU");
   const [savingEdit, setSavingEdit] = useState(false);
 
+  // bulk-select
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
   const linksByExt = useMemo(() => {
     const m = new Map<string, Set<string>>();
     for (const l of links) {
@@ -90,7 +95,7 @@ export function ExternalSubsPanel() {
     setLoading(true);
     try {
       const [ext, s, l] = await Promise.all([
-        supabase.from("external_subs").select("*").order("created_at", { ascending: false }),
+        supabase.from("external_subs").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
         supabase.from("subscriptions").select("id,name").order("created_at", { ascending: false }),
         supabase.from("subscription_external_subs").select("subscription_id,external_sub_id"),
       ]);
@@ -98,6 +103,12 @@ export function ExternalSubsPanel() {
       if (s.error) throw s.error;
       if (l.error) throw l.error;
       setItems((ext.data ?? []).map((x: any) => ({ ...x, raw_links: Array.isArray(x.raw_links) ? x.raw_links : [] })));
+      setSelected((prev) => {
+        const ids = new Set((ext.data ?? []).map((x: any) => x.id));
+        const next = new Set<string>();
+        for (const id of prev) if (ids.has(id)) next.add(id);
+        return next;
+      });
       setSubs(s.data ?? []);
       setLinks(l.data ?? []);
     } catch (e: any) {
@@ -232,6 +243,53 @@ export function ExternalSubsPanel() {
     } finally { setBusy(null); }
   }
 
+  async function bulkDelete() {
+    if (!selected.size) return;
+    if (!confirm(`Удалить ${selected.size} сторонних подписок и все их привязки?`)) return;
+    setBulkBusy(true);
+    try {
+      const ids = Array.from(selected);
+      await supabase.from("subscription_external_subs").delete().in("external_sub_id", ids);
+      const { error } = await supabase.from("external_subs").delete().in("id", ids);
+      if (error) throw error;
+      toast.success(`Удалено: ${ids.length}`);
+      setSelected(new Set());
+      loadAll();
+    } catch (e: any) {
+      toast.error("Ошибка удаления", { description: e?.message ?? String(e) });
+    } finally { setBulkBusy(false); }
+  }
+
+  async function move(idx: number, dir: -1 | 1) {
+    const j = idx + dir;
+    if (j < 0 || j >= items.length) return;
+    const a = items[idx], b = items[j];
+    // Reorder locally for snappy UI, then renumber all items 10,20,30…
+    const next = items.slice();
+    next[idx] = b; next[j] = a;
+    const renum = next.map((it, i) => ({ ...it, sort_order: (i + 1) * 10 }));
+    setItems(renum);
+    try {
+      await Promise.all(renum.map((it) =>
+        supabase.from("external_subs").update({ sort_order: it.sort_order }).eq("id", it.id)
+      ));
+    } catch (e: any) {
+      toast.error("Не удалось сохранить порядок", { description: e?.message ?? String(e) });
+      loadAll();
+    }
+  }
+
+  function toggleSel(id: string, v: boolean) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (v) n.add(id); else n.delete(id);
+      return n;
+    });
+  }
+  function toggleSelAll(v: boolean) {
+    setSelected(v ? new Set(items.map((i) => i.id)) : new Set());
+  }
+
   async function toggleAttach(extId: string, subId: string, attach: boolean) {
     // optimistic UI update so the checkbox reflects the click immediately
     setLinks((prev) => {
@@ -348,20 +406,51 @@ export function ExternalSubsPanel() {
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Link2 className="size-4 text-primary" /> Сторонние подписки ({items.length})
           </h2>
-          <Button size="sm" variant="outline" onClick={loadAll} disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
-          </Button>
+          <div className="flex items-center gap-2">
+            {items.length > 0 && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer mr-2">
+                <Checkbox
+                  checked={selected.size === items.length && items.length > 0}
+                  onCheckedChange={(v) => toggleSelAll(!!v)}
+                />
+                <span className="text-muted-foreground">Все</span>
+              </label>
+            )}
+            {selected.size > 0 && (
+              <Button size="sm" variant="destructive" onClick={bulkDelete} disabled={bulkBusy}>
+                {bulkBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                Удалить ({selected.size})
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={loadAll} disabled={loading}>
+              {loading ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+            </Button>
+          </div>
         </div>
         {!items.length && (
           <div className="text-sm text-muted-foreground py-8 text-center">Пока нет сторонних подписок.</div>
         )}
         <div className="space-y-3">
-          {items.map((it) => {
+          {items.map((it, idx) => {
             const attached = linksByExt.get(it.id) ?? new Set<string>();
             const isOpen = expanded.has(it.id);
             return (
               <div key={it.id} className="rounded-lg border border-border bg-background/40">
                 <div className="flex items-center justify-between gap-3 p-3">
+                  <Checkbox
+                    checked={selected.has(it.id)}
+                    onCheckedChange={(v) => toggleSel(it.id, !!v)}
+                  />
+                  <div className="flex flex-col gap-0.5">
+                    <Button size="icon" variant="ghost" className="h-6 w-6"
+                      disabled={idx === 0} onClick={() => move(idx, -1)} title="Поднять">
+                      <ArrowUp className="size-3" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-6 w-6"
+                      disabled={idx === items.length - 1} onClick={() => move(idx, 1)} title="Опустить">
+                      <ArrowDown className="size-3" />
+                    </Button>
+                  </div>
                   <button
                     className="flex items-center gap-3 text-left flex-1 min-w-0"
                     onClick={() => {

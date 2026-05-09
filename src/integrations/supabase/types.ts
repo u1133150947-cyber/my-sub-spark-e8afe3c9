@@ -141,6 +141,7 @@ export type Database = {
           name: string
           notes: string
           raw_links: Json
+          sort_order: number
           source_url: string
           updated_at: string
         }
@@ -151,6 +152,7 @@ export type Database = {
           name: string
           notes?: string
           raw_links?: Json
+          sort_order?: number
           source_url?: string
           updated_at?: string
         }
@@ -161,6 +163,7 @@ export type Database = {
           name?: string
           notes?: string
           raw_links?: Json
+          sort_order?: number
           source_url?: string
           updated_at?: string
         }
