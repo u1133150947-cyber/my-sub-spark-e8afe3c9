@@ -324,7 +324,7 @@ Deno.serve(async (req) => {
     try {
       const { data: linksRows } = await supabase
         .from("subscription_external_subs")
-        .select("external_sub_id, created_at")
+        .select("external_sub_id, sort_order, created_at")
         .eq("subscription_id", sub.id);
       const rows = linksRows ?? [];
       const extIds = Array.from(new Set(rows.map((r: any) => r.external_sub_id).filter(Boolean)));
@@ -346,11 +346,17 @@ Deno.serve(async (req) => {
         for (const r of rows) {
           const ls = byId.get((r as any).external_sub_id) ?? [];
           const meta = byMeta.get((r as any).external_sub_id);
-          if (ls.length) items.push({
-            sort_order: meta?.sort_order ?? 1000,
-            created_at: meta?.created_at ?? String((r as any).created_at ?? ""),
-            lines: ls,
-          });
+          if (ls.length) {
+            const sesSort = Number((r as any).sort_order ?? 1000);
+            // Per-subscription override wins when admin set a custom value (≠ default 1000).
+            // Otherwise use the global external_subs.sort_order set in "Сторонние".
+            const sortOrder = sesSort !== 1000 ? sesSort : (meta?.sort_order ?? 1000);
+            items.push({
+              sort_order: sortOrder,
+              created_at: String((r as any).created_at ?? meta?.created_at ?? ""),
+              lines: ls,
+            });
+          }
         }
       }
     } catch (_) { /* ignore */ }
