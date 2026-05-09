@@ -642,7 +642,7 @@ Deno.serve(async (req) => {
       let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
       if (desiredSlug) {
         const { data: clash } = await supabase.from("subscriptions").select("id").eq("slug", slug).maybeSingle();
-        if (clash) slug = randomSlug(12);
+        if (clash) return new Response(JSON.stringify({ error: `URL "${slug}" уже занят` }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const subId = randomSlug(16);
       const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
@@ -698,7 +698,7 @@ Deno.serve(async (req) => {
       let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
       if (desiredSlug) {
         const { data: clash } = await supabase.from("subscriptions").select("id").eq("slug", slug).maybeSingle();
-        if (clash) slug = randomSlug(12);
+        if (clash) return new Response(JSON.stringify({ error: `URL "${slug}" уже занят` }), { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       const expiryMs = days > 0 ? Date.now() + days * 24 * 60 * 60 * 1000 : 0;
       const totalBytes = totalGB > 0 ? Math.floor(totalGB * 1024 * 1024 * 1024) : 0;
