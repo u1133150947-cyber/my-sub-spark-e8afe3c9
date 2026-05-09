@@ -1537,21 +1537,31 @@ const Index = () => {
                                 return <div className="text-xs text-muted-foreground">Нет выбранных подключений</div>;
                               }
                               const findIb = (key: string) => {
+                                if (key.startsWith("ext:")) {
+                                  const extId = key.slice(4);
+                                  const e = editExternals[extId];
+                                  return {
+                                    panel: "ext",
+                                    id: 0,
+                                    remark: e ? `${e.emoji} ${e.name} · ${e.raw_links.length} серв.` : "Сторонняя подписка",
+                                    isExt: true,
+                                  };
+                                }
                                 const [panel, idStr] = key.split(":");
                                 const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
-                                if (!Array.isArray(list)) return { panel, id: Number(idStr), remark: `#${idStr}` };
+                                if (!Array.isArray(list)) return { panel, id: Number(idStr), remark: `#${idStr}`, isExt: false };
                                 const ib = list.find((x) => x.id === Number(idStr));
-                                return { panel, id: Number(idStr), remark: ib?.remark ?? `#${idStr}` };
+                                return { panel, id: Number(idStr), remark: ib?.remark ?? `#${idStr}`, isExt: false };
                               };
                               return (
                                 <div className="space-y-1">
                                   {visible.map((key, idx) => {
-                                    const { panel, id, remark } = findIb(key);
+                                    const { panel, id, remark, isExt } = findIb(key);
                                     return (
                                       <div key={key} className="flex items-center gap-2 px-2 py-1.5 rounded bg-secondary/40">
                                         <span className="text-xs text-muted-foreground w-5 text-right tabular-nums">{idx + 1}.</span>
                                         <div className="flex-1 min-w-0 text-sm truncate">
-                                          {inboundLabel(panel, id, remark)}
+                                          {isExt ? remark : inboundLabel(panel, id, remark)}
                                         </div>
                                         <Button variant="ghost" size="icon" className="size-7" disabled={idx === 0}
                                           onClick={() => moveOrder(key, -1)}>
