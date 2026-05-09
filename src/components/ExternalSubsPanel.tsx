@@ -299,13 +299,21 @@ export function ExternalSubsPanel() {
     const j = idx + dir;
     if (j < 0 || j >= items.length) return;
     const a = items[idx], b = items[j];
+    if (isPinnedSort(Number(a.sort_order ?? DEFAULT_EXTERNAL_SORT)) !== isPinnedSort(Number(b.sort_order ?? DEFAULT_EXTERNAL_SORT))) {
+      toast.warning("Закреплённые текстовые блоки всегда остаются выше обычных серверов");
+      return;
+    }
     // Reorder locally for snappy UI, then renumber as 10, 20, 30…
     // These arrows only re-order the listing inside the "Сторонние" tab.
     // Per-subscription ordering (set in the subscription editor) is NOT
     // touched here — it is the source of truth for what the client sees.
     const next = items.slice();
     next[idx] = b; next[j] = a;
-    const renum = next.map((it, i) => ({ ...it, sort_order: (i + 1) * 10 }));
+    let normalPos = 0;
+    const renum = next.map((it, i) => {
+      const cur = Number(it.sort_order ?? DEFAULT_EXTERNAL_SORT);
+      return { ...it, sort_order: isPinnedSort(cur) ? (PINNED_SORT + i) : (++normalPos * 10) };
+    });
     setItems(renum);
     try {
       await Promise.all(renum.map((it) =>
