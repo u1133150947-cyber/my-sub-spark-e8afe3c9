@@ -553,7 +553,41 @@ const Index = () => {
       .eq("subscription_id", s.id)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
-    const orderedKeys = (data ?? []).map((l: any) => `${l.panel}:${l.inbound_id}`);
+    const inboundItems = (data ?? []).map((l: any) => ({
+      key: `${l.panel}:${l.inbound_id}`,
+      sort_order: Number(l.sort_order ?? 0),
+    }));
+
+    // Load attached external subs (3rd-party) so they can be ordered together
+    const { data: extLinks } = await supabase
+      .from("subscription_external_subs")
+      .select("external_sub_id, sort_order, created_at")
+      .eq("subscription_id", s.id)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    const extIds = (extLinks ?? []).map((r: any) => r.external_sub_id);
+    const extMap: Record<string, { name: string; emoji: string; raw_links: string[] }> = {};
+    if (extIds.length) {
+      const { data: exts } = await supabase
+        .from("external_subs")
+        .select("id, name, emoji, raw_links")
+        .in("id", extIds);
+      for (const e of exts ?? []) {
+        extMap[(e as any).id] = {
+          name: (e as any).name ?? "",
+          emoji: (e as any).emoji ?? "🌐",
+          raw_links: Array.isArray((e as any).raw_links) ? (e as any).raw_links : [],
+        };
+      }
+    }
+    setEditExternals(extMap);
+    const extItems = (extLinks ?? []).map((r: any) => ({
+      key: `ext:${r.external_sub_id}`,
+      sort_order: Number(r.sort_order ?? 1000),
+    }));
+
+    const allItems = [...inboundItems, ...extItems].sort((a, b) => a.sort_order - b.sort_order);
+    const orderedKeys = allItems.map((it) => it.key);
     const keys = new Set(orderedKeys);
     setEditExisting(keys);
     setEditSelected(new Set(keys));
@@ -566,6 +600,7 @@ const Index = () => {
     setEditExisting(new Set());
     setEditOrder([]);
     setEditSniText("");
+    setEditExternals({});
   };
 
   const toggleEdit = (key: string) => {
