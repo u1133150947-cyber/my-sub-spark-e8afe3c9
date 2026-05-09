@@ -131,10 +131,15 @@ export function ExternalSubsPanel() {
       if (!createdId) throw new Error("Сервер добавлен, но не удалось получить ID для привязки");
       if (createdId) {
         if (targetSubId === "all" && subs.length) {
-          const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: createdId }));
-          const r = await supabase.from("subscription_external_subs").upsert(rows, { onConflict: "subscription_id,external_sub_id", ignoreDuplicates: true });
-          if (r.error) throw r.error;
-          toast.success(`Привязано ко всем (${subs.length})`);
+          let added = 0;
+          for (const s of subs) {
+            const { error } = await supabase
+              .from("subscription_external_subs")
+              .insert({ subscription_id: s.id, external_sub_id: createdId });
+            if (!error) added++;
+            else if (!/duplicate|unique/i.test(error.message)) throw error;
+          }
+          toast.success(`Привязано ко всем (${added} из ${subs.length})`);
         } else if (targetSubId !== "none") {
           const r = await supabase.from("subscription_external_subs").insert({
             subscription_id: targetSubId, external_sub_id: createdId,
