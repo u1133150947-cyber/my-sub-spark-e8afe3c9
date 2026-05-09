@@ -448,6 +448,49 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       return json({ ok: true, panelError: panelErr });
     }
 
+    if (action === "cleanupOrphans" && req.method === "POST") {
+      const all = getAllPanels();
+      const knownUuids = new Set<string>();
+      const knownEmails = new Set<string>();
+      const panelErrors: Record<string, string> = {};
+      const reachable: Record<string, boolean> = {};
+      await Promise.all(all.map(async (p) => {
+        try {
+          const inbounds = await listInbounds(p.slug);
+          reachable[p.slug] = true;
+          for (const ib of inbounds) {
+            let s: any = {};
+            try { s = JSON.parse(ib.settings ?? "{}"); } catch {}
+            for (const c of (s.clients ?? [])) {
+              if (c.id) knownUuids.add(String(c.id));
+              if (c.email) knownEmails.add(String(c.email));
+            }
+          }
+        } catch (e) {
+          reachable[p.slug] = false;
+          panelErrors[p.slug] = e instanceof Error ? e.message : String(e);
+        }
+      }));
+      const anyReachable = Object.values(reachable).some(Boolean);
+      if (!anyReachable) {
+        return json({ error: "Ни одна панель недоступна — отмена очистки", panelErrors }, 503);
+      }
+      const subs = rows<any>(`SELECT id, name, client_uuid, client_email FROM subscriptions`);
+      const orphans = subs.filter((s) => {
+        const uuidMissing = !s.client_uuid || !knownUuids.has(String(s.client_uuid));
+        const emailMissing = !s.client_email || !knownEmails.has(String(s.client_email));
+        return uuidMissing && emailMissing;
+      });
+      const deleted: any[] = [];
+      for (const o of orphans) {
+        db.query(`DELETE FROM subscription_inbounds WHERE subscription_id = ?`, [o.id]);
+        db.query(`DELETE FROM subscription_external_subs WHERE subscription_id = ?`, [o.id]);
+        db.query(`DELETE FROM subscriptions WHERE id = ?`, [o.id]);
+        deleted.push({ id: o.id, name: o.name });
+      }
+      return json({ ok: true, deleted, errors: [], panelErrors, scanned: subs.length });
+    }
+
     if (action === "update" && req.method === "POST") {
       const body = await req.json();
       const subId = String(body.id ?? "");
