@@ -823,6 +823,56 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, panelError: panelErr }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "cleanupOrphans" && req.method === "POST") {
+      const all = await getAllPanels();
+      const knownUuids = new Set<string>();
+      const knownEmails = new Set<string>();
+      const panelErrors: Record<string, string> = {};
+      const reachable: Record<string, boolean> = {};
+      await Promise.all(all.map(async (p) => {
+        try {
+          const inbounds = await listInbounds(p.slug as PanelKey);
+          reachable[p.slug] = true;
+          for (const ib of inbounds) {
+            let s: any = {};
+            try { s = JSON.parse(ib.settings ?? "{}"); } catch {}
+            for (const c of (s.clients ?? [])) {
+              if (c.id) knownUuids.add(String(c.id));
+              if (c.email) knownEmails.add(String(c.email));
+            }
+          }
+        } catch (e) {
+          reachable[p.slug] = false;
+          panelErrors[p.slug] = e instanceof Error ? e.message : String(e);
+        }
+      }));
+      // Safety: if NO panel was reachable, refuse to delete anything.
+      const anyReachable = Object.values(reachable).some(Boolean);
+      if (!anyReachable) {
+        return new Response(JSON.stringify({ error: "Ни одна панель недоступна — отмена очистки", panelErrors }), { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      const { data: subs } = await supabase.from("subscriptions").select("id, name, client_uuid, client_email");
+      const orphans = (subs ?? []).filter((s: any) => {
+        const uuidMissing = !s.client_uuid || !knownUuids.has(String(s.client_uuid));
+        const emailMissing = !s.client_email || !knownEmails.has(String(s.client_email));
+        return uuidMissing && emailMissing;
+      });
+      const deleted: any[] = [];
+      const errors: any[] = [];
+      for (const o of orphans) {
+        try {
+          await supabase.from("subscription_inbounds").delete().eq("subscription_id", o.id);
+          await supabase.from("subscription_external_subs").delete().eq("subscription_id", o.id);
+          const { error } = await supabase.from("subscriptions").delete().eq("id", o.id);
+          if (error) throw new Error(error.message);
+          deleted.push({ id: o.id, name: o.name });
+        } catch (e) {
+          errors.push({ id: o.id, name: o.name, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, deleted, errors, panelErrors, scanned: subs?.length ?? 0 }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "update" && req.method === "POST") {
       const body = await req.json();
       const subId: string = body.id;
