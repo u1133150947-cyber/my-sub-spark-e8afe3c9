@@ -476,6 +476,8 @@ const Index = () => {
   const create = async () => {
     if (!name.trim()) return toast.error("Введите имя клиента");
     if (selected.size === 0) return toast.error("Выберите хотя бы один inbound");
+    const desiredSlug = createSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (createSlug.trim() && desiredSlug.length < 4) return toast.error("URL должен быть минимум 4 символа (a-z 0-9)");
 
     const selections = Array.from(selected).map((s) => {
       const [panel, id] = s.split(":");
@@ -486,7 +488,7 @@ const Index = () => {
     try {
       const { data, error } = await supabase.functions.invoke("panel?action=create", {
         method: "POST",
-        body: { name: name.trim(), days, totalGB, selections },
+        body: { name: name.trim(), days, totalGB, selections, ...(desiredSlug ? { slug: desiredSlug } : {}) },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -498,6 +500,7 @@ const Index = () => {
         });
       }
       setName("");
+      setCreateSlug("");
       setSelected(new Set());
       loadSubs();
     } catch (e: any) {
