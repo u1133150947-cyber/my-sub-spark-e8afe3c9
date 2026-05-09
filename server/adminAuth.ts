@@ -29,9 +29,8 @@ function iso(ms: number) { return new Date(ms).toISOString(); }
 
 async function sendTelegram(code: string) {
   const botToken = Deno.env.get("ADMIN_BOT_TOKEN") || Deno.env.get("TELEGRAM_BOT_TOKEN");
-  const chatId = Deno.env.get("ADMIN_TELEGRAM_ID");
   if (!botToken) throw new Error("ADMIN_BOT_TOKEN не задан в .env на сервере");
-  if (!chatId) throw new Error("ADMIN_TELEGRAM_ID не задан в .env на сервере");
+  const chatId = await getAdminChatId(botToken);
 
   const text = `🔐 Код для входа в админку: <b>${code}</b>\nДействителен 5 минут.`;
   const r = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -41,6 +40,35 @@ async function sendTelegram(code: string) {
   });
   const body = await r.text();
   if (!r.ok) throw new Error(`Telegram ${r.status}: ${body.slice(0, 300)}`);
+}
+
+async function getAdminChatId(botToken: string): Promise<string> {
+  const fromEnv = Deno.env.get("ADMIN_TELEGRAM_ID")?.trim();
+  if (fromEnv) return fromEnv;
+
+  const saved = db.queryEntries(`SELECT value FROM admin_settings WHERE key = 'telegram_chat_id' LIMIT 1`);
+  const savedValue = String((saved[0] as any)?.value ?? "").trim();
+  if (savedValue) return savedValue;
+
+  const r = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ limit: 20, timeout: 0, allowed_updates: ["message"] }),
+  });
+  const data = await r.json().catch(() => null) as any;
+  if (!r.ok || !data?.ok) throw new Error(`Telegram getUpdates failed: ${JSON.stringify(data).slice(0, 300)}`);
+
+  const updates = Array.isArray(data.result) ? data.result : [];
+  const msg = updates.map((u: any) => u?.message).reverse().find((m: any) => m?.chat?.id && m?.chat?.type === "private");
+  const chatId = msg?.chat?.id ? String(msg.chat.id) : "";
+  if (!chatId) throw new Error("Открой Telegram-бота, нажми Start или отправь /start, потом запроси код ещё раз");
+
+  db.query(
+    `INSERT INTO admin_settings (key, value, updated_at) VALUES ('telegram_chat_id', ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
+    [chatId],
+  );
+  return chatId;
 }
 
 export async function handleAdminAuth(req: Request): Promise<Response> {
