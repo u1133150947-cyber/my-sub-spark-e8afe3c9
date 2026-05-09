@@ -189,9 +189,12 @@ const DEFAULT_EXTERNAL_SORT = 1000;
 const PINNED_SORT = -1000;
 const isPinnedSort = (v: number) => Number.isFinite(v) && v < 0;
 const effectiveExternalSort = (perSubSort: number, globalSort: number) => {
-  if (isPinnedSort(perSubSort) || isPinnedSort(globalSort)) {
-    return Math.min(isPinnedSort(perSubSort) ? perSubSort : PINNED_SORT, isPinnedSort(globalSort) ? globalSort : PINNED_SORT);
+  if (isPinnedSort(globalSort)) {
+    if (perSubSort === DEFAULT_EXTERNAL_SORT) return globalSort;
+    if (isPinnedSort(perSubSort)) return perSubSort;
+    return PINNED_SORT + Math.max(1, perSubSort);
   }
+  if (isPinnedSort(perSubSort)) return perSubSort;
   return perSubSort !== DEFAULT_EXTERNAL_SORT ? perSubSort : globalSort;
 };
 
