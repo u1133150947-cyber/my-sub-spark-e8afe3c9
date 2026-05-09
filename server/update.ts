@@ -94,28 +94,36 @@ async function readLocalCommit(): Promise<string | null> {
   try { return (await Deno.readTextFile(join(APP_DIR, "VERSION"))).trim() || null; } catch { return null; }
 }
 
-async function fetchLatestCommit(): Promise<{ sha: string; date: string; message: string } | null> {
+async function fetchLatestCommit(): Promise<
+  { ok: true; sha: string; date: string; message: string } | { ok: false; error: string }
+> {
+  const url = `https://api.github.com/repos/${GITHUB_REPO}/commits/${GITHUB_BRANCH}`;
   try {
-    const r = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/commits/${GITHUB_BRANCH}`, {
+    const r = await fetch(url, {
       headers: { "Accept": "application/vnd.github+json", "User-Agent": "sub-manager" },
     });
-    if (!r.ok) return null;
-    const j = await r.json();
-    return { sha: String(j.sha ?? ""), date: String(j.commit?.author?.date ?? ""), message: String(j.commit?.message ?? "") };
-  } catch { return null; }
+    const text = await r.text();
+    if (!r.ok) return { ok: false, error: `GitHub ${r.status}: ${text.slice(0, 200)}` };
+    const j = JSON.parse(text);
+    return { ok: true, sha: String(j.sha ?? ""), date: String(j.commit?.author?.date ?? ""), message: String(j.commit?.message ?? "") };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function handleVersion(_req: Request): Promise<Response> {
   const local = await readLocalCommit();
   const remote = await fetchLatestCommit();
+  const remoteOk = remote.ok;
   return json({
     repo: GITHUB_REPO,
     branch: GITHUB_BRANCH,
     local_commit: local,
-    remote_commit: remote?.sha ?? null,
-    remote_date: remote?.date ?? null,
-    remote_message: remote?.message ?? null,
-    update_available: !!(local && remote?.sha && !remote.sha.startsWith(local) && !local.startsWith(remote.sha)),
+    remote_commit: remoteOk ? remote.sha : null,
+    remote_date: remoteOk ? remote.date : null,
+    remote_message: remoteOk ? remote.message : null,
+    remote_error: remoteOk ? null : remote.error,
+    update_available: !!(local && remoteOk && remote.sha && !remote.sha.startsWith(local) && !local.startsWith(remote.sha)),
   });
 }
 
@@ -133,7 +141,7 @@ export async function handleUpdateFromGithub(req: Request, url: URL): Promise<Re
 
   try {
     const remote = await fetchLatestCommit();
-    if (!remote?.sha) throw new Error("не удалось получить последний коммит из GitHub");
+    if (!remote.ok) throw new Error(`GitHub: ${remote.error}`);
     push(`latest commit: ${remote.sha.slice(0, 7)} — ${remote.message.split("\n")[0]}`);
 
     const tmpRoot = await Deno.makeTempDir({ prefix: "sub-mgr-gh-" });
