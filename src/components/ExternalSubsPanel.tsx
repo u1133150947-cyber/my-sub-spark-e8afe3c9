@@ -87,6 +87,7 @@ export function ExternalSubsPanel() {
   const [targetSubId, setTargetSubId] = useState<string>("none"); // "none" | "all" | <subId>
   const [creating, setCreating] = useState(false);
   const [isHeader, setIsHeader] = useState(false);
+  const [pinTop, setPinTop] = useState(false);
 
   // edit dialog state
   const [editing, setEditing] = useState<ExternalSub | null>(null);
