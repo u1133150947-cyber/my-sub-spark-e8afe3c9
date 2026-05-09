@@ -63,6 +63,18 @@ VITE_SUB_BASE_URL=$PUBLIC_URL/sub
 EOF
 fi
 
+if ! grep -q '^ADMIN_BOT_TOKEN=' .env 2>/dev/null; then
+  if [[ -z "${ADMIN_BOT_TOKEN:-}" ]]; then
+    read -rsp "Telegram bot token для входа в админку (можно оставить пустым и добавить позже в /opt/sub-manager/.env): " ADMIN_BOT_TOKEN || true
+    echo
+  fi
+  if [[ -n "${ADMIN_BOT_TOKEN:-}" ]]; then
+    printf 'ADMIN_BOT_TOKEN=%s\n' "$ADMIN_BOT_TOKEN" >> .env
+  else
+    warn "ADMIN_BOT_TOKEN не задан — /login откроется, но код в Telegram не отправится"
+  fi
+fi
+
 log "bun install"
 bun install --silent
 
@@ -74,6 +86,20 @@ log "Перезапускаю sub-manager"
 systemctl restart sub-manager
 sleep 1
 systemctl --no-pager --lines=0 status sub-manager || true
+
+if [[ -f /etc/caddy/Caddyfile ]]; then
+  log "Проверяю доступ к Telegram-auth endpoint в Caddy"
+  python3 - <<'PY'
+from pathlib import Path
+p = Path('/etc/caddy/Caddyfile')
+s = p.read_text()
+old1 = '@protected not path /sub/* /functions/v1/sub*'
+new1 = '@protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*'
+if old1 in s and new1 not in s:
+    p.write_text(s.replace(old1, new1))
+PY
+  caddy reload --config /etc/caddy/Caddyfile || systemctl restart caddy || true
+fi
 
 echo
 echo "${G}[✓] Обновлено${N}"
