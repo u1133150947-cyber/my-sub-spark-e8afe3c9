@@ -18,6 +18,8 @@ import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 type Panel = {
   id: string;
   name: string;
+  host?: string;
+  public_host?: string;
   panel_url: string;
   username: string;
   password: string;
@@ -28,7 +30,7 @@ type Panel = {
   slug?: string;
 };
 
-const empty = { name: "", panel_url: "", username: "", password: "", country: "" };
+const empty = { name: "", panel_url: "", username: "", password: "", country: "", public_host: "" };
 
 const COUNTRIES: { code: string; flag: string; name: string }[] = [
   { code: "RU", flag: "🇷🇺", name: "Россия" },
@@ -62,6 +64,12 @@ const COUNTRIES: { code: string; flag: string; name: string }[] = [
   { code: "EE", flag: "🇪🇪", name: "Эстония" },
 ];
 const countryByCode = (c: string) => COUNTRIES.find((x) => x.code === c.toUpperCase());
+const cleanHost = (value: string) => {
+  const raw = value.trim();
+  if (!raw) return "";
+  try { return new URL(raw.includes("://") ? raw : `http://${raw}`).hostname; } catch {}
+  return raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+};
 
 const detectFlag = (name: string): string => {
   if (FLAG_RE.test(name)) return "";
@@ -85,7 +93,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [credsPanel, setCredsPanel] = useState<Panel | null>(null);
-  const [credsForm, setCredsForm] = useState({ panel_url: "", username: "", password: "" });
+  const [credsForm, setCredsForm] = useState({ panel_url: "", username: "", password: "", public_host: "" });
   const [credsSaving, setCredsSaving] = useState(false);
   const [credsTesting, setCredsTesting] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -120,7 +128,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const load = async () => {
     const { data, error } = await supabase
       .from("panels")
-      .select("id, name, panel_url, username, password, status, status_message, last_checked_at, country, slug")
+        .select("id, name, host, public_host, panel_url, username, password, status, status_message, last_checked_at, country, slug")
       .order("created_at", { ascending: true });
     if (error) return toast.error("Не удалось загрузить панели");
     setPanels((data ?? []) as Panel[]);
