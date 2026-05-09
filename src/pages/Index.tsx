@@ -59,6 +59,9 @@ function pushLog(level: AppLog["level"], source: string, message: string) {
 // Перехват toast.error/warning + console.error/warn + window.onerror
 if (typeof window !== "undefined" && !(window as any).__appLogPatched) {
   (window as any).__appLogPatched = true;
+  // Verbose console interception only when debug flag активен (localStorage.debug === '1').
+  // По умолчанию — НЕ оборачиваем console.error/warn, чтобы не шуметь в проде и не дублировать в audit_log.
+  const __debugOn = (() => { try { return localStorage.getItem("debug") === "1"; } catch { return false; } })();
   const origErr = toast.error.bind(toast);
   const origWarn = (toast as any).warning?.bind(toast);
   (toast as any).error = (msg: any, opts?: any) => {
@@ -71,10 +74,12 @@ if (typeof window !== "undefined" && !(window as any).__appLogPatched) {
     pushLog("warn", "toast", String(text) + (opts?.description ? `\n${opts.description}` : ""));
     return origWarn(msg, opts);
   };
-  const ce = console.error.bind(console);
-  console.error = (...args: any[]) => { pushLog("error", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); ce(...args); };
-  const cw = console.warn.bind(console);
-  console.warn = (...args: any[]) => { pushLog("warn", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); cw(...args); };
+  if (__debugOn) {
+    const ce = console.error.bind(console);
+    console.error = (...args: any[]) => { pushLog("error", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); ce(...args); };
+    const cw = console.warn.bind(console);
+    console.warn = (...args: any[]) => { pushLog("warn", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); cw(...args); };
+  }
   window.addEventListener("error", (e) => pushLog("error", "window", `${e.message} @ ${e.filename}:${e.lineno}`));
   window.addEventListener("unhandledrejection", (e: any) => pushLog("error", "promise", String(e?.reason?.message ?? e?.reason ?? e)));
 }
