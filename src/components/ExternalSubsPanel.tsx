@@ -57,6 +57,21 @@ function rewriteLinkName(link: string, displayName: string): string {
   return `${base}#${encodeURIComponent(displayName)}`;
 }
 
+// Fake vless link used when the entry is just a visual header / separator,
+// not a real connectable server. The host 127.0.0.1 is intentional so clients
+// can't actually connect — the entry only exists to show its #name.
+function buildHeaderLink(displayName: string): string {
+  return `vless://00000000-0000-0000-0000-000000000000@127.0.0.1:1?type=tcp&security=none#${encodeURIComponent(displayName)}`;
+}
+
+const HEADER_TEMPLATES: { emoji: string; label: string }[] = [
+  { emoji: "🔥", label: "Акция" },
+  { emoji: "⭐", label: "Премиум" },
+  { emoji: "📢", label: "Новости" },
+  { emoji: "▼", label: "Бесплатные ▼" },
+  { emoji: "━", label: "━━━━━━━━━━" },
+];
+
 export function ExternalSubsPanel() {
   const [items, setItems] = useState<ExternalSub[]>([]);
   const [subs, setSubs] = useState<SubscriptionLite[]>([]);
@@ -71,6 +86,7 @@ export function ExternalSubsPanel() {
   const [linkText, setLinkText] = useState("");
   const [targetSubId, setTargetSubId] = useState<string>("none"); // "none" | "all" | <subId>
   const [creating, setCreating] = useState(false);
+  const [isHeader, setIsHeader] = useState(false);
 
   // edit dialog state
   const [editing, setEditing] = useState<ExternalSub | null>(null);
@@ -123,18 +139,20 @@ export function ExternalSubsPanel() {
   async function onCreate() {
     const link = linkText.trim();
     if (!name.trim()) { toast.error("Введите название"); return; }
-    if (!link) { toast.error("Вставьте ключ (vless:// / hysteria2:// / vmess:// / trojan://)"); return; }
-    if (!/^(vless|vmess|trojan|hysteria2|hy2|ss):\/\//i.test(link)) {
-      toast.error("Неподдерживаемый формат ключа");
-      return;
+    if (!isHeader) {
+      if (!link) { toast.error("Вставьте ключ (vless:// / hysteria2:// / vmess:// / trojan://)"); return; }
+      if (!/^(vless|vmess|trojan|hysteria2|hy2|ss):\/\//i.test(link)) {
+        toast.error("Неподдерживаемый формат ключа");
+        return;
+      }
     }
     setCreating(true);
     try {
       const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
-      const displayName = `${c.emoji} ${name.trim()}`;
-      const finalLink = rewriteLinkName(link, displayName);
+      const displayName = isHeader ? name.trim() : `${c.emoji} ${name.trim()}`;
+      const finalLink = isHeader ? buildHeaderLink(displayName) : rewriteLinkName(link, displayName);
       const { data, error } = await supabase.from("external_subs").insert({
-        name: name.trim(), emoji: c.emoji,
+        name: name.trim(), emoji: isHeader ? "📝" : c.emoji,
         source_url: "", raw_links: [finalLink], notes: "",
       }).select("id").single();
       if (error) throw error;
@@ -162,7 +180,7 @@ export function ExternalSubsPanel() {
           toast.success("Сервер добавлен");
         }
       }
-      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none");
+      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none"); setIsHeader(false);
       loadAll();
     } catch (e: any) {
       toast.error("Ошибка добавления", { description: e?.message ?? String(e) });
