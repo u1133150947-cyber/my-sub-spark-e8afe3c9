@@ -300,23 +300,36 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     for (const l of rawLinks) lines.push(hostOverride ? withHost(String(l), hostOverride) : String(l));
   }
 
+  // Merge own inbounds and linked external subs by sort_order,
+  // so admins can interleave 3rd-party servers anywhere in the list.
+  type Item = { sort_order: number; created_at: string; lines: string[] };
+  const items: Item[] = [];
   for (const ib of inbounds as any[]) {
-    lines.push(...buildVless(sub.client_uuid, sub.client_email, ib, overridesMap));
+    items.push({
+      sort_order: Number(ib.sort_order ?? 0),
+      created_at: String(ib.created_at ?? ""),
+      lines: buildVless(sub.client_uuid, sub.client_email, ib, overridesMap),
+    });
   }
-
-  // Append linked external subs (3rd-party VPN servers) AFTER own inbounds,
-  // so the user's main vless servers stay at the top of the list.
   try {
     const linked = db.queryEntries(
-      `SELECT e.raw_links FROM subscription_external_subs ses JOIN external_subs e ON e.id = ses.external_sub_id WHERE ses.subscription_id = ?`,
+      `SELECT e.raw_links, ses.sort_order, ses.created_at FROM subscription_external_subs ses JOIN external_subs e ON e.id = ses.external_sub_id WHERE ses.subscription_id = ?`,
       [sub.id],
     ) as any[];
     for (const r of linked) {
       let arr: any[] = [];
       try { arr = JSON.parse(r.raw_links ?? "[]"); } catch {}
-      if (Array.isArray(arr)) for (const l of arr) if (typeof l === "string" && l) lines.push(l);
+      const ls: string[] = [];
+      if (Array.isArray(arr)) for (const l of arr) if (typeof l === "string" && l) ls.push(l);
+      if (ls.length) items.push({
+        sort_order: Number(r.sort_order ?? 1000),
+        created_at: String(r.created_at ?? ""),
+        lines: ls,
+      });
     }
   } catch {}
+  items.sort((a, b) => (a.sort_order - b.sort_order) || a.created_at.localeCompare(b.created_at));
+  for (const it of items) for (const l of it.lines) lines.push(l);
 
   const body = base64Utf8(lines.join("\n"));
 

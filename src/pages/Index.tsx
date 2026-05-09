@@ -199,6 +199,7 @@ const Index = () => {
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [editOrder, setEditOrder] = useState<string[]>([]);
   const [editSniText, setEditSniText] = useState<string>("");
+  const [editExternals, setEditExternals] = useState<Record<string, { name: string; emoji: string; raw_links: string[] }>>({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("subs");
@@ -552,7 +553,41 @@ const Index = () => {
       .eq("subscription_id", s.id)
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
-    const orderedKeys = (data ?? []).map((l: any) => `${l.panel}:${l.inbound_id}`);
+    const inboundItems = (data ?? []).map((l: any) => ({
+      key: `${l.panel}:${l.inbound_id}`,
+      sort_order: Number(l.sort_order ?? 0),
+    }));
+
+    // Load attached external subs (3rd-party) so they can be ordered together
+    const { data: extLinks } = await supabase
+      .from("subscription_external_subs")
+      .select("external_sub_id, sort_order, created_at")
+      .eq("subscription_id", s.id)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    const extIds = (extLinks ?? []).map((r: any) => r.external_sub_id);
+    const extMap: Record<string, { name: string; emoji: string; raw_links: string[] }> = {};
+    if (extIds.length) {
+      const { data: exts } = await supabase
+        .from("external_subs")
+        .select("id, name, emoji, raw_links")
+        .in("id", extIds);
+      for (const e of exts ?? []) {
+        extMap[(e as any).id] = {
+          name: (e as any).name ?? "",
+          emoji: (e as any).emoji ?? "🌐",
+          raw_links: Array.isArray((e as any).raw_links) ? (e as any).raw_links : [],
+        };
+      }
+    }
+    setEditExternals(extMap);
+    const extItems = (extLinks ?? []).map((r: any) => ({
+      key: `ext:${r.external_sub_id}`,
+      sort_order: Number(r.sort_order ?? 1000),
+    }));
+
+    const allItems = [...inboundItems, ...extItems].sort((a, b) => a.sort_order - b.sort_order);
+    const orderedKeys = allItems.map((it) => it.key);
     const keys = new Set(orderedKeys);
     setEditExisting(keys);
     setEditSelected(new Set(keys));
@@ -565,6 +600,7 @@ const Index = () => {
     setEditExisting(new Set());
     setEditOrder([]);
     setEditSniText("");
+    setEditExternals({});
   };
 
   const toggleEdit = (key: string) => {
@@ -597,14 +633,20 @@ const Index = () => {
       // Compute additions and removals
       const toAdd: { panel: PanelKey; inboundId: number }[] = [];
       const toRemove: { panel: PanelKey; inboundId: number }[] = [];
+      const extToRemove: string[] = [];
       editSelected.forEach((k) => {
         if (!editExisting.has(k)) {
+          if (k.startsWith("ext:")) return; // can't add new ext from this UI
           const [p, id] = k.split(":");
           toAdd.push({ panel: p as PanelKey, inboundId: Number(id) });
         }
       });
       editExisting.forEach((k) => {
         if (!editSelected.has(k)) {
+          if (k.startsWith("ext:")) {
+            extToRemove.push(k.slice(4));
+            return;
+          }
           const [p, id] = k.split(":");
           toRemove.push({ panel: p as PanelKey, inboundId: Number(id) });
         }
@@ -642,6 +684,16 @@ const Index = () => {
         if (data?.error) throw new Error(data.error);
       }
 
+      // Detach external subs
+      for (const extId of extToRemove) {
+        const { error } = await supabase
+          .from("subscription_external_subs")
+          .delete()
+          .eq("subscription_id", s.id)
+          .eq("external_sub_id", extId);
+        if (error) throw error;
+      }
+
       // Add inbounds
       if (toAdd.length) {
         const { data, error } = await supabase.functions.invoke("panel?action=addInbounds", {
@@ -672,14 +724,25 @@ const Index = () => {
     if (!orderedSelected.length) return;
     try {
       for (let i = 0; i < orderedSelected.length; i++) {
-        const [panel, idStr] = orderedSelected[i].split(":");
-        const { error } = await supabase
-          .from("subscription_inbounds")
-          .update({ sort_order: i } as any)
-          .eq("subscription_id", s.id)
-          .eq("panel", panel)
-          .eq("inbound_id", Number(idStr));
-        if (error) throw error;
+        const k = orderedSelected[i];
+        if (k.startsWith("ext:")) {
+          const extId = k.slice(4);
+          const { error } = await supabase
+            .from("subscription_external_subs")
+            .update({ sort_order: i } as any)
+            .eq("subscription_id", s.id)
+            .eq("external_sub_id", extId);
+          if (error) throw error;
+        } else {
+          const [panel, idStr] = k.split(":");
+          const { error } = await supabase
+            .from("subscription_inbounds")
+            .update({ sort_order: i } as any)
+            .eq("subscription_id", s.id)
+            .eq("panel", panel)
+            .eq("inbound_id", Number(idStr));
+          if (error) throw error;
+        }
       }
       toast.success("Порядок сохранён");
     } catch (e: any) {
@@ -1474,21 +1537,31 @@ const Index = () => {
                                 return <div className="text-xs text-muted-foreground">Нет выбранных подключений</div>;
                               }
                               const findIb = (key: string) => {
+                                if (key.startsWith("ext:")) {
+                                  const extId = key.slice(4);
+                                  const e = editExternals[extId];
+                                  return {
+                                    panel: "ext",
+                                    id: 0,
+                                    remark: e ? `${e.emoji} ${e.name} · ${e.raw_links.length} серв.` : "Сторонняя подписка",
+                                    isExt: true,
+                                  };
+                                }
                                 const [panel, idStr] = key.split(":");
                                 const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
-                                if (!Array.isArray(list)) return { panel, id: Number(idStr), remark: `#${idStr}` };
+                                if (!Array.isArray(list)) return { panel, id: Number(idStr), remark: `#${idStr}`, isExt: false };
                                 const ib = list.find((x) => x.id === Number(idStr));
-                                return { panel, id: Number(idStr), remark: ib?.remark ?? `#${idStr}` };
+                                return { panel, id: Number(idStr), remark: ib?.remark ?? `#${idStr}`, isExt: false };
                               };
                               return (
                                 <div className="space-y-1">
                                   {visible.map((key, idx) => {
-                                    const { panel, id, remark } = findIb(key);
+                                    const { panel, id, remark, isExt } = findIb(key);
                                     return (
                                       <div key={key} className="flex items-center gap-2 px-2 py-1.5 rounded bg-secondary/40">
                                         <span className="text-xs text-muted-foreground w-5 text-right tabular-nums">{idx + 1}.</span>
                                         <div className="flex-1 min-w-0 text-sm truncate">
-                                          {inboundLabel(panel, id, remark)}
+                                          {isExt ? remark : inboundLabel(panel, id, remark)}
                                         </div>
                                         <Button variant="ghost" size="icon" className="size-7" disabled={idx === 0}
                                           onClick={() => moveOrder(key, -1)}>
