@@ -111,6 +111,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=$APP_DIR
+EnvironmentFile=-$APP_DIR/.env
 Environment=PORT=$PORT
 Environment=STATIC_DIR=$APP_DIR/dist
 Environment=DB_PATH=$DB_DIR/app.db
