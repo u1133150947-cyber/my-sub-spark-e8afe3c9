@@ -164,10 +164,15 @@ export function ExternalSubsPanel() {
       if (!missing.length) {
         toast.success(`Уже привязано ко всем (${subs.length})`);
       } else {
-        const rows = missing.map((s) => ({ subscription_id: s.id, external_sub_id: extId }));
-        const r = await supabase.from("subscription_external_subs").upsert(rows, { onConflict: "subscription_id,external_sub_id", ignoreDuplicates: true });
-        if (r.error) throw r.error;
-        toast.success(`Добавлено ${missing.length} из ${subs.length}`);
+        let added = 0;
+        for (const s of missing) {
+          const { error } = await supabase
+            .from("subscription_external_subs")
+            .insert({ subscription_id: s.id, external_sub_id: extId });
+          if (!error) added++;
+          else if (!/duplicate|unique/i.test(error.message)) throw error;
+        }
+        toast.success(`Добавлено ${added} из ${subs.length}`);
       }
       loadAll();
     } catch (e: any) {
