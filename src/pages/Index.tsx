@@ -591,11 +591,10 @@ const Index = () => {
     setEditExternals(extMap);
     const extItems = (extLinks ?? []).map((r: any) => {
       const sesSort = Number(r.sort_order ?? 1000);
-      // Per-subscription order is the single source of truth. We do NOT fall
-      // back to global external_subs.sort_order anymore — it caused the order
-      // inside subscriptions to break every time the admin reordered items
-      // in the "Сторонние" tab.
-      const effective = sesSort;
+      // Per-subscription override wins if explicitly set (≠ default 1000).
+      // Otherwise fall back to global external_subs.sort_order so that
+      // "сторонние" added globally appear in the configured global order.
+      const effective = sesSort !== 1000 ? sesSort : (extMeta[r.external_sub_id] ?? 1000);
       return {
         key: `ext:${r.external_sub_id}`,
         sort_order: effective,
