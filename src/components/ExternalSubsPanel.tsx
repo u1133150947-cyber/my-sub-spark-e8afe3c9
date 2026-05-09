@@ -368,8 +368,24 @@ export function ExternalSubsPanel() {
         <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
           <Globe2 className="size-4 text-primary" /> Добавить сторонний сервер
         </h2>
+        <div className="flex flex-wrap items-center gap-3 mb-4 p-3 rounded-md border border-border bg-muted/30">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <Checkbox checked={isHeader} onCheckedChange={(v) => setIsHeader(!!v)} />
+            <span className="text-sm font-medium">Это заголовок / текст (без ключа)</span>
+          </label>
+          {isHeader && (
+            <div className="flex flex-wrap gap-2">
+              {HEADER_TEMPLATES.map((t) => (
+                <Button key={t.label} type="button" size="sm" variant="outline"
+                  onClick={() => setName(`${t.emoji} ${t.label}`)}>
+                  {t.emoji} {t.label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
         <div className="grid md:grid-cols-6 gap-3">
-          <div className="md:col-span-2">
+          <div className="md:col-span-2" hidden={isHeader}>
             <Label>Страна (флаг для пользователей)</Label>
             <Select value={country} onValueChange={setCountry}>
               <SelectTrigger>
@@ -385,9 +401,10 @@ export function ExternalSubsPanel() {
               </SelectContent>
             </Select>
           </div>
-          <div className="md:col-span-2">
-            <Label>Название сервера (видит клиент после флага)</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="США-каскад" />
+          <div className={isHeader ? "md:col-span-4" : "md:col-span-2"}>
+            <Label>{isHeader ? "Текст заголовка (как увидит клиент)" : "Название сервера (видит клиент после флага)"}</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)}
+              placeholder={isHeader ? "🔥 Акция -50%" : "США-каскад"} />
           </div>
           <div className="md:col-span-2">
             <Label>Привязать к подписке</Label>
@@ -402,19 +419,21 @@ export function ExternalSubsPanel() {
               </SelectContent>
             </Select>
           </div>
-          <div className="md:col-span-6">
+          <div className="md:col-span-6" hidden={isHeader}>
             <Label>Ключ (vless:// / hysteria2:// / vmess:// / trojan://)</Label>
             <Textarea value={linkText} onChange={(e) => setLinkText(e.target.value)} rows={3}
               placeholder="vless://uuid@host:443?...#name" />
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          Имя ссылки (после <code>#</code>) автоматически переписывается в «{`{флаг} {название}`}», например 🇺🇸 США-каскад.
+          {isHeader
+            ? "Заголовок появится в списке клиента как «сервер» с этим именем, но без рабочего подключения. Используйте для разделителей и баннеров. Позицию меняйте стрелками ↑↓ ниже."
+            : <>Имя ссылки (после <code>#</code>) автоматически переписывается в «{`{флаг} {название}`}», например 🇺🇸 США-каскад.</>}
         </p>
         <div className="mt-4">
           <Button onClick={onCreate} disabled={creating}>
             {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-            Добавить сервер
+            {isHeader ? "Добавить заголовок" : "Добавить сервер"}
           </Button>
         </div>
       </Card>
