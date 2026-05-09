@@ -26,7 +26,104 @@ function cleanUuid(...values: unknown[]): string {
   return "";
 }
 
-// Build a vless:// URL from inbound snapshot + client uuid
+function findDeep(data: any, key: string): any {
+  if (!data || typeof data !== "object") return undefined;
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      const found = findDeep(item, key);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  if (Object.prototype.hasOwnProperty.call(data, key)) return data[key];
+  for (const value of Object.values(data)) {
+    const found = findDeep(value, key);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function firstString(value: any): string {
+  if (Array.isArray(value)) return firstString(value.find((x) => String(x ?? "").trim()));
+  return String(value ?? "").trim();
+}
+
+function setParam(params: URLSearchParams, key: string, value: any) {
+  const v = firstString(value);
+  if (v) params.set(key, v);
+}
+
+function applyPathAndHost(params: URLSearchParams, settings: any) {
+  if (!settings) return;
+  setParam(params, "path", settings.path);
+  setParam(params, "host", settings.host ?? settings.headers?.Host ?? settings.headers?.host);
+}
+
+function buildXhttpExtra(xhttp: any) {
+  if (!xhttp || typeof xhttp !== "object") return null;
+  const extra: Record<string, any> = {};
+  for (const field of ["xPaddingBytes", "xPaddingKey", "xPaddingHeader", "xPaddingPlacement", "xPaddingMethod", "sessionPlacement", "sessionKey", "seqPlacement", "seqKey", "uplinkDataPlacement", "uplinkDataKey", "scMaxEachPostBytes"]) {
+    if (typeof xhttp[field] === "string" && xhttp[field]) extra[field] = xhttp[field];
+  }
+  if (xhttp.xPaddingObfsMode === true) extra.xPaddingObfsMode = true;
+  const headers = xhttp.headers;
+  if (headers && typeof headers === "object") {
+    const clean: Record<string, any> = {};
+    for (const [k, v] of Object.entries(headers)) if (k.toLowerCase() !== "host") clean[k] = v;
+    if (Object.keys(clean).length) extra.headers = clean;
+  }
+  return Object.keys(extra).length ? extra : null;
+}
+
+function applyNetworkParams(params: URLSearchParams, ss: any, network: string) {
+  if (network === "tcp") {
+    const header = ss.tcpSettings?.header;
+    if (header?.type === "http") {
+      params.set("headerType", "http");
+      setParam(params, "path", header.request?.path?.[0]);
+      setParam(params, "host", header.request?.headers?.Host?.[0]);
+    }
+  } else if (network === "ws") {
+    applyPathAndHost(params, ss.wsSettings);
+  } else if (network === "grpc") {
+    setParam(params, "serviceName", ss.grpcSettings?.serviceName);
+    setParam(params, "authority", ss.grpcSettings?.authority);
+    if (ss.grpcSettings?.multiMode === true) params.set("mode", "multi");
+  } else if (network === "httpupgrade") {
+    applyPathAndHost(params, ss.httpupgradeSettings);
+  } else if (network === "xhttp" || network === "splithttp") {
+    const xhttp = ss.xhttpSettings ?? ss.splithttpSettings;
+    applyPathAndHost(params, xhttp);
+    setParam(params, "mode", xhttp?.mode);
+    setParam(params, "x_padding_bytes", xhttp?.xPaddingBytes);
+    const extra = buildXhttpExtra(xhttp);
+    if (extra) params.set("extra", JSON.stringify(extra));
+  } else if (network === "kcp") {
+    setParam(params, "headerType", ss.kcpSettings?.header?.type);
+    setParam(params, "seed", ss.kcpSettings?.seed);
+  }
+}
+
+function applyTlsParams(params: URLSearchParams, ss: any) {
+  const t = ss.tlsSettings ?? {};
+  params.set("security", "tls");
+  setParam(params, "sni", findDeep(t, "serverName"));
+  if (Array.isArray(t.alpn) && t.alpn.length) params.set("alpn", t.alpn.join(","));
+  setParam(params, "fp", findDeep(t.settings ?? t, "fingerprint"));
+}
+
+function applyRealityParams(params: URLSearchParams, ss: any) {
+  const r = ss.realitySettings ?? {};
+  const settings = r.settings ?? {};
+  params.set("security", "reality");
+  setParam(params, "sni", findDeep(r, "serverNames") ?? findDeep(r, "serverName"));
+  setParam(params, "sid", findDeep(r, "shortIds") ?? findDeep(r, "shortId"));
+  setParam(params, "pbk", findDeep(settings, "publicKey") ?? findDeep(r, "publicKey"));
+  setParam(params, "fp", findDeep(settings, "fingerprint") ?? findDeep(r, "fingerprint"));
+  setParam(params, "pqv", findDeep(settings, "mldsa65Verify") ?? findDeep(r, "mldsa65Verify"));
+  params.set("spx", firstString(findDeep(settings, "spiderX") ?? findDeep(r, "spiderX")) || "/");
+}
+
 function buildVless(
   uuid: string,
   email: string,
@@ -41,69 +138,22 @@ function buildVless(
   },
   overrides?: Map<string, string>,
   panelInfo?: { name?: string; country?: string },
-) {
-  if (inbound.protocol !== "vless") {
-    // Only vless supported for now
-    return null;
-  }
+): string[] {
+  if (inbound.protocol !== "vless") return [];
   const ss = inbound.stream_settings ?? {};
-  const network: string = ss.network ?? "tcp";
-  const security: string = ss.security ?? "none";
-  // Imported configs may carry their own client UUID (from another panel) — use it instead of the subscription's UUID.
   const effectiveUuid = cleanUuid(ss._clientUuid, ss.clientUuid, ss.uuid, ss.id, uuid);
-  if (!effectiveUuid) return null;
-
+  if (!effectiveUuid) return [];
+  const network = firstString(ss.network) || "tcp";
+  const security = firstString(ss.security) || "none";
   const params = new URLSearchParams();
   params.set("type", network);
-  params.set("security", security);
-  params.set("encryption", "none");
-
-  // Reality
-  if (security === "reality" && ss.realitySettings) {
-    const r = ss.realitySettings;
-    const settings = r.settings ?? {};
-    const sni = (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
-    if (sni) params.set("sni", sni);
-    const sid = (Array.isArray(r.shortIds) && r.shortIds[0]) || r.shortId;
-    if (sid) params.set("sid", sid);
-    const publicKey = settings.publicKey || r.publicKey;
-    if (publicKey) params.set("pbk", publicKey);
-    const fingerprint = settings.fingerprint || r.fingerprint;
-    if (fingerprint) params.set("fp", fingerprint);
-    // flow=xtls-rprx-vision валиден только для TCP
-    if (network === "tcp") params.set("flow", "xtls-rprx-vision");
-  }
-  // TLS
-  if (security === "tls" && ss.tlsSettings) {
-    const t = ss.tlsSettings;
-    const sni = t.serverName;
-    if (sni) params.set("sni", sni);
-    if (Array.isArray(t.alpn)) params.set("alpn", t.alpn.join(","));
-    const fp = t.settings?.fingerprint;
-    if (fp) params.set("fp", fp);
-  }
-  // Network specific
-  if (network === "ws" && ss.wsSettings) {
-    if (ss.wsSettings.path) params.set("path", ss.wsSettings.path);
-    const host = ss.wsSettings.headers?.Host;
-    if (host) params.set("host", host);
-  }
-  if (network === "grpc" && ss.grpcSettings?.serviceName) {
-    params.set("serviceName", ss.grpcSettings.serviceName);
-  }
-  if ((network === "xhttp" || network === "splithttp") && ss.xhttpSettings) {
-    if (ss.xhttpSettings.path) params.set("path", ss.xhttpSettings.path);
-    if (ss.xhttpSettings.mode) params.set("mode", ss.xhttpSettings.mode);
-    const host = ss.xhttpSettings.headers?.Host;
-    if (host) params.set("host", Array.isArray(host) ? host[0] : host);
-  }
-  if (network === "tcp" && ss.tcpSettings?.header?.type) {
-    params.set("headerType", ss.tcpSettings.header.type);
-    const httpHost = ss.tcpSettings.header?.request?.headers?.Host?.[0];
-    if (httpHost) params.set("host", httpHost);
-    const httpPath = ss.tcpSettings.header?.request?.path?.[0];
-    if (httpPath) params.set("path", httpPath);
-  }
+  params.set("encryption", firstString(ss._inboundSettings?.encryption) || "none");
+  applyNetworkParams(params, ss, network);
+  if (security === "tls") applyTlsParams(params, ss);
+  else if (security === "reality") applyRealityParams(params, ss);
+  else params.set("security", "none");
+  const flow = firstString(ss._clientFlow) || (security === "reality" && network === "tcp" ? "xtls-rprx-vision" : "");
+  if (network === "tcp" && flow) params.set("flow", flow);
 
   const overrideKey = `${inbound.panel ?? ""}:${inbound.inbound_id ?? ""}`;
   const label = String(overrides?.get(overrideKey) ?? "").trim();
@@ -113,11 +163,22 @@ function buildVless(
   } else {
     const country = String(panelInfo?.country ?? "").trim().toUpperCase();
     const ci = country ? COUNTRY_INFO[country] : undefined;
-    display = ci
-      ? `${ci.flag} ${ci.name}`
-      : String(panelInfo?.name ?? "").trim() || String((inbound as any).panel_name ?? "").trim() || inbound.remark;
+    display = ci ? `${ci.flag} ${ci.name}` : String(panelInfo?.name ?? "").trim() || String((inbound as any).panel_name ?? "").trim() || inbound.remark;
   }
-  return `vless://${effectiveUuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`;
+
+  const external = Array.isArray(ss.externalProxy) ? ss.externalProxy : [];
+  if (external.length) {
+    return external.map((ep: any) => {
+      const next = new URLSearchParams(params);
+      const force = firstString(ep.forceTls);
+      if (force && force !== "same") next.set("security", force);
+      if (force === "none") for (const k of ["alpn", "sni", "fp"]) next.delete(k);
+      const remark = firstString(ep.remark) || display;
+      return `vless://${effectiveUuid}@${firstString(ep.dest) || inbound.host}:${Number(ep.port ?? inbound.port)}?${next.toString()}#${encodeURIComponent(remark)}`;
+    });
+  }
+
+  return [`vless://${effectiveUuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`];
 }
 
 function withHost(link: string, host: string) {
@@ -247,11 +308,10 @@ Deno.serve(async (req) => {
       }
     }
     for (const ib of inbounds ?? []) {
-      const link = buildVless(sub.client_uuid, sub.client_email, ib as any, overridesMap, {
+      lines.push(...buildVless(sub.client_uuid, sub.client_email, ib as any, overridesMap, {
         name: (ib as any).panel_name,
         country: (ib as any).panel_country,
-      });
-      if (link) lines.push(link);
+      }));
     }
 
     // Append external subs attached to this subscription

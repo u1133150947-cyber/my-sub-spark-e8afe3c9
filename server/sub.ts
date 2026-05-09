@@ -83,6 +83,7 @@ function streamSnapshot(ib: any, clientEmail?: string, fallbackUuid?: string) {
   const stream = parseJsonObject(ib.streamSettings ?? ib.stream_settings);
   const settings = parseJsonObject(ib.settings);
   const clients = Array.isArray(settings.clients) ? settings.clients : [];
+  stream._inboundSettings = settings;
   const client = clients.find((c: any) => c?.email === clientEmail) || clients.find((c: any) => c?.id === fallbackUuid);
   if (client) {
     stream._clientUuid = client.id;
