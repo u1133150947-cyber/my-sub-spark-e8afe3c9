@@ -748,30 +748,8 @@ const Index = () => {
   };
 
   const saveOrder = async (s: Subscription) => {
-    const orderedSelected = editOrder.filter((k) => editSelected.has(k));
-    if (!orderedSelected.length) return;
     try {
-      for (let i = 0; i < orderedSelected.length; i++) {
-        const k = orderedSelected[i];
-        if (k.startsWith("ext:")) {
-          const extId = k.slice(4);
-          const { error } = await supabase
-            .from("subscription_external_subs")
-            .update({ sort_order: i } as any)
-            .eq("subscription_id", s.id)
-            .eq("external_sub_id", extId);
-          if (error) throw error;
-        } else {
-          const [panel, idStr] = k.split(":");
-          const { error } = await supabase
-            .from("subscription_inbounds")
-            .update({ sort_order: i } as any)
-            .eq("subscription_id", s.id)
-            .eq("panel", panel)
-            .eq("inbound_id", Number(idStr));
-          if (error) throw error;
-        }
-      }
+      await persistEditOrder(s.id);
       toast.success("Порядок сохранён");
     } catch (e: any) {
       toast.error("Ошибка: " + (e?.message ?? e));
