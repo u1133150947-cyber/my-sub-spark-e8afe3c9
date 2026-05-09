@@ -307,31 +307,49 @@ Deno.serve(async (req) => {
         lines.push(hostOverride ? withHost(String(link), hostOverride) : String(link));
       }
     }
+    // Merge own inbounds and attached external subs by sort_order so they can be
+    // freely interleaved in the order list.
+    type Item = { sort_order: number; created_at: string; lines: string[] };
+    const items: Item[] = [];
     for (const ib of inbounds ?? []) {
-      lines.push(...buildVless(sub.client_uuid, sub.client_email, ib as any, overridesMap, {
-        name: (ib as any).panel_name,
-        country: (ib as any).panel_country,
-      }));
+      items.push({
+        sort_order: Number((ib as any).sort_order ?? 0),
+        created_at: String((ib as any).created_at ?? ""),
+        lines: buildVless(sub.client_uuid, sub.client_email, ib as any, overridesMap, {
+          name: (ib as any).panel_name,
+          country: (ib as any).panel_country,
+        }),
+      });
     }
-
-    // Append external subs attached to this subscription
     try {
       const { data: linksRows } = await supabase
         .from("subscription_external_subs")
-        .select("external_sub_id")
+        .select("external_sub_id, sort_order, created_at")
         .eq("subscription_id", sub.id);
-      const extIds = Array.from(new Set((linksRows ?? []).map((r: any) => r.external_sub_id).filter(Boolean)));
+      const rows = linksRows ?? [];
+      const extIds = Array.from(new Set(rows.map((r: any) => r.external_sub_id).filter(Boolean)));
       if (extIds.length) {
         const { data: exts } = await supabase
           .from("external_subs")
-          .select("raw_links")
+          .select("id, raw_links")
           .in("id", extIds);
+        const byId = new Map<string, string[]>();
         for (const e of exts ?? []) {
           const arr = Array.isArray((e as any).raw_links) ? (e as any).raw_links : [];
-          for (const l of arr) if (typeof l === "string" && l.trim()) lines.push(l.trim());
+          byId.set((e as any).id, arr.filter((l: any) => typeof l === "string" && l.trim()).map((l: string) => l.trim()));
+        }
+        for (const r of rows) {
+          const ls = byId.get((r as any).external_sub_id) ?? [];
+          if (ls.length) items.push({
+            sort_order: Number((r as any).sort_order ?? 1000),
+            created_at: String((r as any).created_at ?? ""),
+            lines: ls,
+          });
         }
       }
     } catch (_) { /* ignore */ }
+    items.sort((a, b) => (a.sort_order - b.sort_order) || a.created_at.localeCompare(b.created_at));
+    for (const it of items) for (const l of it.lines) lines.push(l);
 
     const body = base64Utf8(lines.join("\n"));
 
