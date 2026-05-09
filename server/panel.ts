@@ -302,7 +302,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
       if (desiredSlug) {
         const clash = row<any>(`SELECT id FROM subscriptions WHERE slug = ?`, [slug]);
-        if (clash) slug = randomSlug(12);
+        if (clash) return json({ error: `URL "${slug}" уже занят` }, 409);
       }
       const clientUuid = uuidv4(), subIdShort = randomSlug(16);
       const baseEmail = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
@@ -344,7 +344,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
       if (desiredSlug) {
         const clash = row<any>(`SELECT id FROM subscriptions WHERE slug = ?`, [slug]);
-        if (clash) slug = randomSlug(12);
+        if (clash) return json({ error: `URL "${slug}" уже занят` }, 409);
       }
       const clientUuid = uuidv4(), subId = uid();
       const email = `${name.replace(/[^a-zA-Z0-9_-]/g, "_")}_${slug.slice(0, 6)}`;
