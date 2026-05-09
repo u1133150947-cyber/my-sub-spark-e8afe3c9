@@ -1272,6 +1272,11 @@ const Index = () => {
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Иван" maxLength={64} />
             </div>
             <div>
+              <Label className="text-xs text-muted-foreground">Принудительный URL</Label>
+              <Input value={createSlug} onChange={(e) => setCreateSlug(e.target.value)} placeholder="например ivan2026" maxLength={32} />
+              <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${createSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "авто"}`}</p>
+            </div>
+            <div>
               <Label className="text-xs text-muted-foreground">Срок (дней, 0 = безлимит)</Label>
               <Input type="number" min={0} value={days} onChange={(e) => setDays(parseInt(e.target.value || "0", 10))} />
             </div>
