@@ -29,10 +29,14 @@ export function UpdatePanel() {
     setChecking(true);
     try {
       const r = await fetch("/api/version");
-      const d = await r.json();
-      setInfo(d);
+      const ct = r.headers.get("content-type") ?? "";
+      if (!r.ok || !ct.includes("application/json")) {
+        setInfo(null);
+        return; // dev/preview: эндпоинта нет, тихо игнорируем
+      }
+      setInfo(await r.json());
     } catch (e: any) {
-      toast.error("Не удалось проверить GitHub: " + (e?.message ?? e));
+      setInfo(null);
     } finally {
       setChecking(false);
     }
