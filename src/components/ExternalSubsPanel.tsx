@@ -289,9 +289,9 @@ export function ExternalSubsPanel() {
     if (j < 0 || j >= items.length) return;
     const a = items[idx], b = items[j];
     // Reorder locally for snappy UI, then renumber as 10, 20, 30…
-    // These arrows only set the default order inside the "Сторонние" tab.
-    // Final placement between ordinary inbounds is saved per subscription
-    // in the client preview list on the main tab.
+    // These arrows only re-order the listing inside the "Сторонние" tab.
+    // Per-subscription ordering (set in the subscription editor) is NOT
+    // touched here — it is the source of truth for what the client sees.
     const next = items.slice();
     next[idx] = b; next[j] = a;
     const renum = next.map((it, i) => ({ ...it, sort_order: (i + 1) * 10 }));
@@ -300,15 +300,6 @@ export function ExternalSubsPanel() {
       await Promise.all(renum.map((it) =>
         supabase.from("external_subs").update({ sort_order: it.sort_order }).eq("id", it.id)
       ));
-      // Сбрасываем персональные per-subscription sort_order для перемещённых
-      // внешних серверов, чтобы глобальный порядок снова стал актуальным
-      // у всех клиентов. Иначе сохранённые ранее в модалке редактирования
-      // персональные индексы (0,1,2…) перебивают глобальный порядок.
-      const movedIds = [a.id, b.id];
-      await supabase
-        .from("subscription_external_subs")
-        .update({ sort_order: 1000 } as any)
-        .in("external_sub_id", movedIds);
     } catch (e: any) {
       toast.error("Не удалось сохранить порядок", { description: e?.message ?? String(e) });
       loadAll();
