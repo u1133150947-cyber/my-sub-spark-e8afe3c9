@@ -89,15 +89,7 @@ systemctl --no-pager --lines=0 status sub-manager || true
 
 if [[ -f /etc/caddy/Caddyfile ]]; then
   log "Проверяю доступ к Telegram-auth endpoint в Caddy"
-  python3 - <<'PY'
-from pathlib import Path
-p = Path('/etc/caddy/Caddyfile')
-s = p.read_text()
-old1 = '@protected not path /sub/* /functions/v1/sub*'
-new1 = '@protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*'
-if old1 in s and new1 not in s:
-    p.write_text(s.replace(old1, new1))
-PY
+  sed -i 's#@protected not path /sub/\* /functions/v1/sub\*#@protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*#g' /etc/caddy/Caddyfile
   caddy reload --config /etc/caddy/Caddyfile || systemctl restart caddy || true
 fi
 
