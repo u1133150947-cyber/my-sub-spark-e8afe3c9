@@ -592,6 +592,9 @@ export function ExternalSubsPanel() {
               <Select value={editCountry} onValueChange={setEditCountry}>
                 <SelectTrigger><SelectValue placeholder="Выберите страну" /></SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="NONE" textValue="Без флага">
+                    <span className="mr-2">🚫</span>Без флага
+                  </SelectItem>
                   {COUNTRIES.map((c) => (
                     <SelectItem key={c.code} value={c.code} textValue={`${c.emoji} ${c.label}`}>
                       <span className="mr-2">{c.emoji}</span>{c.label}
