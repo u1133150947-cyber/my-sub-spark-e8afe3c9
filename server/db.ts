@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS subscription_external_subs (
   id TEXT PRIMARY KEY,
   subscription_id TEXT NOT NULL,
   external_sub_id TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 1000,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(subscription_id, external_sub_id)
 );
