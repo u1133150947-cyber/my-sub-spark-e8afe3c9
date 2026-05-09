@@ -313,7 +313,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   }
   try {
     const linked = db.queryEntries(
-      `SELECT e.raw_links, ses.sort_order, ses.created_at FROM subscription_external_subs ses JOIN external_subs e ON e.id = ses.external_sub_id WHERE ses.subscription_id = ?`,
+      `SELECT e.raw_links, COALESCE(e.sort_order, 1000) AS sort_order, e.created_at FROM subscription_external_subs ses JOIN external_subs e ON e.id = ses.external_sub_id WHERE ses.subscription_id = ?`,
       [sub.id],
     ) as any[];
     for (const r of linked) {
