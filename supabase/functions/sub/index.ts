@@ -11,7 +11,12 @@ const PINNED_SORT = -1000;
 function effectiveExternalSort(perSubSort: number, globalSort: number) {
   const ses = Number.isFinite(perSubSort) ? perSubSort : DEFAULT_EXTERNAL_SORT;
   const glob = Number.isFinite(globalSort) ? globalSort : DEFAULT_EXTERNAL_SORT;
-  if (ses < 0 || glob < 0) return Math.min(ses < 0 ? ses : PINNED_SORT, glob < 0 ? glob : PINNED_SORT);
+  if (glob < 0) {
+    if (ses === DEFAULT_EXTERNAL_SORT) return glob;
+    if (ses < 0) return ses;
+    return PINNED_SORT + Math.max(1, ses);
+  }
+  if (ses < 0) return ses;
   return ses !== DEFAULT_EXTERNAL_SORT ? ses : glob;
 }
 
