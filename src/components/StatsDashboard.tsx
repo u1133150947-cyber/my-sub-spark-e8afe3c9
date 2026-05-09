@@ -106,9 +106,17 @@ export const StatsDashboard = () => {
         }
       }
     }
-    // Fill the last 24 hourly slots so the chart has a steady X-axis.
+    // Fill hourly slots up to the last actual snapshot we have. Without this,
+    // если снапшоты не собирались последние часы (никто не открывал
+    // статистику), хвост графика тянется в ноль и выглядит как «сломанный».
     const now = Date.now();
-    const endHour = Math.floor(now / HOUR) * HOUR;
+    let lastSnapTs = 0;
+    for (const s of snapshots) {
+      const t = new Date(s.created_at).getTime();
+      if (t > lastSnapTs) lastSnapTs = t;
+    }
+    const endRef = lastSnapTs > 0 ? Math.min(lastSnapTs, now) : now;
+    const endHour = Math.floor(endRef / HOUR) * HOUR;
     const startHour = endHour - 23 * HOUR;
     const out: { time: string; bytes: number }[] = [];
     for (let h = startHour; h <= endHour; h += HOUR) {
