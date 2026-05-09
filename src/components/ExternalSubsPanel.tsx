@@ -294,6 +294,15 @@ export function ExternalSubsPanel() {
       await Promise.all(renum.map((it) =>
         supabase.from("external_subs").update({ sort_order: it.sort_order }).eq("id", it.id)
       ));
+      // Сбрасываем персональные per-subscription sort_order для перемещённых
+      // внешних серверов, чтобы глобальный порядок снова стал актуальным
+      // у всех клиентов. Иначе сохранённые ранее в модалке редактирования
+      // персональные индексы (0,1,2…) перебивают глобальный порядок.
+      const movedIds = [a.id, b.id];
+      await supabase
+        .from("subscription_external_subs")
+        .update({ sort_order: 1000 } as any)
+        .in("external_sub_id", movedIds);
     } catch (e: any) {
       toast.error("Не удалось сохранить порядок", { description: e?.message ?? String(e) });
       loadAll();
