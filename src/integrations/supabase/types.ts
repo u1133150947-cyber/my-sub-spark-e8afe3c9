@@ -297,18 +297,21 @@ export type Database = {
           created_at: string
           external_sub_id: string
           id: string
+          sort_order: number
           subscription_id: string
         }
         Insert: {
           created_at?: string
           external_sub_id: string
           id?: string
+          sort_order?: number
           subscription_id: string
         }
         Update: {
           created_at?: string
           external_sub_id?: string
           id?: string
+          sort_order?: number
           subscription_id?: string
         }
         Relationships: []

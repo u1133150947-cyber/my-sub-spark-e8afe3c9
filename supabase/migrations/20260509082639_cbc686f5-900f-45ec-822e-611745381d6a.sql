@@ -1,0 +1,1 @@
+ALTER TABLE public.subscription_external_subs ADD COLUMN IF NOT EXISTS sort_order integer NOT NULL DEFAULT 1000;
