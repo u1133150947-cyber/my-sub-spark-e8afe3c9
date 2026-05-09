@@ -283,9 +283,9 @@ export function ExternalSubsPanel() {
     if (j < 0 || j >= items.length) return;
     const a = items[idx], b = items[j];
     // Reorder locally for snappy UI, then renumber as 10, 20, 30…
-    // Externals form their own block in the client list (panel inbounds first,
-    // then externals in admin order). Up/down arrows reorder ONLY within the
-    // external block — they don't push externals above panel inbounds.
+    // These arrows only set the default order inside the "Сторонние" tab.
+    // Final placement between ordinary inbounds is saved per subscription
+    // in the client preview list on the main tab.
     const next = items.slice();
     next[idx] = b; next[j] = a;
     const renum = next.map((it, i) => ({ ...it, sort_order: (i + 1) * 10 }));
