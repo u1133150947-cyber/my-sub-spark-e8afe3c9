@@ -22,10 +22,19 @@ type ExternalSub = {
   sort_order?: number;
 };
 type SubscriptionLite = { id: string; name: string };
-type Link = { subscription_id: string; external_sub_id: string };
+type Link = { subscription_id: string; external_sub_id: string; sort_order?: number };
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 const PANEL_FN = `${SUPABASE_URL}/functions/v1/panel`;
+const DEFAULT_EXTERNAL_SORT = 1000;
+const PINNED_SORT = -1000;
+const isPinnedSort = (v: number) => Number.isFinite(v) && v < 0;
+const linkSortFor = (item: ExternalSub, existing?: Link) => {
+  const globalSort = Number(item.sort_order ?? DEFAULT_EXTERNAL_SORT);
+  if (isPinnedSort(globalSort)) return Math.min(globalSort, PINNED_SORT);
+  const current = Number(existing?.sort_order ?? DEFAULT_EXTERNAL_SORT);
+  return isPinnedSort(current) ? current : DEFAULT_EXTERNAL_SORT;
+};
 
 const COUNTRIES: { code: string; emoji: string; label: string }[] = [
   { code: "RU", emoji: "🇷🇺", label: "Россия" },
