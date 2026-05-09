@@ -4,7 +4,7 @@
 import { handleRest } from "./postgrest.ts";
 import { handlePanel } from "./panel.ts";
 import { handleSub } from "./sub.ts";
-import { handleUpdate } from "./update.ts";
+import { handleUpdate, handleVersion, handleUpdateFromGithub } from "./update.ts";
 import { handleAdminAuth } from "./adminAuth.ts";
 import { contentType } from "https://deno.land/std@0.224.0/media_types/mod.ts";
 import { extname, join, normalize } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -64,6 +64,12 @@ Deno.serve({ port: PORT }, async (req) => {
   }
   if (url.pathname === "/api/update" || url.pathname === "/api/update/") {
     return withCors(await handleUpdate(req, url));
+  }
+  if (url.pathname === "/api/version" || url.pathname === "/api/version/") {
+    return withCors(await handleVersion(req));
+  }
+  if (url.pathname === "/api/update-from-github" || url.pathname === "/api/update-from-github/") {
+    return withCors(await handleUpdateFromGithub(req, url));
   }
   // Stub auth endpoints so supabase-js doesn't error if it tries to refresh tokens.
   if (url.pathname.startsWith("/auth/v1/")) {
