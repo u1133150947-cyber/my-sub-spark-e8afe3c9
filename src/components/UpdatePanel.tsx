@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Loader2, Upload, Download, Github, RefreshCw, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { APP_VERSION, APP_VERSION_DATE } from "@/version";
+import { getAdminToken } from "@/lib/adminAuth";
 
 type VersionInfo = {
   repo: string;
@@ -50,10 +51,15 @@ export function UpdatePanel() {
 
   const updateFromGithub = async () => {
     if (!confirm("Установить последнюю версию из GitHub? Сервис перезапустится.")) return;
+    const adminToken = getAdminToken();
+    if (!adminToken) { toast.error("Нужно войти в админку"); return; }
     setGhBusy(true);
     setLog("⏳ Скачиваю последнюю версию из GitHub…\n");
     try {
-      const r = await fetch("/api/update-from-github", { method: "POST" });
+      const r = await fetch("/api/update-from-github", {
+        method: "POST",
+        headers: { "x-admin-token": adminToken },
+      });
       const d = await r.json().catch(() => ({} as any));
       setLog(d?.log ?? JSON.stringify(d));
       if (!r.ok || !d?.ok) {
@@ -75,12 +81,18 @@ export function UpdatePanel() {
     if (!lower.endsWith(".zip") && !lower.endsWith(".tar.gz") && !lower.endsWith(".tgz")) {
       return toast.error("Только .zip или .tar.gz");
     }
+    const adminToken = getAdminToken();
+    if (!adminToken) { toast.error("Нужно войти в админку"); return; }
     setBusy(true);
     setLog("⏳ Загружаю архив на сервер…\n");
     try {
       const fd = new FormData();
       fd.append("archive", file);
-      const res = await fetch("/api/update", { method: "POST", body: fd });
+      const res = await fetch("/api/update", {
+        method: "POST",
+        body: fd,
+        headers: { "x-admin-token": adminToken },
+      });
       const data = await res.json().catch(() => ({} as any));
       setLog(data?.log ?? JSON.stringify(data));
       if (!res.ok || !data?.ok) {
