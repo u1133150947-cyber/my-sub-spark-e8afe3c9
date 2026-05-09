@@ -66,25 +66,35 @@ export const StatsDashboard = () => {
   // Build hourly chart for last 24h: aggregated bytes used per hour (delta of cumulative totals)
   const chartData = useMemo(() => {
     if (snapshots.length === 0) return [];
-    // Group cumulative totals per timestamp (sum across subscriptions)
-    const buckets = new Map<number, number>();
+    // Per subscription: compute deltas between consecutive cumulative snapshots,
+    // then aggregate positive deltas into hourly buckets (assigned to the later snapshot's hour).
+    const HOUR = 60 * 60 * 1000;
+    const bySub = new Map<string, Snapshot[]>();
     for (const s of snapshots) {
-      const t = new Date(s.created_at).getTime();
-      const hour = Math.floor(t / (60 * 60 * 1000)) * (60 * 60 * 1000);
-      buckets.set(hour, (buckets.get(hour) ?? 0) + Number(s.used_bytes));
+      const arr = bySub.get(s.subscription_id) ?? [];
+      arr.push(s);
+      bySub.set(s.subscription_id, arr);
     }
-    const sorted = Array.from(buckets.entries()).sort(([a], [b]) => a - b);
-    // For each bucket take the LATEST cumulative sum, then compute deltas
-    // Simpler: per bucket sum is already cumulative-sum at that snapshot time
+    const buckets = new Map<number, number>();
+    for (const arr of bySub.values()) {
+      arr.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+      for (let i = 1; i < arr.length; i++) {
+        const delta = Number(arr[i].used_bytes) - Number(arr[i - 1].used_bytes);
+        if (delta <= 0) continue; // counter reset / no growth
+        const hour = Math.floor(new Date(arr[i].created_at).getTime() / HOUR) * HOUR;
+        buckets.set(hour, (buckets.get(hour) ?? 0) + delta);
+      }
+    }
+    // Fill the last 24 hourly slots so the chart has a steady X-axis.
+    const now = Date.now();
+    const endHour = Math.floor(now / HOUR) * HOUR;
+    const startHour = endHour - 23 * HOUR;
     const out: { time: string; bytes: number }[] = [];
-    let prev: number | null = null;
-    for (const [hour, sum] of sorted) {
-      const delta = prev === null ? 0 : Math.max(0, sum - prev);
+    for (let h = startHour; h <= endHour; h += HOUR) {
       out.push({
-        time: new Date(hour).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
-        bytes: delta,
+        time: new Date(h).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }),
+        bytes: buckets.get(h) ?? 0,
       });
-      prev = sum;
     }
     return out;
   }, [snapshots]);
@@ -124,7 +134,7 @@ export const StatsDashboard = () => {
           <TrendingUp className="size-4 text-primary" />
           Динамика за 24 часа
         </div>
-        {chartData.length < 2 ? (
+        {snapshots.length < 2 ? (
           <div className="h-[180px] flex items-center justify-center text-sm text-muted-foreground">
             Накапливаем данные… снапшоты собираются при каждом обновлении.
           </div>
