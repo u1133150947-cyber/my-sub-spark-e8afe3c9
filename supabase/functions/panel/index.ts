@@ -658,7 +658,7 @@ Deno.serve(async (req) => {
       const errors: any[] = [];
       for (const sel of validSelections) {
         try {
-          const cfg = panelCfg(await getPanelBySlug(sel.panel));
+          const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
           const ib = inbounds.find((x) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
@@ -672,7 +672,7 @@ Deno.serve(async (req) => {
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
             remark: ib.remark ?? `${sel.panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
-            host: hostFromUrl(cfg.url), stream_settings: stream, client_email: email,
+            host: panelConnectionHost(panelRow), stream_settings: stream, client_email: email,
           });
           if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
@@ -778,7 +778,7 @@ Deno.serve(async (req) => {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existingSet.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
         try {
-          const cfg = panelCfg(await getPanelBySlug(sel.panel));
+          const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
           const ib = inbounds.find((x) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
@@ -791,7 +791,7 @@ Deno.serve(async (req) => {
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
             remark: ib.remark ?? `${sel.panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
-            host: hostFromUrl(cfg.url), stream_settings: stream, client_email: email,
+            host: panelConnectionHost(panelRow), stream_settings: stream, client_email: email,
           });
           if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
