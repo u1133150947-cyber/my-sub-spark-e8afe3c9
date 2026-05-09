@@ -40,6 +40,7 @@ async function sendTelegram(code: string) {
   });
   const body = await r.text();
   if (!r.ok) throw new Error(`Telegram ${r.status}: ${body.slice(0, 300)}`);
+  console.log(`admin-auth: login code sent to Telegram chat ${String(chatId).replace(/.(?=.{4})/g, "*")}`);
 }
 
 async function getAdminChatId(botToken: string): Promise<string> {
