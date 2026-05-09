@@ -682,28 +682,33 @@ const Index = () => {
     console.log("orderedSelected:", orderedSelected);
     for (let i = 0; i < orderedSelected.length; i++) {
       const k = orderedSelected[i];
+      // Use spaced values (10,20,30...) so persisted positions are unambiguous
+      // and never collide with the default 1000 or with the legacy 0 default
+      // on subscription_inbounds. This guarantees the merge sort in the
+      // subscription renderer respects the editor order exactly.
+      const pos = (i + 1) * 10;
       if (k.startsWith("ext:")) {
         const extId = k.slice(4);
         const { error, data: upd } = await supabase
           .from("subscription_external_subs")
-          .update({ sort_order: i } as any)
+          .update({ sort_order: pos } as any)
           .eq("subscription_id", subscriptionId)
           .eq("external_sub_id", extId)
           .select();
-        writes.push({ key: k, table: "subscription_external_subs", sort_order: i, ok: !error, error: error?.message });
-        console.log(`  [${i}] UPDATE ses ext=${extId} -> sort_order=${i}`, { error, updated: upd });
+        writes.push({ key: k, table: "subscription_external_subs", sort_order: pos, ok: !error, error: error?.message });
+        console.log(`  [${i}] UPDATE ses ext=${extId} -> sort_order=${pos}`, { error, updated: upd });
         if (error) throw error;
       } else {
         const [panel, idStr] = k.split(":");
         const { error, data: upd } = await supabase
           .from("subscription_inbounds")
-          .update({ sort_order: i } as any)
+          .update({ sort_order: pos } as any)
           .eq("subscription_id", subscriptionId)
           .eq("panel", panel)
           .eq("inbound_id", Number(idStr))
           .select();
-        writes.push({ key: k, table: "subscription_inbounds", sort_order: i, ok: !error, error: error?.message });
-        console.log(`  [${i}] UPDATE sub_inb ${panel}:${idStr} -> sort_order=${i}`, { error, updated: upd });
+        writes.push({ key: k, table: "subscription_inbounds", sort_order: pos, ok: !error, error: error?.message });
+        console.log(`  [${i}] UPDATE sub_inb ${panel}:${idStr} -> sort_order=${pos}`, { error, updated: upd });
         if (error) throw error;
       }
     }
