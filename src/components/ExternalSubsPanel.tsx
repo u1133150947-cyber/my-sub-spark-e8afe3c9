@@ -404,6 +404,12 @@ export function ExternalSubsPanel() {
               ))}
             </div>
           )}
+          {isHeader && (
+            <label className="flex items-center gap-2 cursor-pointer ml-auto">
+              <Checkbox checked={pinTop} onCheckedChange={(v) => setPinTop(!!v)} />
+              <span className="text-sm font-medium">📌 Закрепить вверху (над всеми серверами)</span>
+            </label>
+          )}
         </div>
         <div className="grid md:grid-cols-6 gap-3">
           <div className="md:col-span-2" hidden={isHeader}>
