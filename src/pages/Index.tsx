@@ -185,11 +185,22 @@ const CLIENT_LINKS: { label: string; emoji: string; build: (u: string) => string
   { label: "NekoBox", emoji: "🐱", build: (u) => `sn://subscription?url=${encodeURIComponent(u)}` },
 ];
 
+const DEFAULT_EXTERNAL_SORT = 1000;
+const PINNED_SORT = -1000;
+const isPinnedSort = (v: number) => Number.isFinite(v) && v < 0;
+const effectiveExternalSort = (perSubSort: number, globalSort: number) => {
+  if (isPinnedSort(perSubSort) || isPinnedSort(globalSort)) {
+    return Math.min(isPinnedSort(perSubSort) ? perSubSort : PINNED_SORT, isPinnedSort(globalSort) ? globalSort : PINNED_SORT);
+  }
+  return perSubSort !== DEFAULT_EXTERNAL_SORT ? perSubSort : globalSort;
+};
+
 const Index = () => {
   const [subs, setSubs] = useState<Subscription[]>([]);
   const [inbounds, setInbounds] = useState<InboundsResp | null>(null);
   const [loadingInbounds, setLoadingInbounds] = useState(false);
   const [name, setName] = useState("");
+  const [createSlug, setCreateSlug] = useState("");
   const [days, setDays] = useState(30);
   const [totalGB, setTotalGB] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -204,7 +215,7 @@ const Index = () => {
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [editOrder, setEditOrder] = useState<string[]>([]);
   const [editSniText, setEditSniText] = useState<string>("");
-  const [editExternals, setEditExternals] = useState<Record<string, { name: string; emoji: string; raw_links: string[] }>>({});
+  const [editExternals, setEditExternals] = useState<Record<string, { name: string; emoji: string; raw_links: string[]; sort_order: number }>>({});
   const [savingEdit, setSavingEdit] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>("subs");
