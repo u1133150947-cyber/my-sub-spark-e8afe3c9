@@ -35,7 +35,7 @@ function cleanUuid(...values: unknown[]): string {
   return "";
 }
 
-function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, overrides?: Map<string, string>) {
+function buildVless(uuid: string, email: string, ib: any, overrides?: Map<string, string>) {
   if (ib.protocol !== "vless") return null;
   const ss = ib.stream_settings ?? {};
   const effectiveUuid = cleanUuid(ss._clientUuid, ss.clientUuid, ss.uuid, ss.id, uuid);
@@ -45,7 +45,7 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
   params.set("type", network); params.set("security", security); params.set("encryption", "none");
   if (security === "reality" && ss.realitySettings) {
     const r = ss.realitySettings, settings = r.settings ?? {};
-    const sni = sniOverride || (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
+    const sni = (Array.isArray(r.serverNames) ? r.serverNames[0] : undefined) || r.serverName;
     if (sni) params.set("sni", sni);
     const sid = (Array.isArray(r.shortIds) && r.shortIds[0]) || r.shortId;
     if (sid) params.set("sid", sid);
@@ -57,7 +57,7 @@ function buildVless(uuid: string, email: string, ib: any, sniOverride?: string, 
   }
   if (security === "tls" && ss.tlsSettings) {
     const t = ss.tlsSettings;
-    const sni = sniOverride || t.serverName;
+    const sni = t.serverName;
     if (sni) params.set("sni", sni);
     if (Array.isArray(t.alpn)) params.set("alpn", t.alpn.join(","));
     if (t.settings?.fingerprint) params.set("fp", t.settings.fingerprint);
@@ -143,7 +143,6 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     ovs.forEach((o: any) => overridesMap.set(`${o.panel}:${o.inbound_id}`, o.display_remark));
   }
 
-  const whitelist: string[] = Array.isArray((subDecoded as any).sni_whitelist) ? (subDecoded as any).sni_whitelist.filter((s: string) => typeof s === "string" && s.trim().length > 0) : [];
   const lines: string[] = [];
   const rawLinks: string[] = Array.isArray((subDecoded as any).raw_links) ? (subDecoded as any).raw_links : [];
   if (rawLinks.length) {
@@ -164,16 +163,8 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     }
   } catch {}
 
-  let sniIdx = 0;
-  if (whitelist.length) {
-    const seed = String(sub.client_uuid ?? sub.id ?? "");
-    let h = 0;
-    for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
-    sniIdx = Math.abs(h) % whitelist.length;
-  }
   for (const ib of inbounds as any[]) {
-    const sniOverride = whitelist.length ? whitelist[sniIdx] : undefined;
-    const link = buildVless(sub.client_uuid, sub.client_email, ib, sniOverride, overridesMap);
+    const link = buildVless(sub.client_uuid, sub.client_email, ib, overridesMap);
     if (link) lines.push(link);
   }
   const body = base64Utf8(lines.join("\n"));
