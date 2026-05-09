@@ -1,3 +1,3 @@
 // Bumped on each release archive
-export const APP_VERSION = "v55";
+export const APP_VERSION = "v56";
 export const APP_VERSION_DATE = "2026-05-09";

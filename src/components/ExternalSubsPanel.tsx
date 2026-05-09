@@ -87,6 +87,7 @@ export function ExternalSubsPanel() {
   const [targetSubId, setTargetSubId] = useState<string>("none"); // "none" | "all" | <subId>
   const [creating, setCreating] = useState(false);
   const [isHeader, setIsHeader] = useState(false);
+  const [pinTop, setPinTop] = useState(false);
 
   // edit dialog state
   const [editing, setEditing] = useState<ExternalSub | null>(null);
@@ -154,6 +155,7 @@ export function ExternalSubsPanel() {
       const { data, error } = await supabase.from("external_subs").insert({
         name: name.trim(), emoji: isHeader ? "📝" : c.emoji,
         source_url: "", raw_links: [finalLink], notes: "",
+        ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
       }).select("id").single();
       if (error) throw error;
       const createdId = Array.isArray(data) ? (data[0] as any)?.id : (data as any)?.id;
@@ -164,7 +166,10 @@ export function ExternalSubsPanel() {
           for (const s of subs) {
             const { error } = await supabase
               .from("subscription_external_subs")
-              .insert({ subscription_id: s.id, external_sub_id: createdId });
+              .insert({
+                subscription_id: s.id, external_sub_id: createdId,
+                ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
+              });
             if (!error) added++;
             else if (!/duplicate|unique/i.test(error.message)) throw error;
           }
@@ -172,6 +177,7 @@ export function ExternalSubsPanel() {
         } else if (targetSubId !== "none") {
           const r = await supabase.from("subscription_external_subs").insert({
             subscription_id: targetSubId, external_sub_id: createdId,
+            ...(isHeader && pinTop ? { sort_order: -1000 } : {}),
           });
           if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
           const subName = subs.find((s) => s.id === targetSubId)?.name ?? "";
@@ -180,7 +186,7 @@ export function ExternalSubsPanel() {
           toast.success("Сервер добавлен");
         }
       }
-      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none"); setIsHeader(false);
+      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none"); setIsHeader(false); setPinTop(false);
       loadAll();
     } catch (e: any) {
       toast.error("Ошибка добавления", { description: e?.message ?? String(e) });
@@ -397,6 +403,12 @@ export function ExternalSubsPanel() {
                 </Button>
               ))}
             </div>
+          )}
+          {isHeader && (
+            <label className="flex items-center gap-2 cursor-pointer ml-auto">
+              <Checkbox checked={pinTop} onCheckedChange={(v) => setPinTop(!!v)} />
+              <span className="text-sm font-medium">📌 Закрепить вверху (над всеми серверами)</span>
+            </label>
           )}
         </div>
         <div className="grid md:grid-cols-6 gap-3">
