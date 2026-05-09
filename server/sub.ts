@@ -314,9 +314,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   try {
     const linked = db.queryEntries(
       `SELECT e.raw_links,
-              CASE WHEN ses.sort_order IS NOT NULL AND ses.sort_order <> 1000
-                   THEN ses.sort_order
-                   ELSE COALESCE(e.sort_order, 1000) END AS sort_order,
+              COALESCE(ses.sort_order, 1000) AS sort_order,
               ses.created_at
          FROM subscription_external_subs ses
          JOIN external_subs e ON e.id = ses.external_sub_id
