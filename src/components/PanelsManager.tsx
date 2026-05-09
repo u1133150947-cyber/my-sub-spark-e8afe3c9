@@ -408,6 +408,14 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
               placeholder="https://1.2.3.4:54321/secret-path"
             />
           </div>
+          <div className="md:col-span-2">
+            <Label className="text-xs text-muted-foreground">Хост подключения из 3X-UI</Label>
+            <Input
+              value={form.public_host}
+              onChange={(e) => update("public_host", e.target.value)}
+              placeholder="example.com или IP из подключения 3X-UI"
+            />
+          </div>
           <div>
             <Label className="text-xs text-muted-foreground">Логин панели</Label>
             <Input value={form.username} onChange={(e) => update("username", e.target.value)} />
@@ -528,6 +536,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                       )}
                     </div>
                     <code className="text-xs text-muted-foreground truncate block">{p.panel_url || "URL не задан"}</code>
+                    <div className="text-xs text-muted-foreground mt-1 truncate">Хост подключения: {p.public_host || p.host || cleanHost(p.panel_url) || "не задан"}</div>
                     {p.status === "error" && p.status_message && (
                       <div className="text-xs text-destructive mt-1 truncate">{p.status_message}</div>
                     )}
@@ -581,6 +590,14 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                 value={credsForm.panel_url}
                 onChange={(e) => setCredsForm((f) => ({ ...f, panel_url: e.target.value }))}
                 placeholder="https://1.2.3.4:54321/secret-path"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Хост подключения из 3X-UI</Label>
+              <Input
+                value={credsForm.public_host}
+                onChange={(e) => setCredsForm((f) => ({ ...f, public_host: e.target.value }))}
+                placeholder="example.com или IP из подключения 3X-UI"
               />
             </div>
             <div>
