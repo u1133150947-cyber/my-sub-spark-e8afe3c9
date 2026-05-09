@@ -220,12 +220,8 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       return toast.error("Заполните название, URL панели, логин и пароль");
     }
     setSaving(true);
-    let host = "";
-    try {
-      host = new URL(form.panel_url).hostname;
-    } catch {
-      host = form.panel_url;
-    }
+    const host = cleanHost(form.panel_url);
+    const publicHost = cleanHost(form.public_host) || host;
     const { error } = await supabase.from("panels").insert({
       name: form.name.trim(),
       panel_url: form.panel_url.trim(),
@@ -233,7 +229,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       password: form.password,
       country: form.country.trim().toUpperCase(),
       host,
-      public_host: host,
+      public_host: publicHost,
     });
     setSaving(false);
     if (error) return toast.error("Ошибка: " + error.message);
@@ -289,7 +285,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
 
   const openCreds = (p: Panel) => {
     setCredsPanel(p);
-    setCredsForm({ panel_url: p.panel_url, username: p.username, password: p.password });
+    setCredsForm({ panel_url: p.panel_url, username: p.username, password: p.password, public_host: p.public_host || p.host || cleanHost(p.panel_url) });
   };
 
   const testCreds = async () => {
@@ -314,8 +310,8 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       return toast.error("Заполните URL, логин и пароль");
     }
     setCredsSaving(true);
-    let host = credsPanel.panel_url;
-    try { host = new URL(credsForm.panel_url).hostname; } catch { host = credsForm.panel_url; }
+    const host = cleanHost(credsForm.panel_url);
+    const publicHost = cleanHost(credsForm.public_host) || host;
     const { error } = await supabase
       .from("panels")
       .update({
@@ -323,6 +319,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         username: credsForm.username.trim(),
         password: credsForm.password,
         host,
+        public_host: publicHost,
         status: "unknown",
         status_message: "",
       })
