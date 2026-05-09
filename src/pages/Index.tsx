@@ -567,10 +567,11 @@ const Index = () => {
       .order("created_at", { ascending: true });
     const extIds = (extLinks ?? []).map((r: any) => r.external_sub_id);
     const extMap: Record<string, { name: string; emoji: string; raw_links: string[] }> = {};
+    const extMeta: Record<string, number> = {};
     if (extIds.length) {
       const { data: exts } = await supabase
         .from("external_subs")
-        .select("id, name, emoji, raw_links")
+        .select("id, name, emoji, raw_links, sort_order")
         .in("id", extIds);
       for (const e of exts ?? []) {
         extMap[(e as any).id] = {
@@ -578,13 +579,20 @@ const Index = () => {
           emoji: (e as any).emoji ?? "🌐",
           raw_links: Array.isArray((e as any).raw_links) ? (e as any).raw_links : [],
         };
+        extMeta[(e as any).id] = Number((e as any).sort_order ?? 1000);
       }
     }
     setEditExternals(extMap);
-    const extItems = (extLinks ?? []).map((r: any) => ({
-      key: `ext:${r.external_sub_id}`,
-      sort_order: Number(r.sort_order ?? 1000),
-    }));
+    const extItems = (extLinks ?? []).map((r: any) => {
+      const sesSort = Number(r.sort_order ?? 1000);
+      // Same fallback rule as the sub renderer: per-subscription value wins
+      // unless it's the default 1000, in which case use the global sort_order.
+      const effective = sesSort !== 1000 ? sesSort : (extMeta[r.external_sub_id] ?? 1000);
+      return {
+        key: `ext:${r.external_sub_id}`,
+        sort_order: effective,
+      };
+    });
 
     const allItems = [...inboundItems, ...extItems].sort((a, b) => a.sort_order - b.sort_order);
     const orderedKeys = allItems.map((it) => it.key);
