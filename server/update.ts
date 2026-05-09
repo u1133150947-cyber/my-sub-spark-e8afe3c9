@@ -1,6 +1,7 @@
 // Self-update endpoint: receive an archive (.zip or .tar.gz) and apply it in-place.
 // Protected by Caddy basic-auth in front; we additionally require an env-set token if provided.
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { db } from "./db.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,46 @@ const APP_DIR = Deno.env.get("APP_DIR") ?? "/opt/sub-manager";
 const UPDATE_TOKEN = Deno.env.get("UPDATE_TOKEN") ?? ""; // optional extra check
 const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "u1133150947-cyber/my-sub-spark-df6a54d2";
 const GITHUB_BRANCH = Deno.env.get("GITHUB_BRANCH") ?? "main";
+
+function isoNow() { return new Date().toISOString(); }
+
+function verifyAdminSession(req: Request): boolean {
+  const token = req.headers.get("x-admin-token") ?? "";
+  if (!token) return false;
+  try {
+    const rows = db.queryEntries(
+      `SELECT token FROM admin_sessions WHERE token = ? AND datetime(expires_at) > datetime(?) LIMIT 1`,
+      [token, isoNow()],
+    );
+    return rows.length > 0;
+  } catch { return false; }
+}
+
+async function backupData(push: (s: string) => void): Promise<void> {
+  const dataDir = join(APP_DIR, "data");
+  try { await Deno.stat(dataDir); } catch { push("data/ not found — skipping backup"); return; }
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupsDir = join(APP_DIR, "backups");
+  await Deno.mkdir(backupsDir, { recursive: true });
+  const dest = join(backupsDir, `data-${stamp}.tar.gz`);
+  const r = await run(["tar", "-czf", dest, "-C", APP_DIR, "data"]);
+  if (!r.ok) throw new Error(`backup failed: ${r.out}`);
+  push(`💾 backup: ${dest}`);
+  try {
+    const files: { name: string; mtime: number }[] = [];
+    for await (const e of Deno.readDir(backupsDir)) {
+      if (e.isFile && e.name.startsWith("data-") && e.name.endsWith(".tar.gz")) {
+        const st = await Deno.stat(join(backupsDir, e.name));
+        files.push({ name: e.name, mtime: st.mtime?.getTime() ?? 0 });
+      }
+    }
+    files.sort((a, b) => b.mtime - a.mtime);
+    for (const old of files.slice(5)) {
+      await Deno.remove(join(backupsDir, old.name));
+      push(`🗑 old backup removed: ${old.name}`);
+    }
+  } catch (e) { push(`backup cleanup warn: ${e instanceof Error ? e.message : String(e)}`); }
+}
 
 function publicOrigin(req: Request, url: URL) {
   const proto = req.headers.get("x-forwarded-proto") ?? url.protocol.replace(":", "") ?? "https";
@@ -81,6 +122,7 @@ export async function handleVersion(_req: Request): Promise<Response> {
 export async function handleUpdateFromGithub(req: Request, url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (!verifyAdminSession(req)) return json({ error: "unauthorized — admin login required" }, 401);
   if (UPDATE_TOKEN) {
     const t = req.headers.get("x-update-token") ?? "";
     if (t !== UPDATE_TOKEN) return json({ error: "bad token" }, 401);
@@ -116,6 +158,8 @@ export async function handleUpdateFromGithub(req: Request, url: URL): Promise<Re
 
     try { await Deno.stat(join(srcDir, "package.json")); }
     catch { throw new Error("в архиве GitHub нет package.json"); }
+
+    await backupData(push);
 
     const sync = await run([
       "rsync", "-a", "--delete",
@@ -160,6 +204,7 @@ export async function handleUpdate(req: Request, url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
+  if (!verifyAdminSession(req)) return json({ error: "unauthorized — admin login required" }, 401);
   if (UPDATE_TOKEN) {
     const t = req.headers.get("x-update-token") ?? "";
     if (t !== UPDATE_TOKEN) return json({ error: "bad token" }, 401);
@@ -205,6 +250,8 @@ export async function handleUpdate(req: Request, url: URL): Promise<Response> {
     // Sanity check — must look like our project.
     try { await Deno.stat(join(srcDir, "package.json")); }
     catch { throw new Error("в архиве нет package.json — это не похоже на проект"); }
+
+    await backupData(push);
 
     // Sync into APP_DIR, preserving data/ and node_modules/.
     const sync = await run([
