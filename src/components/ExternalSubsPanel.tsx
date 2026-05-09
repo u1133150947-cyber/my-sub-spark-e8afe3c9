@@ -123,7 +123,7 @@ export function ExternalSubsPanel() {
       const [ext, s, l] = await Promise.all([
         supabase.from("external_subs").select("*").order("sort_order", { ascending: true }).order("created_at", { ascending: true }),
         supabase.from("subscriptions").select("id,name").order("created_at", { ascending: false }),
-        supabase.from("subscription_external_subs").select("subscription_id,external_sub_id"),
+        supabase.from("subscription_external_subs").select("subscription_id,external_sub_id,sort_order"),
       ]);
       if (ext.error) throw ext.error;
       if (s.error) throw s.error;
@@ -208,6 +208,7 @@ export function ExternalSubsPanel() {
     if (!subs.length) { toast.error("Нет подписок"); return; }
     setBusy(extId);
     try {
+      const item = items.find((x) => x.id === extId);
       const already = linksByExt.get(extId) ?? new Set<string>();
       const missing = subs.filter((s) => !already.has(s.id));
       if (!missing.length) {
@@ -217,7 +218,7 @@ export function ExternalSubsPanel() {
         for (const s of missing) {
           const { error } = await supabase
             .from("subscription_external_subs")
-            .insert({ subscription_id: s.id, external_sub_id: extId });
+            .insert({ subscription_id: s.id, external_sub_id: extId, sort_order: item ? linkSortFor(item) : DEFAULT_EXTERNAL_SORT });
           if (!error) added++;
           else if (!/duplicate|unique/i.test(error.message)) throw error;
         }
@@ -337,9 +338,10 @@ export function ExternalSubsPanel() {
     });
     try {
       if (attach) {
+        const item = items.find((x) => x.id === extId);
         const { error } = await supabase
           .from("subscription_external_subs")
-          .insert({ subscription_id: subId, external_sub_id: extId });
+          .insert({ subscription_id: subId, external_sub_id: extId, sort_order: item ? linkSortFor(item) : DEFAULT_EXTERNAL_SORT });
         if (error && !/duplicate|unique/i.test(error.message)) throw error;
       } else {
         const { error } = await supabase.from("subscription_external_subs").delete()
