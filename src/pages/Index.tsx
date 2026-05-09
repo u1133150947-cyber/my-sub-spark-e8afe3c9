@@ -583,7 +583,7 @@ const Index = () => {
       .order("sort_order", { ascending: true })
       .order("created_at", { ascending: true });
     const extIds = (extLinks ?? []).map((r: any) => r.external_sub_id);
-    const extMap: Record<string, { name: string; emoji: string; raw_links: string[] }> = {};
+    const extMap: Record<string, { name: string; emoji: string; raw_links: string[]; sort_order: number }> = {};
     const extMeta: Record<string, number> = {};
     if (extIds.length) {
       const { data: exts } = await supabase
@@ -595,22 +595,20 @@ const Index = () => {
           name: (e as any).name ?? "",
           emoji: (e as any).emoji ?? "🌐",
           raw_links: Array.isArray((e as any).raw_links) ? (e as any).raw_links : [],
+          sort_order: Number((e as any).sort_order ?? DEFAULT_EXTERNAL_SORT),
         };
-        extMeta[(e as any).id] = Number((e as any).sort_order ?? 1000);
+        extMeta[(e as any).id] = Number((e as any).sort_order ?? DEFAULT_EXTERNAL_SORT);
       }
     }
     setEditExternals(extMap);
     const extItems = (extLinks ?? []).map((r: any) => {
-      const sesSort = Number(r.sort_order ?? 1000);
-      // Per-subscription override wins if explicitly set (≠ default 1000).
-      // Otherwise fall back to global external_subs.sort_order so that
-      // "сторонние" added globally appear in the configured global order.
-      const effective = sesSort !== 1000 ? sesSort : (extMeta[r.external_sub_id] ?? 1000);
+      const sesSort = Number(r.sort_order ?? DEFAULT_EXTERNAL_SORT);
+      const effective = effectiveExternalSort(sesSort, extMeta[r.external_sub_id] ?? DEFAULT_EXTERNAL_SORT);
       return {
         key: `ext:${r.external_sub_id}`,
         sort_order: effective,
         _ses_sort: sesSort,
-        _global_sort: extMeta[r.external_sub_id] ?? 1000,
+        _global_sort: extMeta[r.external_sub_id] ?? DEFAULT_EXTERNAL_SORT,
       };
     });
 
