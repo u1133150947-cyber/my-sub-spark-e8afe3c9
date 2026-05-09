@@ -227,17 +227,27 @@ Deno.serve(async (req) => {
 
     const lines: string[] = [];
     const rawLinks = Array.isArray((sub as any).raw_links) ? (sub as any).raw_links : [];
+    // Host override: ONLY if explicit ?host= is passed. Otherwise use what was stored
+    // when the link was synced from the panel. Avoids per-device host drift.
+    const hostOverride = url.searchParams.get("host") || "";
     if (rawLinks.length) {
-      const host = url.searchParams.get("host") || req.headers.get("x-forwarded-host") || url.host;
-      for (const link of rawLinks) lines.push(withHost(String(link), host));
+      for (const link of rawLinks) {
+        lines.push(hostOverride ? withHost(String(link), hostOverride) : String(link));
+      }
     }
     const whitelist: string[] = Array.isArray((sub as any).sni_whitelist)
       ? (sub as any).sni_whitelist.filter((s: string) => typeof s === "string" && s.trim().length > 0)
       : [];
+    // Deterministic SNI per subscription — stable across devices and refreshes.
+    let sniIdx = 0;
+    if (whitelist.length > 0) {
+      const seed = String(sub.client_uuid ?? sub.id ?? "");
+      let h = 0;
+      for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) | 0;
+      sniIdx = Math.abs(h) % whitelist.length;
+    }
     for (const ib of inbounds ?? []) {
-      const sniOverride = whitelist.length > 0
-        ? whitelist[Math.floor(Math.random() * whitelist.length)]
-        : undefined;
+      const sniOverride = whitelist.length > 0 ? whitelist[sniIdx] : undefined;
       const link = buildVless(sub.client_uuid, sub.client_email, ib as any, sniOverride, overridesMap, {
         name: (ib as any).panel_name,
         country: (ib as any).panel_country,
