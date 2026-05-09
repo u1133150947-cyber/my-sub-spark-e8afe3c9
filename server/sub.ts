@@ -1,6 +1,6 @@
 // Port of supabase/functions/sub/index.ts to local SQLite.
 import { db, decodeRow } from "./db.ts";
-import { listInbounds } from "./x3ui.ts";
+import { listInbounds, updateClient } from "./x3ui.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type" };
 
@@ -93,7 +93,7 @@ function streamSnapshot(ib: any, clientEmail?: string, fallbackUuid?: string) {
   return stream;
 }
 
-async function refreshInboundsFromPanels(inbounds: any[], fallbackUuid: string) {
+async function refreshInboundsFromPanels(inbounds: any[], sub: any) {
   const panels = Array.from(new Set(inbounds.map((ib: any) => ib.panel).filter(Boolean)));
   await Promise.all(panels.map(async (panel) => {
     try {
@@ -105,7 +105,22 @@ async function refreshInboundsFromPanels(inbounds: any[], fallbackUuid: string) 
         ib.remark = fresh.remark ?? ib.remark;
         ib.protocol = fresh.protocol ?? ib.protocol;
         ib.port = Number(fresh.port ?? ib.port);
-        ib.stream_settings = streamSnapshot(fresh, ib.client_email, fallbackUuid);
+        const snap = streamSnapshot(fresh, ib.client_email, sub.client_uuid);
+        ib.stream_settings = snap;
+        const desiredFlow = fresh.protocol === "vless" && snap.security === "reality" && snap.network === "tcp" ? "xtls-rprx-vision" : "";
+        if (snap._clientUuid && firstString(snap._clientFlow) !== desiredFlow) {
+          try {
+            await updateClient(panel, Number(ib.inbound_id), {
+              id: snap._clientUuid,
+              email: ib.client_email,
+              expiryTime: Number(sub.expiry_ms ?? 0),
+              totalGB: Number(sub.total_bytes ?? 0),
+              subId: String(sub.slug ?? "").slice(0, 16),
+              flow: desiredFlow,
+            });
+            snap._clientFlow = desiredFlow;
+          } catch {}
+        }
       }
     } catch {}
   }));
@@ -246,7 +261,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   const slug = parts[parts.length - 1];
   if (!slug || slug === "sub") return new Response("Not found", { status: 404, headers: cors });
 
-  const sub = db.queryEntries(`SELECT id, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist, raw_links FROM subscriptions WHERE slug = ?`, [slug])[0] as any;
+  const sub = db.queryEntries(`SELECT id, slug, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist, raw_links FROM subscriptions WHERE slug = ?`, [slug])[0] as any;
   if (!sub) return new Response("Subscription not found", { status: 404, headers: cors });
   const subDecoded = decodeRow("subscriptions", sub);
 
@@ -267,7 +282,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     if (info?.connectionHost) ib.host = info.connectionHost;
   }
 
-  await refreshInboundsFromPanels(inbounds as any[], sub.client_uuid);
+  await refreshInboundsFromPanels(inbounds as any[], sub);
 
   const overridesMap = new Map<string, string>();
   if (inbounds.length) {

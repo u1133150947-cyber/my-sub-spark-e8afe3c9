@@ -490,7 +490,7 @@ Deno.serve(async (req) => {
       if (!ib) return new Response(JSON.stringify({ error: "inbound not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       let stream: any = {};
       try { stream = JSON.parse(ib.streamSettings); } catch {}
-      const flow = ib.protocol === "vless" && stream.security === "reality" ? "xtls-rprx-vision" : "";
+      const flow = ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp" ? "xtls-rprx-vision" : "";
 
       const created: any[] = [];
       const errors: any[] = [];
@@ -664,7 +664,7 @@ Deno.serve(async (req) => {
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
           let flow = ""; let stream: any = {};
           try { stream = JSON.parse(ib.streamSettings); } catch { stream = {}; }
-          if (ib.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
+          if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
 
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
           await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId, flow });
@@ -784,7 +784,7 @@ Deno.serve(async (req) => {
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
           let flow = ""; let stream: any = {};
           try { stream = JSON.parse(ib.streamSettings); } catch { stream = {}; }
-          if (ib.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
+          if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
 
           const email = `${sub.client_email}_${sel.panel}${ib.id}`;
           await addClient(sel.panel, sel.inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: subIdShort, flow });
@@ -845,7 +845,7 @@ Deno.serve(async (req) => {
         for (const l of links ?? []) {
           try {
             let flow = ""; const stream: any = l.stream_settings ?? {};
-            if (l.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
+            if (l.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
             await updateClient(l.panel as PanelKey, l.inbound_id, { id: sub.client_uuid, email: l.client_email ?? sub.client_email, expiryTime: newExpiry, totalGB: newTotal, subId: subIdShort, flow });
           } catch (e) {
             errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) });

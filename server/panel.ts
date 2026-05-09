@@ -320,7 +320,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
           let flow = ""; let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
-          if (ib.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
+          if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
           await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId: subIdShort, flow });
           db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -421,7 +421,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
           let flow = ""; let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
-          if (ib.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
+          if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
           const email = `${sub.client_email}_${sel.panel}${ib.id}`;
           await addClient(sel.panel, sel.inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: subIdShort, flow });
           db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -468,7 +468,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
         for (const l of links) {
           try {
             let stream: any = {}; try { stream = JSON.parse(l.stream_settings); } catch {}
-            let flow = ""; if (l.protocol === "vless" && stream.security === "reality") flow = "xtls-rprx-vision";
+            let flow = ""; if (l.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
             await updateClient(l.panel, l.inbound_id, { id: sub.client_uuid, email: l.client_email ?? sub.client_email, expiryTime: newExpiry, totalGB: newTotal, subId: subIdShort, flow });
           } catch (e) { errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) }); }
         }
@@ -500,7 +500,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const ib = ibs.find((x: any) => x.id === inboundId);
       if (!ib) return json({ error: "inbound not found" }, 404);
       let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
-      const flow = ib.protocol === "vless" && stream.security === "reality" ? "xtls-rprx-vision" : "";
+      const flow = ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp" ? "xtls-rprx-vision" : "";
       const created: string[] = [], errors: any[] = [];
       const targets = allSubs.filter((s) => !have.has(s.id));
       await Promise.all(targets.map(async (sub) => {
