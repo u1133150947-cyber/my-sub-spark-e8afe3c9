@@ -1291,6 +1291,29 @@ const Index = () => {
               <Button variant="outline" size="sm" onClick={() => setRawImportOpen(true)}>
                 <Plus className="size-3.5 mr-1" /> Из текста
               </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  if (!confirm("Сверить подписки с панелями 3X-UI и удалить те, чьих клиентов уже нет ни на одной панели?\n\nЭто необратимо.")) return;
+                  try {
+                    const { data, error } = await supabase.functions.invoke("panel?action=cleanupOrphans", { method: "POST", body: {} });
+                    if (error) throw error;
+                    const n = data?.deleted?.length ?? 0;
+                    if (n === 0) toast.success("Осиротевших подписок не найдено");
+                    else toast.success(`Удалено подписок: ${n}`);
+                    if (data?.panelErrors && Object.keys(data.panelErrors).length) {
+                      toast.warning("Часть панелей недоступна — см. консоль");
+                      console.warn("cleanupOrphans panelErrors", data.panelErrors);
+                    }
+                    loadSubs();
+                  } catch (e: any) {
+                    toast.error("Ошибка: " + (e?.message ?? e));
+                  }
+                }}
+              >
+                <Trash2 className="size-3.5 mr-1" /> Очистить осиротевшие
+              </Button>
             </div>
           </div>
           {subs.length > 0 && (
