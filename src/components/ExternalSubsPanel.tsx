@@ -282,13 +282,13 @@ export function ExternalSubsPanel() {
     const j = idx + dir;
     if (j < 0 || j >= items.length) return;
     const a = items[idx], b = items[j];
-    // Reorder locally for snappy UI, then renumber centered around 0 so that
-    // externals placed at the top get NEGATIVE sort_order and can render
-    // ABOVE panel inbounds (which sit at sort_order=0).
+    // Reorder locally for snappy UI, then renumber as 10, 20, 30…
+    // Externals form their own block in the client list (panel inbounds first,
+    // then externals in admin order). Up/down arrows reorder ONLY within the
+    // external block — they don't push externals above panel inbounds.
     const next = items.slice();
     next[idx] = b; next[j] = a;
-    const half = Math.ceil(next.length / 2);
-    const renum = next.map((it, i) => ({ ...it, sort_order: (i - half + 1) * 10 }));
+    const renum = next.map((it, i) => ({ ...it, sort_order: (i + 1) * 10 }));
     setItems(renum);
     try {
       await Promise.all(renum.map((it) =>
