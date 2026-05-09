@@ -23,6 +23,13 @@ const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+function cleanHost(value: string) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  try { return new URL(raw.includes("://") ? raw : `http://${raw}`).hostname; } catch {}
+  return raw.replace(/^https?:\/\//i, "").replace(/\/.*$/, "").replace(/^\[|\]$/g, "").replace(/:\d+$/, "");
+}
+
 function base64Utf8(value: string): string {
   return btoa(String.fromCharCode(...new TextEncoder().encode(value)));
 }
@@ -121,17 +128,18 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   const inbounds = db.queryEntries(`SELECT panel, inbound_id, remark, protocol, port, host, stream_settings, sort_order, created_at FROM subscription_inbounds WHERE subscription_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at ASC`, [sub.id]).map((r: any) => decodeRow("subscription_inbounds", r));
 
   // Pull panel display names + country code.
-  const panelInfo = new Map<string, { name: string; country: string }>();
+  const panelInfo = new Map<string, { name: string; country: string; connectionHost: string }>();
   if (inbounds.length) {
     const slugs = Array.from(new Set(inbounds.map((ib: any) => ib.panel)));
     const ph = slugs.map(() => "?").join(",");
-    const rows = db.queryEntries(`SELECT slug, name, country FROM panels WHERE slug IN (${ph})`, slugs);
-    rows.forEach((r: any) => panelInfo.set(r.slug, { name: r.name ?? "", country: r.country ?? "" }));
+    const rows = db.queryEntries(`SELECT slug, name, country, host, public_host, panel_url FROM panels WHERE slug IN (${ph})`, slugs);
+    rows.forEach((r: any) => panelInfo.set(r.slug, { name: r.name ?? "", country: r.country ?? "", connectionHost: cleanHost(r.public_host || r.host || r.panel_url || "") }));
   }
   for (const ib of inbounds as any[]) {
     const info = panelInfo.get(ib.panel);
     ib.panel_name = info?.name ?? "";
     ib.panel_country = info?.country ?? "";
+    if (info?.connectionHost) ib.host = info.connectionHost;
   }
 
   const overridesMap = new Map<string, string>();
