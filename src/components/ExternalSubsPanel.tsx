@@ -690,8 +690,16 @@ export function ExternalSubsPanel() {
                       <summary className="cursor-pointer text-muted-foreground">Ссылки ({it.raw_links.length})</summary>
                       <div className="mt-2 space-y-1 max-h-60 overflow-auto">
                         {it.raw_links.map((l, i) => (
-                          <div key={i} className="font-mono break-all p-1.5 rounded bg-background/60 border border-border">
-                            {l}
+                          <div key={i} className="flex items-start gap-2 p-1.5 rounded bg-background/60 border border-border">
+                            <div className="font-mono break-all flex-1 min-w-0">{l}</div>
+                            <Button
+                              size="icon" variant="ghost" className="h-6 w-6 shrink-0"
+                              disabled={busy === it.id}
+                              onClick={() => deleteLink(it, i)}
+                              title="Удалить этот ключ"
+                            >
+                              <Trash2 className="size-3 text-destructive" />
+                            </Button>
                           </div>
                         ))}
                       </div>
