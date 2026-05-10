@@ -15,6 +15,39 @@ const STATIC_DIR = (() => {
   try { return Deno.realPathSync(raw); } catch { return raw; }
 })();
 
+// Origin whitelist for sensitive endpoints (REST + admin-auth).
+// PUBLIC_URL=https://example.com  → only that origin gets CORS approval.
+// CORS_ORIGINS=a,b,c              → additional comma-separated origins.
+// Empty (dev) → falls back to "*".
+const ORIGIN_WHITELIST: string[] = (() => {
+  const list = new Set<string>();
+  const pu = Deno.env.get("PUBLIC_URL")?.trim();
+  if (pu) list.add(pu.replace(/\/+$/, ""));
+  const extra = Deno.env.get("CORS_ORIGINS")?.trim() ?? "";
+  for (const o of extra.split(",").map((s) => s.trim()).filter(Boolean)) {
+    list.add(o.replace(/\/+$/, ""));
+  }
+  return [...list];
+})();
+
+function pickOrigin(req: Request): string {
+  const reqOrigin = req.headers.get("origin")?.replace(/\/+$/, "") ?? "";
+  if (!ORIGIN_WHITELIST.length) return "*";
+  if (reqOrigin && ORIGIN_WHITELIST.includes(reqOrigin)) return reqOrigin;
+  return ORIGIN_WHITELIST[0]; // fallback — browser will block mismatched origins
+}
+
+function corsFor(req: Request, strict = false): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": strict ? pickOrigin(req) : "*",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version, x-admin-token",
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
+    "Access-Control-Expose-Headers": "content-range, content-profile",
+    "Vary": "Origin",
+  };
+}
+
+// Loose CORS for static / public sub endpoints.
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version, x-admin-token",
@@ -58,9 +91,22 @@ function withCors(res: Response): Response {
   return new Response(res.body, { status: res.status, headers });
 }
 
+function withStrictCors(req: Request, res: Response): Response {
+  const headers = new Headers(res.headers);
+  for (const [k, v] of Object.entries(corsFor(req, true))) headers.set(k, v);
+  return new Response(res.body, { status: res.status, headers });
+}
+
 Deno.serve({ port: PORT }, async (req) => {
   const url = new URL(req.url);
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method === "OPTIONS") {
+    // Strict CORS preflight for sensitive endpoints, loose for the rest.
+    const strict = url.pathname.startsWith("/rest/v1/") ||
+                   url.pathname.startsWith("/functions/v1/admin-auth") ||
+                   url.pathname.startsWith("/functions/v1/panel") ||
+                   url.pathname.startsWith("/api/update");
+    return new Response("ok", { headers: strict ? corsFor(req, true) : cors });
+  }
 
   if (url.pathname === "/api/health") {
     return new Response(JSON.stringify({ ok: true, ts: new Date().toISOString() }), {
@@ -73,16 +119,16 @@ Deno.serve({ port: PORT }, async (req) => {
     return withCors(await handleSub(req, url));
   }
   if (url.pathname.startsWith("/functions/v1/panel")) {
-    return withCors(await handlePanel(req, url));
+    return withStrictCors(req, await handlePanel(req, url));
   }
   if (url.pathname.startsWith("/functions/v1/admin-auth")) {
-    return withCors(await handleAdminAuth(req));
+    return withStrictCors(req, await handleAdminAuth(req));
   }
   if (url.pathname.startsWith("/rest/v1/")) {
-    return withCors(await handleRest(req, url));
+    return withStrictCors(req, await handleRest(req, url));
   }
   if (url.pathname === "/api/update" || url.pathname === "/api/update/") {
-    return withCors(await handleUpdate(req, url));
+    return withStrictCors(req, await handleUpdate(req, url));
   }
   if (url.pathname === "/api/version" || url.pathname === "/api/version/") {
     return withCors(await handleVersion(req));
