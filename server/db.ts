@@ -170,14 +170,49 @@ const EXPECTED_MIGRATION_ERRORS = [
   /table.*already exists/i,
 ];
 
+// ─── Migration version table ───────────────────────────────────────────────────
+// Tracks every migration that has been applied so we can skip already-run ones,
+// surface a clean audit trail in `_migrations`, and detect repeated failures.
+db.execute(`
+  CREATE TABLE IF NOT EXISTS _migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now')),
+    duration_ms INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'ok'
+  );
+`);
+
+function isMigrationApplied(name: string): boolean {
+  const r = db.queryEntries(`SELECT name FROM _migrations WHERE name = ? LIMIT 1`, [name]);
+  return r.length > 0;
+}
+
+function recordMigration(name: string, ms: number, status: "ok" | "skipped" | "error") {
+  db.query(
+    `INSERT INTO _migrations (name, applied_at, duration_ms, status)
+     VALUES (?, datetime('now'), ?, ?)
+     ON CONFLICT(name) DO UPDATE SET applied_at = excluded.applied_at,
+                                     duration_ms = excluded.duration_ms,
+                                     status = excluded.status`,
+    [name, Math.round(ms), status],
+  );
+}
+
 function migrate(name: string, fn: () => void) {
+  if (isMigrationApplied(name)) return; // already done — skip silently
+  const t0 = performance.now();
   try {
     fn();
+    recordMigration(name, performance.now() - t0, "ok");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const isExpected = EXPECTED_MIGRATION_ERRORS.some((re) => re.test(msg));
-    if (!isExpected) {
+    if (isExpected) {
+      // Migration was effectively a no-op (column/table already there) — record it as applied.
+      recordMigration(name, performance.now() - t0, "skipped");
+    } else {
       console.warn(`[migration] UNEXPECTED ERROR in "${name}": ${msg}`);
+      recordMigration(name, performance.now() - t0, "error");
     }
   }
 }
