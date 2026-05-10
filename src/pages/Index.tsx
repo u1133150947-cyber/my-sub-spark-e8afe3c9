@@ -158,6 +158,12 @@ const getSubBase = () => {
     const ls = window.localStorage.getItem("sub_base_url");
     if (ls) return ls.replace(/\/+$/, "");
     if (ENV_SUB_BASE) return ENV_SUB_BASE;
+    // On Lovable preview/published domains there's no /sub backend —
+    // fall back to the Supabase Edge Function URL so links actually resolve.
+    const host = window.location.hostname;
+    if (/lovable(project)?\.(app|dev)$/i.test(host) || /\.lovable\.app$/i.test(host)) {
+      return `${SUPABASE_URL}/functions/v1/sub`;
+    }
     return `${window.location.origin}/sub`;
   }
   return `${SUPABASE_URL}/functions/v1/sub`;
