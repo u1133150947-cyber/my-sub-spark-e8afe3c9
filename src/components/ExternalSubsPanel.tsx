@@ -150,10 +150,7 @@ export function ExternalSubsPanel() {
 
   async function onImportFile(file: File) {
     if (!file) return;
-    if (!name.trim()) {
-      toast.error("Сначала введите название записи в форме выше");
-      return;
-    }
+    const entryName = name.trim() || file.name.replace(/\.(txt|text)$/i, "").trim() || "Импорт";
     setImporting(true);
     try {
       const text = await file.text();
@@ -171,7 +168,7 @@ export function ExternalSubsPanel() {
       const { data, error } = await supabase
         .from("external_subs")
         .insert({
-          name: name.trim(),
+          name: entryName,
           emoji: c.emoji,
           source_url: "",
           raw_links: links,
