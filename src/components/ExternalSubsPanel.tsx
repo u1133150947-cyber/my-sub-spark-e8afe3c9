@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Trash2, RefreshCw, Link2, Globe2, ChevronDown, ChevronRight, Pencil, ArrowUp, ArrowDown } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2, Plus, Trash2, RefreshCw, Link2, Globe2, ChevronDown, ChevronRight, Pencil, ArrowUp, ArrowDown, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,6 +97,8 @@ export function ExternalSubsPanel() {
   const [creating, setCreating] = useState(false);
   const [isHeader, setIsHeader] = useState(false);
   const [pinTop, setPinTop] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
 
   // edit dialog state
   const [editing, setEditing] = useState<ExternalSub | null>(null);
@@ -145,6 +147,64 @@ export function ExternalSubsPanel() {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  async function onImportFile(file: File) {
+    if (!file) return;
+    if (!name.trim()) {
+      toast.error("Сначала введите название записи в форме выше");
+      return;
+    }
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const rx = /^(vless|vmess|trojan|ss|hysteria2?|hy2|tuic):\/\//i;
+      const links = text
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => rx.test(l));
+      if (!links.length) {
+        toast.error("В файле не найдено ключей (vless/vmess/trojan/ss/hysteria2/tuic)");
+        return;
+      }
+      const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
+      const initialSort = pinTop ? PINNED_SORT : DEFAULT_EXTERNAL_SORT;
+      const { data, error } = await supabase
+        .from("external_subs")
+        .insert({
+          name: name.trim(),
+          emoji: c.emoji,
+          source_url: "",
+          raw_links: links,
+          notes: `Импорт из файла «${file.name}» — ${links.length} ключ(ей)`,
+          sort_order: initialSort,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      const createdId = (data as any)?.id;
+      if (createdId && targetSubId === "all" && subs.length) {
+        for (const s of subs) {
+          const { error: e2 } = await supabase
+            .from("subscription_external_subs")
+            .insert({ subscription_id: s.id, external_sub_id: createdId, sort_order: initialSort });
+          if (e2 && !/duplicate|unique/i.test(e2.message)) throw e2;
+        }
+      } else if (createdId && targetSubId !== "none") {
+        const r = await supabase
+          .from("subscription_external_subs")
+          .insert({ subscription_id: targetSubId, external_sub_id: createdId, sort_order: initialSort });
+        if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
+      }
+      toast.success(`Импортировано ${links.length} ключ(ей)`);
+      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none"); setIsHeader(false); setPinTop(false);
+      loadAll();
+    } catch (e: any) {
+      toast.error("Ошибка импорта", { description: e?.message ?? String(e) });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   async function onCreate() {
     const link = linkText.trim();
@@ -244,6 +304,7 @@ export function ExternalSubsPanel() {
   }
 
   async function onRefresh(item: ExternalSub) {
+    // (stub removed)
     if (!item.source_url) { toast.error("У записи нет URL для обновления"); return; }
     setBusy(item.id);
     try {
@@ -468,10 +529,30 @@ export function ExternalSubsPanel() {
             ? "Заголовок появится в списке клиента как «сервер» с этим именем, но без рабочего подключения. Используйте для разделителей и баннеров. Позицию меняйте стрелками ↑↓ ниже."
             : <>Имя ссылки (после <code>#</code>) автоматически переписывается в «{`{флаг} {название}`}», например 🇺🇸 США-каскад.</>}
         </p>
-        <div className="mt-4">
-          <Button onClick={onCreate} disabled={creating}>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={onCreate} disabled={creating || importing}>
             {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
             {isHeader ? "Добавить заголовок" : "Добавить сервер"}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.text,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onImportFile(f);
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={creating || importing || isHeader}
+            onClick={() => fileInputRef.current?.click()}
+            title="Загрузить .txt со списком ключей (vless/vmess/trojan/ss/hysteria2/tuic) — будет создана одна запись со всеми ключами"
+          >
+            {importing ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+            Импорт из файла
           </Button>
         </div>
       </Card>
