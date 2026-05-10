@@ -309,10 +309,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (action === "inbounds") {
-      // handled below
-    }
-
     if (action === "parseExternal" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const src: string = (body.url ?? "").trim();
@@ -345,7 +341,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (action === "inbounds_real") {
+    if (action === "inbounds") {
       const all = await getAllPanels();
       const result: Record<string, any> = {};
       const meta = all.map((p) => ({ slug: p.slug, name: p.name }));
