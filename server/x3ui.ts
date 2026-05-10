@@ -1,10 +1,12 @@
 // 3X-UI HTTP client + helpers shared by the panel/sub handlers.
 import { db, decodeRow } from "./db.ts";
+import { decryptField } from "./crypto.ts";
 
 type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
 
-const cookieCache = new Map<string, { cookie: string; ts: number }>();
-const COOKIE_TTL_MS = 30 * 60 * 1000;
+const cookieCache = new Map<string, { cookie: string; ts: number; ttl: number }>();
+const COOKIE_TTL_BASE_MS = 25 * 60 * 1000; // 25 min base
+const COOKIE_TTL_JITTER_MS = 5 * 60 * 1000; // ±5 min random jitter
 const panelsCache = { rows: [] as PanelRow[], ts: 0 };
 const PANELS_TTL_MS = 30_000;
 
@@ -26,9 +28,8 @@ export function panelCfg(p: PanelRow) {
   return { url: (p.panel_url ?? "").replace(/\/+$/, ""), username: p.username, password: p.password };
 }
 
-// Allow self-signed certs on user-provided panel URLs.
-const insecureClient = Deno.createHttpClient ? Deno.createHttpClient({ caCerts: [] }) : undefined;
-// Note: Deno doesn't disable cert validation by default. Most 3X-UI setups now use Let's Encrypt or HTTP. If you need self-signed, enable: --unsafely-ignore-certificate-errors when starting Deno.
+// Note: for self-signed certs on panel HTTPS, start Deno with:
+//   --unsafely-ignore-certificate-errors=<your-panel-host>
 
 export async function rawFetch(url: string, init?: RequestInit) {
   return await fetch(url, init);
@@ -36,12 +37,16 @@ export async function rawFetch(url: string, init?: RequestInit) {
 
 export async function loginPanel(slug: string): Promise<string> {
   const cached = cookieCache.get(slug);
-  if (cached && Date.now() - cached.ts < COOKIE_TTL_MS) return cached.cookie;
+  if (cached && Date.now() - cached.ts < cached.ttl) return cached.cookie;
   const cfg = panelCfg(getPanelBySlug(slug));
+  // Decrypt credentials at use-time — supports both plaintext (legacy) and
+  // encrypted values (when MASTER_KEY is configured in .env).
+  const username = await decryptField(cfg.username);
+  const password = await decryptField(cfg.password);
   const res = await rawFetch(`${cfg.url}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ username: cfg.username, password: cfg.password }).toString(),
+    body: new URLSearchParams({ username, password }).toString(),
   });
   if (res.status < 200 || res.status >= 300) {
     const text = await res.text();
@@ -51,7 +56,8 @@ export async function loginPanel(slug: string): Promise<string> {
   const sc = res.headers.get("set-cookie");
   const cookie = (sc ?? "").split(",").map((c) => c.split(";")[0].trim()).filter(Boolean).join("; ");
   if (!cookie) throw new Error(`No cookie from panel ${slug}`);
-  cookieCache.set(slug, { cookie, ts: Date.now() });
+  const jitter = Math.floor(Math.random() * COOKIE_TTL_JITTER_MS);
+  cookieCache.set(slug, { cookie, ts: Date.now(), ttl: COOKIE_TTL_BASE_MS + jitter });
   return cookie;
 }
 

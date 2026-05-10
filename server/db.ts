@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS admin_login_codes (
   code_hash TEXT NOT NULL,
   expires_at TEXT NOT NULL,
   used INTEGER NOT NULL DEFAULT 0,
+  failed_attempts INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_admin_login_codes_hash ON admin_login_codes(code_hash);
@@ -159,39 +160,147 @@ CREATE TABLE IF NOT EXISTS admin_settings (
 );
 `);
 
-// Lightweight migrations for legacy DBs.
-try {
-  const cols = db.queryEntries(`PRAGMA table_info(panels)`).map((r: any) => r.name);
-  if (!cols.includes("country")) db.execute(`ALTER TABLE panels ADD COLUMN country TEXT NOT NULL DEFAULT ''`);
-} catch {}
-try {
-  const cols = db.queryEntries(`PRAGMA table_info(subscription_inbounds)`).map((r: any) => r.name);
-  if (!cols.includes("sort_order")) db.execute(`ALTER TABLE subscription_inbounds ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`);
-} catch {}
-try {
-  const cols = db.queryEntries(`PRAGMA table_info(subscription_external_subs)`).map((r: any) => r.name);
-  if (!cols.includes("sort_order")) db.execute(`ALTER TABLE subscription_external_subs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1000`);
-} catch {}
-try {
-  const cols = db.queryEntries(`PRAGMA table_info(external_subs)`).map((r: any) => r.name);
-  if (!cols.includes("sort_order")) db.execute(`ALTER TABLE external_subs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1000`);
-} catch {}
-try {
-  const cols = db.queryEntries(`PRAGMA table_info(subscriptions)`).map((r: any) => r.name);
-  if (!cols.includes("raw_links")) db.execute(`ALTER TABLE subscriptions ADD COLUMN raw_links TEXT NOT NULL DEFAULT '[]'`);
-} catch {}
-// Backfill: panels added before slug auto-gen could end up with NULL/empty slug.
-try {
+// ─── Migrations for legacy databases ────────────────────────────────────────────
+// "Expected" errors (duplicate column, constraint that already exists) are silently
+// ignored. Anything unexpected is logged as a warning so it's visible but doesn't
+// crash the server — the schema state is the source of truth, not migration success.
+const EXPECTED_MIGRATION_ERRORS = [
+  /duplicate column name/i,
+  /already exists/i,
+  /table.*already exists/i,
+];
+
+function migrate(name: string, fn: () => void) {
+  try {
+    fn();
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const isExpected = EXPECTED_MIGRATION_ERRORS.some((re) => re.test(msg));
+    if (!isExpected) {
+      console.warn(`[migration] UNEXPECTED ERROR in "${name}": ${msg}`);
+    }
+  }
+}
+
+function colsOf(table: string): string[] {
+  return db.queryEntries(`PRAGMA table_info(${table})`).map((r: any) => r.name as string);
+}
+
+migrate("panels.country", () => {
+  if (!colsOf("panels").includes("country")) {
+    db.execute(`ALTER TABLE panels ADD COLUMN country TEXT NOT NULL DEFAULT ''`);
+    console.log("[migration] panels.country added");
+  }
+});
+migrate("subscription_inbounds.sort_order", () => {
+  if (!colsOf("subscription_inbounds").includes("sort_order")) {
+    db.execute(`ALTER TABLE subscription_inbounds ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`);
+    console.log("[migration] subscription_inbounds.sort_order added");
+  }
+});
+migrate("subscription_external_subs.sort_order", () => {
+  if (!colsOf("subscription_external_subs").includes("sort_order")) {
+    db.execute(`ALTER TABLE subscription_external_subs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1000`);
+    console.log("[migration] subscription_external_subs.sort_order added");
+  }
+});
+migrate("external_subs.sort_order", () => {
+  if (!colsOf("external_subs").includes("sort_order")) {
+    db.execute(`ALTER TABLE external_subs ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 1000`);
+    console.log("[migration] external_subs.sort_order added");
+  }
+});
+migrate("subscriptions.raw_links", () => {
+  if (!colsOf("subscriptions").includes("raw_links")) {
+    db.execute(`ALTER TABLE subscriptions ADD COLUMN raw_links TEXT NOT NULL DEFAULT '[]'`);
+    console.log("[migration] subscriptions.raw_links added");
+  }
+});
+migrate("admin_login_codes.failed_attempts", () => {
+  if (!colsOf("admin_login_codes").includes("failed_attempts")) {
+    db.execute(`ALTER TABLE admin_login_codes ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0`);
+    console.log("[migration] admin_login_codes.failed_attempts added");
+  }
+});
+migrate("panels.slug backfill", () => {
   const broken = db.queryEntries(`SELECT id FROM panels WHERE slug IS NULL OR slug = ''`);
   for (const r of broken) {
     const slug = "p" + crypto.randomUUID().replace(/-/g, "").slice(0, 10);
     db.query(`UPDATE panels SET slug = ? WHERE id = ?`, [slug, (r as any).id]);
   }
-} catch {}
+});
 
+// Migrate subscription_inbounds to add ON DELETE CASCADE on subscription_id.
+// SQLite doesn't support ALTER COLUMN, so we recreate the table if the FK is missing.
+migrate("subscription_inbounds.cascade_fk", () => {
+  // Check if FK already present by inspecting CREATE TABLE sql.
+  const row = db.queryEntries(`SELECT sql FROM sqlite_master WHERE type='table' AND name='subscription_inbounds'`)[0] as any;
+  if (!row?.sql || String(row.sql).toLowerCase().includes("on delete cascade")) return;
+  db.execute(`
+    CREATE TABLE IF NOT EXISTS subscription_inbounds_new (
+      id TEXT PRIMARY KEY,
+      subscription_id TEXT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+      panel TEXT NOT NULL,
+      inbound_id INTEGER NOT NULL,
+      remark TEXT NOT NULL,
+      protocol TEXT NOT NULL,
+      port INTEGER NOT NULL,
+      host TEXT NOT NULL,
+      stream_settings TEXT NOT NULL DEFAULT '{}',
+      client_email TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO subscription_inbounds_new SELECT * FROM subscription_inbounds;
+    DROP TABLE subscription_inbounds;
+    ALTER TABLE subscription_inbounds_new RENAME TO subscription_inbounds;
+    CREATE INDEX IF NOT EXISTS idx_si_sub ON subscription_inbounds(subscription_id);
+    CREATE INDEX IF NOT EXISTS idx_si_panel ON subscription_inbounds(panel);
+  `);
+  console.log("[migration] subscription_inbounds rebuilt with ON DELETE CASCADE");
+});
+
+// Same for subscription_external_subs.
+migrate("subscription_external_subs.cascade_fk", () => {
+  const row = db.queryEntries(`SELECT sql FROM sqlite_master WHERE type='table' AND name='subscription_external_subs'`)[0] as any;
+  if (!row?.sql || String(row.sql).toLowerCase().includes("on delete cascade")) return;
+  db.execute(`
+    CREATE TABLE IF NOT EXISTS subscription_external_subs_new (
+      id TEXT PRIMARY KEY,
+      subscription_id TEXT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+      external_sub_id TEXT NOT NULL REFERENCES external_subs(id) ON DELETE CASCADE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO subscription_external_subs_new SELECT * FROM subscription_external_subs;
+    DROP TABLE subscription_external_subs;
+    ALTER TABLE subscription_external_subs_new RENAME TO subscription_external_subs;
+    CREATE INDEX IF NOT EXISTS idx_ses_sub ON subscription_external_subs(subscription_id);
+    CREATE INDEX IF NOT EXISTS idx_ses_ext ON subscription_external_subs(external_sub_id);
+  `);
+  console.log("[migration] subscription_external_subs rebuilt with ON DELETE CASCADE");
+});
+
+// ─── Column cache ─────────────────────────────────────────────────────────────
+// PRAGMA table_info is fast but not free — schema never changes at runtime, so cache it.
+const _colCache = new Map<string, string[]>();
+
+export function tableColumns(table: string): string[] {
+  const cached = _colCache.get(table);
+  if (cached) return cached;
+  const result = db.queryEntries(`PRAGMA table_info(${table})`).map((r: any) => r.name as string);
+  _colCache.set(table, result);
+  return result;
+}
+
+export function invalidateColCache(table?: string) {
+  if (table) _colCache.delete(table);
+  else _colCache.clear();
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 export function uid() { return crypto.randomUUID(); }
 
-// JSON columns that should be parsed on read / stringified on write.
 const JSON_COLS: Record<string, string[]> = {
   subscriptions: ["sni_whitelist", "raw_links"],
   subscription_inbounds: ["stream_settings"],
@@ -226,9 +335,4 @@ export function rowsAsObjects(table: string, columns: string[], rows: unknown[][
     columns.forEach((c, i) => { o[c] = r[i]; });
     return decodeRow(table, o);
   });
-}
-
-export function tableColumns(table: string): string[] {
-  const rows = db.queryEntries(`PRAGMA table_info(${table})`);
-  return rows.map((r) => r.name as string);
 }

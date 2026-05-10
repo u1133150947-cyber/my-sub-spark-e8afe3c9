@@ -4,13 +4,48 @@
 //        Headers: Prefer: count=exact, Range, Prefer: return=representation
 //   POST /rest/v1/<table>           body: row|rows, Prefer: return=representation, resolution=merge-duplicates (upsert)
 //   PATCH/DELETE /rest/v1/<table>?col=eq.x
+//
+// ALL endpoints require a valid admin session token:
+//   x-admin-token: <token>  OR  Authorization: Bearer <token>
 import { db, decodeRow, encodeRow, tableColumns, uid } from "./db.ts";
+import { verifyAdminSession, unauthorizedResponse } from "./auth.ts";
+import { encryptField, decryptField, PANEL_SENSITIVE_COLS } from "./crypto.ts";
+
+// Columns that should be encrypted at rest for the panels table.
+const PANEL_SENSITIVE = new Set<string>(PANEL_SENSITIVE_COLS);
+
+/** Encrypt sensitive fields before writing to DB. */
+async function encryptRow(table: string, row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (table !== "panels") return row;
+  const out = { ...row };
+  for (const col of PANEL_SENSITIVE) {
+    if (typeof out[col] === "string" && out[col]) {
+      out[col] = await encryptField(out[col] as string);
+    }
+  }
+  return out;
+}
+
+/** Decrypt sensitive fields after reading from DB. */
+async function decryptRow(table: string, row: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (table !== "panels") return row;
+  const out = { ...row };
+  for (const col of PANEL_SENSITIVE) {
+    if (typeof out[col] === "string") {
+      out[col] = await decryptField(out[col] as string);
+    }
+  }
+  return out;
+}
 
 const ALLOWED = new Set([
   "panels", "subscriptions", "subscription_inbounds",
   "inbound_overrides", "client_mappings", "traffic_snapshots", "audit_log",
   "external_subs", "subscription_external_subs",
 ]);
+
+// Tables that are read-only via the REST API — writes go through dedicated handlers.
+const READ_ONLY = new Set(["audit_log"]);
 
 const OP_MAP: Record<string, string> = {
   eq: "=", neq: "!=", gt: ">", gte: ">=", lt: "<", lte: "<=", like: "LIKE", ilike: "LIKE",
@@ -77,12 +112,31 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 }
 
 export async function handleRest(req: Request, url: URL): Promise<Response> {
+  // Every REST endpoint requires a valid admin session.
+  if (req.method !== "OPTIONS" && !verifyAdminSession(req)) {
+    return unauthorizedResponse();
+  }
+  if (req.method === "OPTIONS") {
+    return new Response("ok", {
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version, x-admin-token",
+        "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
+      },
+    });
+  }
+
   const parts = url.pathname.split("/").filter(Boolean); // ["rest","v1","<table>"]
   if (parts.length < 3 || parts[0] !== "rest" || parts[1] !== "v1") {
     return jsonResponse({ message: "not found" }, { status: 404 });
   }
   const table = parts[2];
   if (!ALLOWED.has(table)) return jsonResponse({ message: "table not allowed" }, { status: 403 });
+
+  // Mutating methods are forbidden on read-only tables (e.g. audit_log).
+  if (READ_ONLY.has(table) && req.method !== "GET" && req.method !== "HEAD") {
+    return jsonResponse({ message: `${table} is read-only` }, { status: 403 });
+  }
 
   const prefer = req.headers.get("prefer") ?? "";
   const wantCount = /count=exact/.test(prefer);
@@ -118,11 +172,12 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
     }
 
     const colNames = cols === "*" ? tableColumns(table) : cols.split(",");
-    const rows = db.query(sql, where.args as any).map((r) => {
+    const rawRows = db.query(sql, where.args as any).map((r) => {
       const o: Record<string, unknown> = {};
       colNames.forEach((c, i) => { o[c] = r[i]; });
       return decodeRow(table, o);
     });
+    const rows = await Promise.all(rawRows.map((r) => decryptRow(table, r)));
     return jsonResponse(rows, { headers: total !== null ? { "content-range": `0-${rows.length - 1}/${total}` } : {} });
   }
 
@@ -132,7 +187,8 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
     const cols = new Set(tableColumns(table));
     const out: Record<string, unknown>[] = [];
     for (const raw of rows) {
-      const row = encodeRow(table, raw);
+      let row = encodeRow(table, raw);
+      row = await encryptRow(table, row);
       if (!row.id && cols.has("id")) row.id = uid();
       // Auto-generate slug for panels (mirror Supabase trigger panels_autogen_slug)
       if (table === "panels" && cols.has("slug") && (!row.slug || String(row.slug).trim() === "")) {
@@ -155,7 +211,10 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
       const id = row.id;
       if (id) {
         const r = db.queryEntries(`SELECT * FROM ${table} WHERE id = ?`, [id as any])[0];
-        if (r) out.push(decodeRow(table, r as Record<string, unknown>));
+        if (r) {
+          const decoded = decodeRow(table, r as Record<string, unknown>);
+          out.push(await decryptRow(table, decoded));
+        }
       }
     }
     if (/return=representation/.test(prefer)) return jsonResponse(out, { status: 201 });
@@ -165,22 +224,30 @@ export async function handleRest(req: Request, url: URL): Promise<Response> {
   if (req.method === "PATCH") {
     const body = await req.json().catch(() => ({}));
     const cols = new Set(tableColumns(table));
-    const row = encodeRow(table, body as Record<string, unknown>);
+    let row = encodeRow(table, body as Record<string, unknown>);
+    row = await encryptRow(table, row);
     const keys = Object.keys(row).filter((k) => cols.has(k) && isIdent(k));
     if (!keys.length) return jsonResponse([], { status: 200 });
     const filters = parseFilters(table, url.searchParams);
+    // Refuse filterless PATCH — would update every row in the table.
+    if (!filters.length) return jsonResponse({ message: "PATCH without a filter is not allowed" }, { status: 400 });
     const where = whereFromFilters(filters);
     const set = keys.map((k) => `${k}=?`).join(",");
     db.query(`UPDATE ${table} SET ${set}${where.sql}`, [...keys.map((k) => row[k]), ...where.args] as any);
     if (/return=representation/.test(prefer)) {
-      const rows = db.queryEntries(`SELECT * FROM ${table}${where.sql}`, where.args as any);
-      return jsonResponse((rows as any[]).map((r) => decodeRow(table, r as Record<string, unknown>)));
+      const rawRows = db.queryEntries(`SELECT * FROM ${table}${where.sql}`, where.args as any);
+      const decrypted = await Promise.all(
+        (rawRows as any[]).map((r) => decryptRow(table, decodeRow(table, r as Record<string, unknown>)))
+      );
+      return jsonResponse(decrypted);
     }
     return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*" } });
   }
 
   if (req.method === "DELETE") {
     const filters = parseFilters(table, url.searchParams);
+    // Refuse filterless DELETE — would wipe the entire table.
+    if (!filters.length) return jsonResponse({ message: "DELETE without a filter is not allowed" }, { status: 400 });
     const where = whereFromFilters(filters);
     db.query(`DELETE FROM ${table}${where.sql}`, where.args as any);
     return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*" } });
