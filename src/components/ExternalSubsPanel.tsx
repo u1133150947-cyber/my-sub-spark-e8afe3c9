@@ -327,6 +327,10 @@ export function ExternalSubsPanel() {
   }
 
   async function onDelete(id: string) {
+
+  // no-op anchor
+  ;
+
     if (!confirm("Удалить эту стороннюю подписку и все её привязки?")) return;
     setBusy(id);
     try {
