@@ -456,6 +456,21 @@ export function ExternalSubsPanel() {
     } finally { setSavingEdit(false); }
   }
 
+  async function deleteLink(item: ExternalSub, index: number) {
+    if (!confirm(`Удалить ключ #${index + 1} из «${item.name}»?`)) return;
+    setBusy(item.id);
+    try {
+      const next = (item.raw_links ?? []).filter((_, i) => i !== index);
+      const { error } = await supabase.from("external_subs")
+        .update({ raw_links: next }).eq("id", item.id);
+      if (error) throw error;
+      setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, raw_links: next } : x));
+      toast.success("Ключ удалён");
+    } catch (e: any) {
+      toast.error("Ошибка удаления", { description: e?.message ?? String(e) });
+    } finally { setBusy(null); }
+  }
+
   return (
     <div className="space-y-6">
       <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
@@ -675,8 +690,16 @@ export function ExternalSubsPanel() {
                       <summary className="cursor-pointer text-muted-foreground">Ссылки ({it.raw_links.length})</summary>
                       <div className="mt-2 space-y-1 max-h-60 overflow-auto">
                         {it.raw_links.map((l, i) => (
-                          <div key={i} className="font-mono break-all p-1.5 rounded bg-background/60 border border-border">
-                            {l}
+                          <div key={i} className="flex items-start gap-2 p-1.5 rounded bg-background/60 border border-border">
+                            <div className="font-mono break-all flex-1 min-w-0">{l}</div>
+                            <Button
+                              size="icon" variant="ghost" className="h-6 w-6 shrink-0"
+                              disabled={busy === it.id}
+                              onClick={() => deleteLink(it, i)}
+                              title="Удалить этот ключ"
+                            >
+                              <Trash2 className="size-3 text-destructive" />
+                            </Button>
                           </div>
                         ))}
                       </div>
