@@ -310,6 +310,42 @@ Deno.serve(async (req) => {
     }
 
     if (action === "inbounds") {
+      // handled below
+    }
+
+    if (action === "parseExternal" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const src: string = (body.url ?? "").trim();
+      if (!src) {
+        return new Response(JSON.stringify({ error: "url required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      try {
+        const r = await fetch(src, { headers: { "User-Agent": "ClashforWindows/0.20.39" } });
+        if (!r.ok) {
+          return new Response(JSON.stringify({ error: `HTTP ${r.status}` }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        let text = await r.text();
+        // try base64-decode if it doesn't already look like raw links
+        if (!/^(vless|vmess|trojan|ss|hysteria2?|tuic):\/\//im.test(text)) {
+          try {
+            const cleaned = text.replace(/\s+/g, "");
+            const decoded = atob(cleaned);
+            if (/^(vless|vmess|trojan|ss|hysteria2?|tuic):\/\//im.test(decoded)) {
+              text = decoded;
+            }
+          } catch {}
+        }
+        const links = text
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter((l) => /^(vless|vmess|trojan|ss|hysteria2?|tuic):\/\//i.test(l));
+        return new Response(JSON.stringify({ links }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ error: e?.message ?? String(e) }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
+    if (action === "inbounds_real") {
       const all = await getAllPanels();
       const result: Record<string, any> = {};
       const meta = all.map((p) => ({ slug: p.slug, name: p.name }));
