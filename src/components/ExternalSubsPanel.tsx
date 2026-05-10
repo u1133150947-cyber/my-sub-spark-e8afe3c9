@@ -456,6 +456,21 @@ export function ExternalSubsPanel() {
     } finally { setSavingEdit(false); }
   }
 
+  async function deleteLink(item: ExternalSub, index: number) {
+    if (!confirm(`Удалить ключ #${index + 1} из «${item.name}»?`)) return;
+    setBusy(item.id);
+    try {
+      const next = (item.raw_links ?? []).filter((_, i) => i !== index);
+      const { error } = await supabase.from("external_subs")
+        .update({ raw_links: next }).eq("id", item.id);
+      if (error) throw error;
+      setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, raw_links: next } : x));
+      toast.success("Ключ удалён");
+    } catch (e: any) {
+      toast.error("Ошибка удаления", { description: e?.message ?? String(e) });
+    } finally { setBusy(null); }
+  }
+
   return (
     <div className="space-y-6">
       <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
