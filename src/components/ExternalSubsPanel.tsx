@@ -149,16 +149,20 @@ export function ExternalSubsPanel() {
   useEffect(() => { loadAll(); }, []);
 
   async function onImportFile(file: File) {
+    console.log("[import] onImportFile:", file?.name, file?.size);
     if (!file) return;
+    toast.info(`Читаю файл: ${file.name} (${file.size} байт)`);
     const entryName = name.trim() || file.name.replace(/\.(txt|text)$/i, "").trim() || "Импорт";
     setImporting(true);
     try {
       const text = await file.text();
+      console.log("[import] text length:", text.length, "first 100:", text.slice(0, 100));
       const rx = /^(vless|vmess|trojan|ss|hysteria2?|hy2|tuic):\/\//i;
       const links = text
         .split(/\r?\n/)
         .map((l) => l.trim())
         .filter((l) => rx.test(l));
+      console.log("[import] parsed links:", links.length);
       if (!links.length) {
         toast.error("В файле не найдено ключей (vless/vmess/trojan/ss/hysteria2/tuic)");
         return;
