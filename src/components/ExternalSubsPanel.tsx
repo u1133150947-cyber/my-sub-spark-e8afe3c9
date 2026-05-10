@@ -247,10 +247,7 @@ export function ExternalSubsPanel() {
   }
 
   async function onRefresh(item: ExternalSub) {
-    // see below
-    return _onRefreshImpl(item);
-  }
-  async function _onRefreshImpl(item: ExternalSub) {
+    // (stub removed)
     if (!item.source_url) { toast.error("У записи нет URL для обновления"); return; }
     setBusy(item.id);
     try {
