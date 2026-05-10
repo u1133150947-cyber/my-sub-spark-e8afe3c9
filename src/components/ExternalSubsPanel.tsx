@@ -686,6 +686,10 @@ export function ExternalSubsPanel() {
                       onClick={() => attachAll(it.id)} title="Привязать ко всем подпискам">
                       Всем
                     </Button>
+                    <Button size="sm" variant="outline" disabled={busy === it.id || (it.raw_links?.length ?? 0) < 2}
+                      onClick={() => dedupeByRemark(it)} title="Свернуть дубликаты по имени (оставить по одному ключу на имя)">
+                      Свернуть
+                    </Button>
                     {attached.size > 0 && (
                       <Button size="sm" variant="outline" disabled={busy === it.id}
                         onClick={() => detachAll(it.id)} title="Отвязать у всех">
