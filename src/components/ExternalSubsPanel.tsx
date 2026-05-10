@@ -327,10 +327,6 @@ export function ExternalSubsPanel() {
   }
 
   async function onDelete(id: string) {
-
-  // no-op anchor
-  ;
-
     if (!confirm("Удалить эту стороннюю подписку и все её привязки?")) return;
     setBusy(id);
     try {
@@ -341,6 +337,39 @@ export function ExternalSubsPanel() {
       loadAll();
     } catch (e: any) {
       toast.error("Ошибка удаления", { description: e?.message ?? String(e) });
+    } finally { setBusy(null); }
+  }
+
+  function remarkOf(link: string): string {
+    const hash = link.indexOf("#");
+    if (hash === -1) return link.trim();
+    let r = link.slice(hash + 1);
+    try { r = decodeURIComponent(r); } catch {}
+    // strip trailing " #N" / "#N" suffix added on dedup
+    r = r.replace(/\s*#\d+\s*$/, "").trim();
+    return r;
+  }
+
+  async function dedupeByRemark(item: ExternalSub) {
+    const seen = new Set<string>();
+    const next: string[] = [];
+    for (const l of item.raw_links ?? []) {
+      const key = remarkOf(l).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      next.push(l);
+    }
+    const removed = (item.raw_links?.length ?? 0) - next.length;
+    if (!removed) { toast.info("Дубликатов по имени не найдено"); return; }
+    if (!confirm(`Удалить ${removed} дублирующих ссылок (оставить по одной на каждое имя)?`)) return;
+    setBusy(item.id);
+    try {
+      const { error } = await supabase.from("external_subs").update({ raw_links: next }).eq("id", item.id);
+      if (error) throw error;
+      setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, raw_links: next } : x));
+      toast.success(`Удалено ${removed}, осталось ${next.length}`);
+    } catch (e: any) {
+      toast.error("Не удалось", { description: e?.message ?? String(e) });
     } finally { setBusy(null); }
   }
 
