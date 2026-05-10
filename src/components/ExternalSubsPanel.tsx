@@ -149,6 +149,64 @@ export function ExternalSubsPanel() {
 
   useEffect(() => { loadAll(); }, []);
 
+  async function onImportFile(file: File) {
+    if (!file) return;
+    if (!name.trim()) {
+      toast.error("Сначала введите название записи в форме выше");
+      return;
+    }
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const rx = /^(vless|vmess|trojan|ss|hysteria2?|hy2|tuic):\/\//i;
+      const links = text
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => rx.test(l));
+      if (!links.length) {
+        toast.error("В файле не найдено ключей (vless/vmess/trojan/ss/hysteria2/tuic)");
+        return;
+      }
+      const c = COUNTRIES.find((x) => x.code === country) ?? COUNTRIES[0];
+      const initialSort = pinTop ? PINNED_SORT : DEFAULT_EXTERNAL_SORT;
+      const { data, error } = await supabase
+        .from("external_subs")
+        .insert({
+          name: name.trim(),
+          emoji: c.emoji,
+          source_url: "",
+          raw_links: links,
+          notes: `Импорт из файла «${file.name}» — ${links.length} ключ(ей)`,
+          sort_order: initialSort,
+        })
+        .select("id")
+        .single();
+      if (error) throw error;
+      const createdId = (data as any)?.id;
+      if (createdId && targetSubId === "all" && subs.length) {
+        for (const s of subs) {
+          const { error: e2 } = await supabase
+            .from("subscription_external_subs")
+            .insert({ subscription_id: s.id, external_sub_id: createdId, sort_order: initialSort });
+          if (e2 && !/duplicate|unique/i.test(e2.message)) throw e2;
+        }
+      } else if (createdId && targetSubId !== "none") {
+        const r = await supabase
+          .from("subscription_external_subs")
+          .insert({ subscription_id: targetSubId, external_sub_id: createdId, sort_order: initialSort });
+        if (r.error && !/duplicate|unique/i.test(r.error.message)) throw r.error;
+      }
+      toast.success(`Импортировано ${links.length} ключ(ей)`);
+      setName(""); setCountry("RU"); setLinkText(""); setTargetSubId("none"); setIsHeader(false); setPinTop(false);
+      loadAll();
+    } catch (e: any) {
+      toast.error("Ошибка импорта", { description: e?.message ?? String(e) });
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
+
   async function onCreate() {
     const link = linkText.trim();
     if (!name.trim()) { toast.error("Введите название"); return; }
