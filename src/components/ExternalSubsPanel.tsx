@@ -548,8 +548,11 @@ export function ExternalSubsPanel() {
           <Button
             type="button"
             variant="outline"
-            disabled={creating || importing || isHeader}
-            onClick={() => fileInputRef.current?.click()}
+            disabled={creating || importing}
+            onClick={() => {
+              console.log("[import] click — opening file picker");
+              fileInputRef.current?.click();
+            }}
             title="Загрузить .txt со списком ключей (vless/vmess/trojan/ss/hysteria2/tuic) — будет создана одна запись со всеми ключами"
           >
             {importing ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
