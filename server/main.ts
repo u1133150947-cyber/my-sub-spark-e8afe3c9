@@ -7,14 +7,17 @@ import { handleSub } from "./sub.ts";
 import { handleUpdate, handleVersion, handleUpdateFromGithub } from "./update.ts";
 import { handleAdminAuth } from "./adminAuth.ts";
 import { contentType } from "https://deno.land/std@0.224.0/media_types/mod.ts";
-import { extname, join, normalize } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { extname, join, normalize, sep } from "https://deno.land/std@0.224.0/path/mod.ts";
 
 const PORT = Number(Deno.env.get("PORT") ?? 8080);
-const STATIC_DIR = Deno.env.get("STATIC_DIR") ?? "./dist";
+const STATIC_DIR = (() => {
+  const raw = Deno.env.get("STATIC_DIR") ?? "./dist";
+  try { return Deno.realPathSync(raw); } catch { return raw; }
+})();
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version, x-admin-token",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
   "Access-Control-Expose-Headers": "content-range, content-profile",
 };
@@ -22,20 +25,30 @@ const cors = {
 async function serveStatic(url: URL): Promise<Response> {
   let p = decodeURIComponent(url.pathname);
   if (p === "/" || p === "") p = "/index.html";
-  const safe = normalize(p).replace(/^(\.\.[/\\])+/, "");
-  const filePath = join(STATIC_DIR, safe);
+  // Normalize and resolve to absolute path, then verify it stays inside STATIC_DIR.
+  const filePath = join(STATIC_DIR, normalize(p));
+  let realPath: string;
   try {
-    const file = await Deno.readFile(filePath);
-    const ct = contentType(extname(filePath)) ?? "application/octet-stream";
-    return new Response(file, { headers: { "content-type": ct, "cache-control": "public, max-age=300" } });
+    realPath = await Deno.realPath(filePath);
   } catch {
-    // SPA fallback
+    // File doesn't exist — SPA fallback.
     try {
       const html = await Deno.readFile(join(STATIC_DIR, "index.html"));
       return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
     } catch {
       return new Response("Not found", { status: 404 });
     }
+  }
+  // Prevent path traversal: resolved path must be inside STATIC_DIR.
+  if (!realPath.startsWith(STATIC_DIR + sep) && realPath !== STATIC_DIR) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  try {
+    const file = await Deno.readFile(realPath);
+    const ct = contentType(extname(realPath)) ?? "application/octet-stream";
+    return new Response(file, { headers: { "content-type": ct, "cache-control": "public, max-age=300" } });
+  } catch {
+    return new Response("Not found", { status: 404 });
   }
 }
 
@@ -48,6 +61,12 @@ function withCors(res: Response): Response {
 Deno.serve({ port: PORT }, async (req) => {
   const url = new URL(req.url);
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+
+  if (url.pathname === "/api/health") {
+    return new Response(JSON.stringify({ ok: true, ts: new Date().toISOString() }), {
+      headers: { ...cors, "content-type": "application/json" },
+    });
+  }
 
   // Subscription endpoint — must be reachable both as /sub/<slug> and /functions/v1/sub/<slug>
   if (url.pathname.startsWith("/sub/") || url.pathname.startsWith("/functions/v1/sub")) {
@@ -73,7 +92,17 @@ Deno.serve({ port: PORT }, async (req) => {
   }
   // Stub auth endpoints so supabase-js doesn't error if it tries to refresh tokens.
   if (url.pathname.startsWith("/auth/v1/")) {
+    console.debug(`[auth-stub] ${req.method} ${url.pathname} → 200 {}`);
     return new Response(JSON.stringify({}), { status: 200, headers: { ...cors, "content-type": "application/json" } });
+  }
+
+  // Any unknown /api/* or /functions/* path gets a hard 404 — not the SPA fallback.
+  // This prevents a missing route from silently returning index.html with a 200.
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/functions/")) {
+    return new Response(JSON.stringify({ error: "not found" }), {
+      status: 404,
+      headers: { ...cors, "content-type": "application/json" },
+    });
   }
 
   return await serveStatic(url);
