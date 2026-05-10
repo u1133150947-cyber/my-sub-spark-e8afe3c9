@@ -10,11 +10,17 @@ import { getAdminToken } from "./lib/adminAuth";
 if (typeof window !== "undefined" && !(window as any).__adminFetchPatched) {
   (window as any).__adminFetchPatched = true;
   const origFetch = window.fetch.bind(window);
-  const ADMIN_PATHS = ["/functions/v1/panel", "/functions/v1/sub", "/functions/v1/admin-auth", "/api/update"];
+  const ADMIN_PATHS = ["/functions/v1/panel", "/functions/v1/sub", "/api/update"];
+  const SUPABASE_HOST = (() => {
+    try { return new URL(import.meta.env.VITE_SUPABASE_URL as string).host; } catch { return ""; }
+  })();
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     try {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
-      if (url && ADMIN_PATHS.some((p) => url.includes(p))) {
+      // Skip Supabase-hosted endpoints — their CORS doesn't allow x-admin-token
+      // and they don't need it. Only self-hosted VDS endpoints check it.
+      const isSupabase = !!SUPABASE_HOST && url.includes(SUPABASE_HOST);
+      if (url && !isSupabase && ADMIN_PATHS.some((p) => url.includes(p))) {
         const token = getAdminToken();
         if (token) {
           const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
