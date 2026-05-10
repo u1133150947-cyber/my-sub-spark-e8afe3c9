@@ -1,12 +1,12 @@
 // Self-update endpoint: receive an archive (.zip or .tar.gz) and apply it in-place.
 // Protected by Caddy basic-auth in front; we additionally require an env-set token if provided.
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { db } from "./db.ts";
+import { verifyAdminSession } from "./auth.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-admin-token, x-update-token",
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
 };
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -16,19 +16,6 @@ const UPDATE_TOKEN = Deno.env.get("UPDATE_TOKEN") ?? ""; // optional extra check
 const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "u1133150947-cyber/my-sub-spark-df6a54d2";
 const GITHUB_BRANCH = Deno.env.get("GITHUB_BRANCH") ?? "main";
 
-function isoNow() { return new Date().toISOString(); }
-
-function verifyAdminSession(req: Request): boolean {
-  const token = req.headers.get("x-admin-token") ?? "";
-  if (!token) return false;
-  try {
-    const rows = db.queryEntries(
-      `SELECT token FROM admin_sessions WHERE token = ? AND datetime(expires_at) > datetime(?) LIMIT 1`,
-      [token, isoNow()],
-    );
-    return rows.length > 0;
-  } catch { return false; }
-}
 
 async function backupData(push: (s: string) => void): Promise<void> {
   const dataDir = join(APP_DIR, "data");
