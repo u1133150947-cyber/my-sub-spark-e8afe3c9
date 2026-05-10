@@ -530,10 +530,30 @@ export function ExternalSubsPanel() {
             ? "Заголовок появится в списке клиента как «сервер» с этим именем, но без рабочего подключения. Используйте для разделителей и баннеров. Позицию меняйте стрелками ↑↓ ниже."
             : <>Имя ссылки (после <code>#</code>) автоматически переписывается в «{`{флаг} {название}`}», например 🇺🇸 США-каскад.</>}
         </p>
-        <div className="mt-4">
-          <Button onClick={onCreate} disabled={creating}>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button onClick={onCreate} disabled={creating || importing}>
             {creating ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
             {isHeader ? "Добавить заголовок" : "Добавить сервер"}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.text,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) onImportFile(f);
+            }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            disabled={creating || importing || isHeader}
+            onClick={() => fileInputRef.current?.click()}
+            title="Загрузить .txt со списком ключей (vless/vmess/trojan/ss/hysteria2/tuic) — будет создана одна запись со всеми ключами"
+          >
+            {importing ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+            Импорт из файла
           </Button>
         </div>
       </Card>
