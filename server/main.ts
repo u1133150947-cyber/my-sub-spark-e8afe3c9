@@ -7,7 +7,7 @@ import { handleSub } from "./sub.ts";
 import { handleUpdate, handleVersion, handleUpdateFromGithub } from "./update.ts";
 import { handleAdminAuth } from "./adminAuth.ts";
 import { contentType } from "https://deno.land/std@0.224.0/media_types/mod.ts";
-import { extname, join, normalize, sep } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { extname, join, normalize } from "https://deno.land/std@0.224.0/path/mod.ts";
 
 const PORT = Number(Deno.env.get("PORT") ?? 8080);
 const STATIC_DIR = (() => {
@@ -73,7 +73,8 @@ async function serveStatic(url: URL): Promise<Response> {
     }
   }
   // Prevent path traversal: resolved path must be inside STATIC_DIR.
-  if (!realPath.startsWith(STATIC_DIR + sep) && realPath !== STATIC_DIR) {
+  const staticPrefix = STATIC_DIR.endsWith("/") ? STATIC_DIR : STATIC_DIR + "/";
+  if (!realPath.startsWith(staticPrefix) && realPath !== STATIC_DIR) {
     return new Response("Forbidden", { status: 403 });
   }
   try {
