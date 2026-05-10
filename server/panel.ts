@@ -4,6 +4,7 @@ import {
   addClient, bustPanelsCache, getAllPanels, getClientExpiryByEmail, getClientTrafficsByEmail,
   getPanelBySlug, listInbounds, panelConnectionHost, panelFetch, randomSlug, updateClient, uuidv4, rawFetch,
 } from "./x3ui.ts";
+import { verifyAdminSession, unauthorizedResponse } from "./auth.ts";
 
 const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { ...cors, "Content-Type": "application/json" } });
@@ -146,6 +147,7 @@ function rows<T = any>(sql: string, args: unknown[] = []): T[] {
 
 export async function handlePanel(req: Request, url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (!verifyAdminSession(req)) return unauthorizedResponse(cors);
   const action = url.searchParams.get("action") ?? "";
   try {
     if (action === "testPanel") {

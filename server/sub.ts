@@ -132,10 +132,16 @@ async function refreshInboundsFromPanels(inbounds: any[], sub: any) {
               flow: desiredFlow,
             });
             snap._clientFlow = desiredFlow;
-          } catch {}
+          } catch (e) {
+            // Non-fatal: flow sync failed; serve the sub anyway with cached settings.
+            console.warn(`[sub] flow sync failed for ${panel}/${ib.inbound_id}:`, e instanceof Error ? e.message : e);
+          }
         }
       }
-    } catch {}
+    } catch (e) {
+      // Panel unreachable — serve cached stream_settings from DB.
+      console.warn(`[sub] panel "${panel}" unreachable, using cached settings:`, e instanceof Error ? e.message : e);
+    }
   }));
 }
 
@@ -270,6 +276,10 @@ function withHost(link: string, host: string) {
 
 export async function handleSub(req: Request, url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  // HEAD is used by VPN clients to check sub expiry without downloading.
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return new Response("Method Not Allowed", { status: 405, headers: cors });
+  }
   const parts = url.pathname.split("/").filter(Boolean);
   const slug = parts[parts.length - 1];
   if (!slug || slug === "sub") return new Response("Not found", { status: 404, headers: cors });
@@ -346,14 +356,15 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
         lines: ls,
       });
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[sub] external subs query failed:", e instanceof Error ? e.message : e);
+  }
   items.sort((a, b) => (a.sort_order - b.sort_order) || a.created_at.localeCompare(b.created_at));
   for (const it of items) for (const l of it.lines) lines.push(l);
 
   const body = base64Utf8(lines.join("\n"));
 
   db.query(`UPDATE subscriptions SET hits = hits + 1, last_accessed_at = datetime('now') WHERE id = ?`, [sub.id]);
-
   let used = 0;
   const lastSnap = db.queryEntries(`SELECT used_bytes FROM traffic_snapshots WHERE subscription_id = ? ORDER BY created_at DESC LIMIT 1`, [sub.id])[0] as any;
   if (lastSnap?.used_bytes != null) used = Number(lastSnap.used_bytes);
@@ -377,17 +388,21 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   }
   const announce = "base64:" + base64Utf8(announceText);
 
-  return new Response(body, {
-    status: 200,
-    headers: {
-      ...cors,
-      "content-type": "text/plain; charset=utf-8",
-      "profile-title": profileTitle,
-      "profile-update-interval": "3",
-      "subscription-update-interval": "3",
-      "subscription-userinfo": `upload=0; download=${used}; total=${total}; expire=${expire}`,
-      "announce": announce,
-      "content-disposition": `attachment; filename=${encodeURIComponent(sub.name)}`,
-    },
-  });
+  const responseHeaders = {
+    ...cors,
+    "content-type": "text/plain; charset=utf-8",
+    "profile-title": profileTitle,
+    "profile-update-interval": "3",
+    "subscription-update-interval": "3",
+    "subscription-userinfo": `upload=0; download=${used}; total=${total}; expire=${expire}`,
+    "announce": announce,
+    "content-disposition": `attachment; filename=${encodeURIComponent(sub.name)}`,
+  };
+
+  // HEAD: return metadata headers only (no body). Used by clients to check expiry.
+  if (req.method === "HEAD") {
+    return new Response(null, { status: 200, headers: responseHeaders });
+  }
+
+  return new Response(body, { status: 200, headers: responseHeaders });
 }
