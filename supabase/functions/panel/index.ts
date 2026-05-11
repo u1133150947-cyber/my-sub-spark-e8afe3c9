@@ -11,6 +11,7 @@ const corsHeaders = {
 
 type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
 type PanelKey = string;
+type PanelResponse = { status: number; headers: Record<string, string | string[]>; body: string };
 
 const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -46,10 +47,55 @@ function panelCfg(p: PanelRow) {
   return { url: (p.panel_url ?? "").replace(/\/+$/, ""), username: p.username, password: p.password };
 }
 
+function headersToRecord(headers: Headers): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {};
+  headers.forEach((value, key) => { out[key.toLowerCase()] = value; });
+  const setCookies = (headers as any).getSetCookie?.();
+  if (Array.isArray(setCookies) && setCookies.length) out["set-cookie"] = setCookies;
+  return out;
+}
+
+function mergeCookies(...parts: string[]) {
+  const byName = new Map<string, string>();
+  for (const part of parts.filter(Boolean)) {
+    for (const item of part.split(";")) {
+      const cookie = item.trim();
+      const eq = cookie.indexOf("=");
+      if (eq > 0) byName.set(cookie.slice(0, eq), cookie);
+    }
+  }
+  return Array.from(byName.values()).join("; ");
+}
+
+function shouldFallbackToNodeRequest(e: unknown) {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /cert|certificate|tls|ssl|issuer|authority|unexpected end of file/i.test(msg);
+}
+
+async function fetchRequest(
+  urlStr: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
+): Promise<PanelResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("request timeout 15s"), 15_000);
+  try {
+    const res = await fetch(urlStr, {
+      method: opts.method ?? "GET",
+      headers: { "User-Agent": "Mozilla/5.0 Lovable 3x-ui connector", "Accept-Encoding": "identity", ...(opts.headers ?? {}) },
+      body: opts.body,
+      redirect: "manual",
+      signal: controller.signal,
+    });
+    return { status: res.status, headers: headersToRecord(res.headers), body: await res.text() };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function nodeRequest(
   urlStr: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
-): Promise<{ status: number; headers: Record<string, string | string[]>; body: string }> {
+): Promise<PanelResponse> {
   return new Promise((resolve, reject) => {
     const u = new URL(urlStr);
     const isHttps = u.protocol === "https:";
@@ -74,6 +120,7 @@ function nodeRequest(
             body: Buffer.concat(chunks).toString("utf8"),
           }),
         );
+        res.on("error", reject);
       },
     );
     req.on("error", reject);
@@ -84,6 +131,18 @@ function nodeRequest(
 }
 
 // Retry wrapper: 3 attempts with exp backoff for network/5xx errors
+async function panelHttpRequest(
+  urlStr: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
+) {
+  try {
+    return await fetchRequest(urlStr, opts);
+  } catch (e) {
+    if (!shouldFallbackToNodeRequest(e)) throw e;
+    return await nodeRequest(urlStr, opts);
+  }
+}
+
 async function nodeRequestRetry(
   urlStr: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
@@ -92,7 +151,7 @@ async function nodeRequestRetry(
   let lastErr: any;
   for (let i = 0; i < retries; i++) {
     try {
-      const res = await nodeRequest(urlStr, opts);
+      const res = await panelHttpRequest(urlStr, opts);
       if (res.status >= 500 && i < retries - 1) {
         await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i)));
         continue;
@@ -104,6 +163,22 @@ async function nodeRequestRetry(
     }
   }
   throw lastErr;
+}
+
+async function getCsrfToken(baseUrl: string, cookie = ""): Promise<{ token: string; cookie: string }> {
+  const res = await nodeRequestRetry(`${baseUrl}/csrf-token`, {
+    method: "GET",
+    headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest", ...(cookie ? { Cookie: cookie } : {}) },
+  }, 1);
+  const sc = res.headers["set-cookie"];
+  const setCookies: string[] = Array.isArray(sc) ? sc : sc ? [sc as string] : [];
+  const csrfCookie = setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  let token = "";
+  try {
+    const j = JSON.parse(res.body);
+    if (j?.success && typeof j.obj === "string") token = j.obj;
+  } catch {}
+  return { token, cookie: mergeCookies(cookie, csrfCookie) };
 }
 
 // Bounded concurrency runner (pool of N workers)
@@ -125,15 +200,25 @@ async function loginPanel(slug: PanelKey): Promise<string> {
   const cached = cookieCache.get(slug);
   if (cached && Date.now() - cached.ts < COOKIE_TTL_MS) return cached.cookie;
   const cfg = panelCfg(await getPanelBySlug(slug));
-  const res = await nodeRequest(`${cfg.url}/login`, {
+  const csrf = await getCsrfToken(cfg.url).catch(() => ({ token: "", cookie: "" }));
+  const res = await nodeRequestRetry(`${cfg.url}/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ username: cfg.username, password: cfg.password }).toString(),
-  });
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      Accept: "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+      ...(csrf.token ? { "X-CSRF-Token": csrf.token } : {}),
+      ...(csrf.cookie ? { Cookie: csrf.cookie } : {}),
+    },
+    body: new URLSearchParams({ username: cfg.username, password: cfg.password, twoFactorCode: "" }).toString(),
+  }, 1);
   if (res.status < 200 || res.status >= 300) throw new Error(`Login failed [${slug}] ${res.status}: ${res.body}`);
+  let parsed: any = null;
+  try { parsed = JSON.parse(res.body); } catch {}
+  if (parsed?.success === false) throw new Error(parsed.msg ?? "Login refused");
   const sc = res.headers["set-cookie"];
   const setCookies: string[] = Array.isArray(sc) ? sc : sc ? [sc as string] : [];
-  const cookie = setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  const cookie = mergeCookies(csrf.cookie, setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; "));
   if (!cookie) throw new Error(`No cookie from panel ${slug}`);
   cookieCache.set(slug, { cookie, ts: Date.now() });
   return cookie;
@@ -146,10 +231,19 @@ async function panelFetch(
 ) {
   const cfg = panelCfg(await getPanelBySlug(slug));
   let cookie = await loginPanel(slug);
+  const method = init?.method ?? "GET";
+  const needsCsrf = !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method.toUpperCase());
+  let csrfToken = "";
+  if (needsCsrf) {
+    const csrf = await getCsrfToken(cfg.url, cookie).catch(() => ({ token: "", cookie }));
+    csrfToken = csrf.token;
+    cookie = csrf.cookie || cookie;
+    cookieCache.set(slug, { cookie, ts: Date.now() });
+  }
   const doReq = (ck: string) =>
     nodeRequestRetry(`${cfg.url}${path}`, {
-      method: init?.method ?? "GET",
-      headers: { ...(init?.headers ?? {}), Cookie: ck, Accept: "application/json" },
+      method,
+      headers: { ...(init?.headers ?? {}), ...(csrfToken ? { "X-CSRF-Token": csrfToken, "X-Requested-With": "XMLHttpRequest" } : {}), Cookie: ck, Accept: "application/json" },
       body: init?.body,
     });
   let res = await doReq(cookie);
@@ -285,11 +379,18 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: false, error: "panel_url, username, password обязательны" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       try {
-        const res = await nodeRequest(`${panelUrl}/login`, {
+        const csrf = await getCsrfToken(panelUrl).catch(() => ({ token: "", cookie: "" }));
+        const res = await nodeRequestRetry(`${panelUrl}/login`, {
           method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ username, password }).toString(),
-        });
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            Accept: "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            ...(csrf.token ? { "X-CSRF-Token": csrf.token } : {}),
+            ...(csrf.cookie ? { Cookie: csrf.cookie } : {}),
+          },
+          body: new URLSearchParams({ username, password, twoFactorCode: "" }).toString(),
+        }, 1);
         if (res.status < 200 || res.status >= 300) {
           return new Response(JSON.stringify({ ok: false, error: `HTTP ${res.status}: ${res.body.slice(0, 200)}` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
