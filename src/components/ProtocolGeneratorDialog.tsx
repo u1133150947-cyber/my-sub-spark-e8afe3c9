@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "sonner";
 import { Loader2, Wand2, KeyRound, Plus } from "lucide-react";
 
-type Template = "vless-reality" | "vless-reality-vision" | "trojan-tls";
+type Template = "vless-reality" | "vless-reality-simple" | "vless-reality-vision" | "trojan-tls" | "hysteria2";
 
 const REALITY_TARGETS = [
   "www.microsoft.com",
@@ -183,6 +183,56 @@ function buildTrojanTls(opts: { port: number; remark: string; sni: string; finge
     tag: `inbound-${opts.port}`,
     sniffing,
     allocate,
+  };
+}
+
+// PrimeVPN-style minimal Reality-Vision: один shortId, serverName строкой, fingerprint chrome
+function buildVlessRealitySimple(opts: { port: number; remark: string; sni: string; fingerprint: string; privateKey: string; publicKey: string; shortId: string }) {
+  const settings = { clients: [], decryption: "none", fallbacks: [] };
+  const streamSettings = {
+    network: "tcp",
+    security: "reality",
+    externalProxy: [],
+    realitySettings: {
+      show: false, xver: 0,
+      dest: `${opts.sni}:443`,
+      serverNames: [opts.sni],
+      privateKey: opts.privateKey,
+      shortIds: [opts.shortId],
+      settings: { publicKey: opts.publicKey, fingerprint: opts.fingerprint, serverName: "", spiderX: "/" },
+    },
+    tcpSettings: { acceptProxyProtocol: false, header: { type: "none" } },
+  };
+  return {
+    up: 0, down: 0, total: 0, remark: opts.remark, enable: true, expiryTime: 0, listen: "",
+    port: opts.port, protocol: "vless", settings, streamSettings,
+    tag: `inbound-${opts.port}`,
+    sniffing: { enabled: true, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false },
+    allocate: { strategy: "always", refresh: 5, concurrency: 3 },
+  };
+}
+
+function buildHysteria2(opts: { port: number; remark: string; sni: string; certFile: string; keyFile: string; obfsPassword: string }) {
+  const settings: any = { clients: [] };
+  if (opts.obfsPassword) settings.obfs = { password: opts.obfsPassword };
+  const streamSettings = {
+    security: "tls",
+    externalProxy: [],
+    tlsSettings: {
+      serverName: opts.sni,
+      minVersion: "1.2", maxVersion: "1.3", cipherSuites: "",
+      rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false,
+      certificates: [{ certificateFile: opts.certFile, keyFile: opts.keyFile, ocspStapling: 3600, oneTimeLoading: false, usage: "encipherment" }],
+      alpn: ["h3"],
+      settings: { allowInsecure: false, fingerprint: "" },
+    },
+  };
+  return {
+    up: 0, down: 0, total: 0, remark: opts.remark, enable: true, expiryTime: 0, listen: "",
+    port: opts.port, protocol: "hysteria2", settings, streamSettings,
+    tag: `inbound-${opts.port}`,
+    sniffing: { enabled: false, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false },
+    allocate: { strategy: "always", refresh: 5, concurrency: 3 },
   };
 }
 
