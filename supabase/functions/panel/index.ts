@@ -343,6 +343,9 @@ function buildClientObj(c: { id: string; email: string; expiryTime: number; tota
   if (proto === "shadowsocks") {
     return { ...base, password: c.id, method: "" };
   }
+  if (proto === "hysteria2" || proto === "hysteria") {
+    return { ...base, password: c.id };
+  }
   // vless / vmess / default
   return { ...base, id: c.id, flow: c.flow ?? "" };
 }
