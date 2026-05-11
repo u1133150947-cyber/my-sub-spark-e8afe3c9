@@ -273,6 +273,9 @@ export function ProtocolGeneratorDialog({
   const [mldsa65Seed, setMldsa65Seed] = useState("");
   const [mldsa65Verify, setMldsa65Verify] = useState("");
 
+  // Hysteria2 obfs
+  const [obfsPassword, setObfsPassword] = useState("");
+
   // Reset on open
   useEffect(() => {
     if (!open) return;
@@ -299,11 +302,21 @@ export function ProtocolGeneratorDialog({
     const r = remark.trim() ||
       (template === "vless-reality"
         ? `vless-reality-${port}`
+        : template === "vless-reality-simple"
+        ? `vless-reality-simple-${port}`
         : template === "vless-reality-vision"
         ? `vless-vision-${port}`
+        : template === "hysteria2"
+        ? `hy2-${port}`
         : `trojan-tls-${port}`);
     if (template === "vless-reality") {
       return buildVlessReality({ port, remark: r, sni, fingerprint, privateKey, publicKey, shortId });
+    }
+    if (template === "vless-reality-simple") {
+      return buildVlessRealitySimple({ port, remark: r, sni, fingerprint, privateKey, publicKey, shortId });
+    }
+    if (template === "hysteria2") {
+      return buildHysteria2({ port, remark: r, sni, certFile, keyFile, obfsPassword });
     }
     if (template === "vless-reality-vision") {
       const sids = shortIdsText.split(",").map((s) => s.trim()).filter(Boolean);
@@ -322,7 +335,7 @@ export function ProtocolGeneratorDialog({
     }
     return buildTrojanTls({ port, remark: r, sni, fingerprint, certFile, keyFile });
   }, [template, port, remark, sni, fingerprint, privateKey, publicKey, shortId, certFile, keyFile,
-      targetHost, targetPort, serverNamesText, shortIdsText, spiderX, mldsa65Seed, mldsa65Verify]);
+      targetHost, targetPort, serverNamesText, shortIdsText, spiderX, mldsa65Seed, mldsa65Verify, obfsPassword]);
 
   const previewJson = editing ? jsonOverride : JSON.stringify(payload, null, 2);
 
@@ -345,7 +358,7 @@ export function ProtocolGeneratorDialog({
 
   const handleCreate = async () => {
     if (!panelSlug) return toast.error("Нет slug панели");
-    if ((template === "vless-reality" || template === "vless-reality-vision") && (!privateKey || !publicKey)) {
+    if ((template === "vless-reality" || template === "vless-reality-simple" || template === "vless-reality-vision") && (!privateKey || !publicKey)) {
       return toast.error("Сначала сгенерируйте Reality ключи");
     }
     if (!Number.isFinite(port) || port < 1 || port > 65535) return toast.error("Некорректный порт");
