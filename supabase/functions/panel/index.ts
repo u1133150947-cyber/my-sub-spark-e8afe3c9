@@ -1062,7 +1062,7 @@ Deno.serve(async (req) => {
       const slug = url.searchParams.get("panel") ?? "";
       if (!slug) return new Response(JSON.stringify({ ok: false, error: "panel required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       try {
-        // Try common 3x-ui endpoints (varies by version + trailing-slash redirects)
+        // 1) Try common 3x-ui endpoints (varies by version + trailing-slash redirects)
         const paths = [
           "/panel/server/getNewX25519Cert",
           "/panel/setting/getNewX25519Cert",
@@ -1084,7 +1084,18 @@ Deno.serve(async (req) => {
           const loc = (res.headers["location"] ?? res.headers["Location"]) as string | undefined;
           tried.push({ path: p, status: res.status, loc, body: (res.body || "").slice(0, 200) });
         }
-        return new Response(JSON.stringify({ ok: false, error: "panel did not return reality keys", tried }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        // 2) Fallback: generate x25519 locally via WebCrypto (compatible with xray Reality)
+        try {
+          const kp = await crypto.subtle.generateKey({ name: "X25519" } as any, true, ["deriveBits"]) as CryptoKeyPair;
+          const rawPub = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
+          const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+          // PKCS8 X25519 has 32-byte raw key in the last 32 bytes
+          const rawPriv = pkcs8.slice(pkcs8.length - 32);
+          const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+          return new Response(JSON.stringify({ ok: true, privateKey: b64u(rawPriv), publicKey: b64u(rawPub), source: "local" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } catch (e) {
+          return new Response(JSON.stringify({ ok: false, error: "panel did not return reality keys and local x25519 failed: " + (e instanceof Error ? e.message : String(e)), tried }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
       } catch (e: any) {
         return new Response(JSON.stringify({ ok: false, error: e?.message ?? String(e) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
