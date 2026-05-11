@@ -300,17 +300,17 @@ async function getClientExpiryByEmail(slug: PanelKey): Promise<Record<string, nu
 async function addClient(
   slug: PanelKey,
   inboundId: number,
-  client: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string },
+  client: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string; protocol?: string },
 ) {
-  const settings = JSON.stringify({
-    clients: [{ id: client.id, flow: client.flow ?? "", email: client.email, limitIp: 0, totalGB: client.totalGB, expiryTime: client.expiryTime, enable: true, tgId: "", subId: client.subId, reset: 0 }],
-  });
+  const settings = JSON.stringify({ clients: [buildClientObj(client)] });
   const res = await panelFetch(slug, "/panel/api/inbounds/addClient", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: inboundId, settings }),
   });
-  const json = JSON.parse(res.body);
+  let json: any = null;
+  try { json = JSON.parse(res.body); } catch {}
+  if (!json) throw new Error(`addClient [${slug}/${inboundId}]: HTTP ${res.status}, body=${(res.body || "").slice(0, 200) || "<empty>"}`);
   if (!json.success) throw new Error(`addClient [${slug}/${inboundId}]: ${json.msg}`);
   return json;
 }
@@ -318,19 +318,33 @@ async function addClient(
 async function updateClient(
   slug: PanelKey,
   inboundId: number,
-  client: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string },
+  client: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string; protocol?: string },
 ) {
-  const settings = JSON.stringify({
-    clients: [{ id: client.id, flow: client.flow ?? "", email: client.email, limitIp: 0, totalGB: client.totalGB, expiryTime: client.expiryTime, enable: true, tgId: "", subId: client.subId, reset: 0 }],
-  });
+  const settings = JSON.stringify({ clients: [buildClientObj(client)] });
   const res = await panelFetch(slug, `/panel/api/inbounds/updateClient/${client.id}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: inboundId, settings }),
   });
-  const json = JSON.parse(res.body);
+  let json: any = null;
+  try { json = JSON.parse(res.body); } catch {}
+  if (!json) throw new Error(`updateClient [${slug}/${inboundId}]: HTTP ${res.status}, body=${(res.body || "").slice(0, 200) || "<empty>"}`);
   if (!json.success) throw new Error(`updateClient [${slug}/${inboundId}]: ${json.msg}`);
   return json;
+}
+
+// Build per-protocol client object for 3x-ui addClient/updateClient
+function buildClientObj(c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string; protocol?: string }) {
+  const base = { email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
+  const proto = (c.protocol ?? "vless").toLowerCase();
+  if (proto === "trojan") {
+    return { ...base, password: c.id };
+  }
+  if (proto === "shadowsocks") {
+    return { ...base, password: c.id, method: "" };
+  }
+  // vless / vmess / default
+  return { ...base, id: c.id, flow: c.flow ?? "" };
 }
 
 function uuidv4() { return crypto.randomUUID(); }
