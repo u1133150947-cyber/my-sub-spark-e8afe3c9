@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "sonner";
 import { Loader2, Wand2, KeyRound, Plus } from "lucide-react";
 
-type Template = "vless-reality" | "vless-reality-vision" | "trojan-tls";
+type Template = "vless-reality" | "vless-reality-simple" | "vless-reality-vision" | "trojan-tls" | "hysteria2";
 
 const REALITY_TARGETS = [
   "www.microsoft.com",
@@ -186,6 +186,56 @@ function buildTrojanTls(opts: { port: number; remark: string; sni: string; finge
   };
 }
 
+// PrimeVPN-style minimal Reality-Vision: один shortId, serverName строкой, fingerprint chrome
+function buildVlessRealitySimple(opts: { port: number; remark: string; sni: string; fingerprint: string; privateKey: string; publicKey: string; shortId: string }) {
+  const settings = { clients: [], decryption: "none", fallbacks: [] };
+  const streamSettings = {
+    network: "tcp",
+    security: "reality",
+    externalProxy: [],
+    realitySettings: {
+      show: false, xver: 0,
+      dest: `${opts.sni}:443`,
+      serverNames: [opts.sni],
+      privateKey: opts.privateKey,
+      shortIds: [opts.shortId],
+      settings: { publicKey: opts.publicKey, fingerprint: opts.fingerprint, serverName: "", spiderX: "/" },
+    },
+    tcpSettings: { acceptProxyProtocol: false, header: { type: "none" } },
+  };
+  return {
+    up: 0, down: 0, total: 0, remark: opts.remark, enable: true, expiryTime: 0, listen: "",
+    port: opts.port, protocol: "vless", settings, streamSettings,
+    tag: `inbound-${opts.port}`,
+    sniffing: { enabled: true, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false },
+    allocate: { strategy: "always", refresh: 5, concurrency: 3 },
+  };
+}
+
+function buildHysteria2(opts: { port: number; remark: string; sni: string; certFile: string; keyFile: string; obfsPassword: string }) {
+  const settings: any = { clients: [] };
+  if (opts.obfsPassword) settings.obfs = { password: opts.obfsPassword };
+  const streamSettings = {
+    security: "tls",
+    externalProxy: [],
+    tlsSettings: {
+      serverName: opts.sni,
+      minVersion: "1.2", maxVersion: "1.3", cipherSuites: "",
+      rejectUnknownSni: false, disableSystemRoot: false, enableSessionResumption: false,
+      certificates: [{ certificateFile: opts.certFile, keyFile: opts.keyFile, ocspStapling: 3600, oneTimeLoading: false, usage: "encipherment" }],
+      alpn: ["h3"],
+      settings: { allowInsecure: false, fingerprint: "" },
+    },
+  };
+  return {
+    up: 0, down: 0, total: 0, remark: opts.remark, enable: true, expiryTime: 0, listen: "",
+    port: opts.port, protocol: "hysteria2", settings, streamSettings,
+    tag: `inbound-${opts.port}`,
+    sniffing: { enabled: false, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false },
+    allocate: { strategy: "always", refresh: 5, concurrency: 3 },
+  };
+}
+
 export function ProtocolGeneratorDialog({
   open,
   onOpenChange,
@@ -223,6 +273,9 @@ export function ProtocolGeneratorDialog({
   const [mldsa65Seed, setMldsa65Seed] = useState("");
   const [mldsa65Verify, setMldsa65Verify] = useState("");
 
+  // Hysteria2 obfs
+  const [obfsPassword, setObfsPassword] = useState("");
+
   // Reset on open
   useEffect(() => {
     if (!open) return;
@@ -243,17 +296,28 @@ export function ProtocolGeneratorDialog({
     setSpiderX("/");
     setMldsa65Seed("");
     setMldsa65Verify("");
+    setObfsPassword("");
   }, [open]);
 
   const payload = useMemo(() => {
     const r = remark.trim() ||
       (template === "vless-reality"
         ? `vless-reality-${port}`
+        : template === "vless-reality-simple"
+        ? `vless-reality-simple-${port}`
         : template === "vless-reality-vision"
         ? `vless-vision-${port}`
+        : template === "hysteria2"
+        ? `hy2-${port}`
         : `trojan-tls-${port}`);
     if (template === "vless-reality") {
       return buildVlessReality({ port, remark: r, sni, fingerprint, privateKey, publicKey, shortId });
+    }
+    if (template === "vless-reality-simple") {
+      return buildVlessRealitySimple({ port, remark: r, sni, fingerprint, privateKey, publicKey, shortId });
+    }
+    if (template === "hysteria2") {
+      return buildHysteria2({ port, remark: r, sni, certFile, keyFile, obfsPassword });
     }
     if (template === "vless-reality-vision") {
       const sids = shortIdsText.split(",").map((s) => s.trim()).filter(Boolean);
@@ -272,7 +336,7 @@ export function ProtocolGeneratorDialog({
     }
     return buildTrojanTls({ port, remark: r, sni, fingerprint, certFile, keyFile });
   }, [template, port, remark, sni, fingerprint, privateKey, publicKey, shortId, certFile, keyFile,
-      targetHost, targetPort, serverNamesText, shortIdsText, spiderX, mldsa65Seed, mldsa65Verify]);
+      targetHost, targetPort, serverNamesText, shortIdsText, spiderX, mldsa65Seed, mldsa65Verify, obfsPassword]);
 
   const previewJson = editing ? jsonOverride : JSON.stringify(payload, null, 2);
 
@@ -295,7 +359,7 @@ export function ProtocolGeneratorDialog({
 
   const handleCreate = async () => {
     if (!panelSlug) return toast.error("Нет slug панели");
-    if ((template === "vless-reality" || template === "vless-reality-vision") && (!privateKey || !publicKey)) {
+    if ((template === "vless-reality" || template === "vless-reality-simple" || template === "vless-reality-vision") && (!privateKey || !publicKey)) {
       return toast.error("Сначала сгенерируйте Reality ключи");
     }
     if (!Number.isFinite(port) || port < 1 || port > 65535) return toast.error("Некорректный порт");
@@ -354,6 +418,14 @@ export function ProtocolGeneratorDialog({
               </Button>
               <Button
                 type="button"
+                variant={template === "vless-reality-simple" ? "default" : "outline"}
+                size="sm"
+                onClick={() => { setTemplate("vless-reality-simple"); setPort(443); setFingerprint("chrome"); }}
+              >
+                VLESS · Reality (PrimeVPN)
+              </Button>
+              <Button
+                type="button"
                 variant={template === "vless-reality-vision" ? "default" : "outline"}
                 size="sm"
                 onClick={() => {
@@ -363,6 +435,14 @@ export function ProtocolGeneratorDialog({
                 }}
               >
                 VLESS · Reality · Vision (Pro)
+              </Button>
+              <Button
+                type="button"
+                variant={template === "hysteria2" ? "default" : "outline"}
+                size="sm"
+                onClick={() => { setTemplate("hysteria2"); setPort(8443); setSni("vpnprime.ru"); }}
+              >
+                Hysteria2
               </Button>
               <Button
                 type="button"
@@ -428,7 +508,7 @@ export function ProtocolGeneratorDialog({
             </div>
           </div>
 
-          {template === "vless-reality" && (
+          {(template === "vless-reality" || template === "vless-reality-simple") && (
             <div className="space-y-2 border rounded-md p-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs text-muted-foreground">Reality ключи (x25519)</Label>
@@ -507,6 +587,19 @@ export function ProtocolGeneratorDialog({
               <Input value={keyFile} onChange={(e) => setKeyFile(e.target.value)} placeholder="keyFile" />
               <p className="text-xs text-muted-foreground">
                 Файлы должны существовать на сервере панели. Можно указать пути от Let's Encrypt / acme.sh.
+              </p>
+            </div>
+          )}
+
+          {template === "hysteria2" && (
+            <div className="space-y-2 border rounded-md p-3">
+              <Label className="text-xs text-muted-foreground">TLS сертификат (пути на сервере панели)</Label>
+              <Input value={certFile} onChange={(e) => setCertFile(e.target.value)} placeholder="certificateFile" />
+              <Input value={keyFile} onChange={(e) => setKeyFile(e.target.value)} placeholder="keyFile" />
+              <Label className="text-xs text-muted-foreground">Obfs password (опц., salamander)</Label>
+              <Input value={obfsPassword} onChange={(e) => setObfsPassword(e.target.value)} placeholder="оставьте пустым — без обфускации" />
+              <p className="text-xs text-muted-foreground">
+                ALPN h3, congestion bbr. SNI берётся из поля выше. Подписка отдаст ссылку <code>hysteria2://...</code>.
               </p>
             </div>
           )}

@@ -264,6 +264,28 @@ function buildShadowsocks(uuid: string, inbound: any, overrides?: Map<string, st
   return [`ss://${userinfo}@${inbound.host}:${inbound.port}#${encodeURIComponent(display)}`];
 }
 
+function buildHysteria2(uuid: string, inbound: any, overrides?: Map<string, string>, panelInfo?: { name?: string; country?: string }): string[] {
+  const proto = String(inbound.protocol ?? "").toLowerCase();
+  if (proto !== "hysteria2" && proto !== "hysteria") return [];
+  const password = String(uuid || "").trim();
+  if (!password) return [];
+  const ss = inbound.stream_settings ?? {};
+  const tls = ss.tlsSettings ?? {};
+  const params = new URLSearchParams();
+  const sni = firstString(findDeep(tls, "serverName"));
+  if (sni) params.set("sni", sni);
+  if (Array.isArray(tls.alpn) && tls.alpn.length) params.set("alpn", tls.alpn.join(","));
+  const allowInsecure = (tls.settings?.allowInsecure ?? tls.allowInsecure) === true;
+  params.set("insecure", allowInsecure ? "1" : "0");
+  const obfsPwd = firstString(ss._obfsPassword ?? inbound._obfsPassword ?? ss.obfs?.password);
+  if (obfsPwd) {
+    params.set("obfs", "salamander");
+    params.set("obfs-password", obfsPwd);
+  }
+  const display = inboundDisplay(inbound, overrides, panelInfo);
+  return [`hysteria2://${encodeURIComponent(password)}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`];
+}
+
 function withHost(link: string, host: string) {
   const h = host.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
   if (!h) return link;
@@ -311,6 +333,138 @@ const COUNTRY_INFO: Record<string, { flag: string; name: string }> = {
   LT: { flag: "🇱🇹", name: "Литва" },
   EE: { flag: "🇪🇪", name: "Эстония" },
 };
+
+// ===== Xray JSON profile builders (PrimeVPN-style) =====
+function decodeRemark(hash: string): string {
+  try { return decodeURIComponent(hash.replace(/^#/, "")); } catch { return hash.replace(/^#/, ""); }
+}
+
+function parseUrlGeneric(link: string): { proto: string; userinfo: string; host: string; port: number; query: URLSearchParams; remark: string } | null {
+  const m = link.match(/^([a-z0-9+.-]+):\/\/([^@\s]+)@(\[[^\]]+\]|[^:/?#\s]+)(?::(\d+))?([^#]*)(#.*)?$/i);
+  if (!m) return null;
+  return {
+    proto: m[1].toLowerCase(),
+    userinfo: decodeURIComponent(m[2]),
+    host: m[3].replace(/^\[|\]$/g, ""),
+    port: Number(m[4] || 443),
+    query: new URLSearchParams((m[5] || "").replace(/^\?/, "")),
+    remark: decodeRemark(m[6] || ""),
+  };
+}
+
+function vlessToOutbound(p: ReturnType<typeof parseUrlGeneric>, tag: string): any {
+  if (!p) return null;
+  const q = p.query;
+  const security = q.get("security") || "none";
+  const network = q.get("type") || "tcp";
+  const ss: any = { network };
+  if (network === "tcp") ss.tcpSettings = {};
+  if (security === "reality") {
+    ss.security = "reality";
+    ss.realitySettings = {
+      serverName: q.get("sni") || "",
+      publicKey: q.get("pbk") || "",
+      shortId: q.get("sid") || "",
+      fingerprint: q.get("fp") || "chrome",
+    };
+    if (q.get("spx")) ss.realitySettings.spiderX = q.get("spx");
+  } else if (security === "tls") {
+    ss.security = "tls";
+    ss.tlsSettings = { serverName: q.get("sni") || "", fingerprint: q.get("fp") || "chrome" };
+    if (q.get("alpn")) ss.tlsSettings.alpn = q.get("alpn")!.split(",");
+  }
+  return {
+    tag, protocol: "vless",
+    settings: { vnext: [{ address: p.host, port: p.port, users: [{ id: p.userinfo, encryption: q.get("encryption") || "none", flow: q.get("flow") || "" }] }] },
+    streamSettings: ss,
+  };
+}
+
+function trojanToOutbound(p: ReturnType<typeof parseUrlGeneric>, tag: string): any {
+  if (!p) return null;
+  const q = p.query;
+  const ss: any = { network: q.get("type") || "tcp", security: q.get("security") || "tls" };
+  if (ss.security === "tls") {
+    ss.tlsSettings = { serverName: q.get("sni") || "", fingerprint: q.get("fp") || "chrome" };
+    if (q.get("alpn")) ss.tlsSettings.alpn = q.get("alpn")!.split(",");
+  }
+  return { tag, protocol: "trojan", settings: { servers: [{ address: p.host, port: p.port, password: p.userinfo }] }, streamSettings: ss };
+}
+
+function hysteria2ToOutbound(p: ReturnType<typeof parseUrlGeneric>, tag: string): any {
+  if (!p) return null;
+  const q = p.query;
+  const ss: any = {
+    network: "hysteria",
+    security: "tls",
+    tlsSettings: {
+      serverName: q.get("sni") || "",
+      fingerprint: q.get("fp") || "chrome",
+      alpn: (q.get("alpn") || "h3").split(","),
+    },
+    hysteriaSettings: { auth: p.userinfo, version: 2 },
+    finalmask: { quicParams: { debug: false, congestion: "bbr" } },
+  };
+  if (q.get("obfs-password")) ss.hysteriaSettings.obfs = { type: q.get("obfs") || "salamander", password: q.get("obfs-password") };
+  return { tag, protocol: "hysteria", settings: { address: p.host, port: p.port, version: 2 }, streamSettings: ss };
+}
+
+function vmessToOutbound(link: string, tag: string): any {
+  try {
+    const raw = link.slice(link.indexOf("//") + 2).split("#")[0].replace(/-/g, "+").replace(/_/g, "/");
+    const cfg = JSON.parse(decodeURIComponent(escape(atob(raw + "===".slice((raw.length + 3) % 4)))));
+    const ss: any = { network: cfg.net || "tcp" };
+    if (cfg.tls === "tls") ss.security = "tls", ss.tlsSettings = { serverName: cfg.sni || cfg.host || "" };
+    if (cfg.net === "ws") ss.wsSettings = { path: cfg.path || "/", headers: cfg.host ? { Host: cfg.host } : {} };
+    return { tag, protocol: "vmess", settings: { vnext: [{ address: cfg.add, port: Number(cfg.port), users: [{ id: cfg.id, alterId: Number(cfg.aid || 0), security: cfg.scy || "auto" }] }] }, streamSettings: ss };
+  } catch { return null; }
+}
+
+function ssToOutbound(link: string, tag: string): any {
+  try {
+    const m = link.match(/^ss:\/\/([^@]+)@([^:/?#]+):(\d+)(?:[^#]*)(#.*)?$/i);
+    if (!m) return null;
+    const userinfo = decodeURIComponent(atob(m[1].replace(/-/g, "+").replace(/_/g, "/") + "===".slice((m[1].length + 3) % 4)));
+    const [method, ...rest] = userinfo.split(":");
+    return { tag, protocol: "shadowsocks", settings: { servers: [{ address: m[2], port: Number(m[3]), method, password: rest.join(":") }] } };
+  } catch { return null; }
+}
+
+function linkToOutbound(link: string, idx: number): any {
+  const tag = `auto-${idx}`;
+  const proto = link.split("://")[0].toLowerCase();
+  if (proto === "vless") return vlessToOutbound(parseUrlGeneric(link), tag);
+  if (proto === "trojan") return trojanToOutbound(parseUrlGeneric(link), tag);
+  if (proto === "hysteria2" || proto === "hy2") return hysteria2ToOutbound(parseUrlGeneric(link), tag);
+  if (proto === "vmess") return vmessToOutbound(link, tag);
+  if (proto === "ss") return ssToOutbound(link, tag);
+  return null;
+}
+
+function buildXrayProfile(name: string, outbounds: any[]): any {
+  const ruDomains = ["geosite:category-ru","domain:gosuslugi.ru","domain:mos.ru","domain:vk.com","domain:vk.ru","domain:yandex.ru","domain:yandex.net","domain:mail.ru","domain:ozon.ru","domain:wildberries.ru","domain:avito.ru","domain:2gis.ru","domain:2gis.com"];
+  return {
+    remarks: name,
+    dns: { queryStrategy: "UseIPv4", servers: ["77.88.8.8", "1.1.1.1", "8.8.8.8"] },
+    inbounds: [
+      { tag: "socks", listen: "127.0.0.1", port: 10808, protocol: "socks", settings: { auth: "noauth", udp: true }, sniffing: { enabled: true, destOverride: ["http","tls","quic"] } },
+      { tag: "http", listen: "127.0.0.1", port: 10809, protocol: "http", settings: { allowTransparent: false }, sniffing: { enabled: true, destOverride: ["http","tls","quic"] } },
+    ],
+    log: { loglevel: "warning" },
+    meta: { serverDescription: "Авто-выбор быстрейшего сервера", splitTunnel: { mode: "bypass", domains: ruDomains.map((d) => d.replace(/^domain:/, "")), ips: [] } },
+    outbounds,
+    observatory: { subjectSelector: ["auto-"], probeUrl: "http://cp.cloudflare.com/generate_204", probeInterval: "10s", enableConcurrency: true },
+    routing: {
+      domainStrategy: "IPIfNonMatch",
+      domainMatcher: "hybrid",
+      rules: [
+        { type: "field", domain: ruDomains, outboundTag: "direct" },
+        { type: "field", inboundTag: ["socks", "http"], balancerTag: "auto-best" },
+      ],
+      balancers: [{ tag: "auto-best", selector: ["auto-"], fallbackTag: "auto-1", strategy: { type: "leastPing" } }],
+    },
+  };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -405,6 +559,7 @@ Deno.serve(async (req) => {
           if (proto === "trojan") return buildTrojan(sub.client_uuid, ib as any, overridesMap, pInfo);
           if (proto === "vmess") return buildVmess(sub.client_uuid, ib as any, overridesMap, pInfo);
           if (proto === "shadowsocks") return buildShadowsocks(sub.client_uuid, ib as any, overridesMap, pInfo);
+          if (proto === "hysteria2" || proto === "hysteria") return buildHysteria2(sub.client_uuid, ib as any, overridesMap, pInfo);
           return [];
         })(),
       });
@@ -448,6 +603,27 @@ Deno.serve(async (req) => {
     } catch (_) { /* ignore */ }
     items.sort((a, b) => (a.sort_order - b.sort_order) || a.created_at.localeCompare(b.created_at));
     for (const it of items) for (const l of it.lines) lines.push(l);
+
+    // ---- Xray JSON (PrimeVPN-style) format ----
+    const fmt = (url.searchParams.get("format") || "").toLowerCase();
+    if (fmt === "xray" || fmt === "json") {
+      const outbounds: any[] = [];
+      lines.forEach((link, i) => {
+        const ob = linkToOutbound(link, i + 1);
+        if (ob) outbounds.push(ob);
+      });
+      outbounds.push({ tag: "direct", protocol: "freedom" });
+      outbounds.push({ tag: "block", protocol: "blackhole" });
+      const profile = buildXrayProfile(sub.name, outbounds);
+      return new Response(JSON.stringify([profile], null, 2), {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "content-type": "application/json; charset=utf-8",
+          "content-disposition": `attachment; filename=${encodeURIComponent(sub.name)}.json`,
+        },
+      });
+    }
 
     const body = base64Utf8(lines.join("\n"));
 
