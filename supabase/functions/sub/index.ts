@@ -264,6 +264,28 @@ function buildShadowsocks(uuid: string, inbound: any, overrides?: Map<string, st
   return [`ss://${userinfo}@${inbound.host}:${inbound.port}#${encodeURIComponent(display)}`];
 }
 
+function buildHysteria2(uuid: string, inbound: any, overrides?: Map<string, string>, panelInfo?: { name?: string; country?: string }): string[] {
+  const proto = String(inbound.protocol ?? "").toLowerCase();
+  if (proto !== "hysteria2" && proto !== "hysteria") return [];
+  const password = String(uuid || "").trim();
+  if (!password) return [];
+  const ss = inbound.stream_settings ?? {};
+  const tls = ss.tlsSettings ?? {};
+  const params = new URLSearchParams();
+  const sni = firstString(findDeep(tls, "serverName"));
+  if (sni) params.set("sni", sni);
+  if (Array.isArray(tls.alpn) && tls.alpn.length) params.set("alpn", tls.alpn.join(","));
+  const allowInsecure = (tls.settings?.allowInsecure ?? tls.allowInsecure) === true;
+  params.set("insecure", allowInsecure ? "1" : "0");
+  const obfsPwd = firstString(ss._obfsPassword ?? inbound._obfsPassword ?? ss.obfs?.password);
+  if (obfsPwd) {
+    params.set("obfs", "salamander");
+    params.set("obfs-password", obfsPwd);
+  }
+  const display = inboundDisplay(inbound, overrides, panelInfo);
+  return [`hysteria2://${encodeURIComponent(password)}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`];
+}
+
 function withHost(link: string, host: string) {
   const h = host.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
   if (!h) return link;
