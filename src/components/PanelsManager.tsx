@@ -511,7 +511,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                     <code className="text-xs text-muted-foreground truncate block">{p.panel_url || "URL не задан"}</code>
                     <div className="text-xs text-muted-foreground mt-1 truncate">Хост подключения: {p.public_host || p.host || cleanHost(p.panel_url) || "не задан"}</div>
                     {p.status === "error" && p.status_message && (
-                      <div className="text-xs text-destructive mt-1 truncate">{p.status_message}</div>
+                      <div className="text-xs text-destructive mt-1 break-words">{p.status_message}</div>
                     )}
                   </div>
                   <div className="flex gap-2 flex-wrap md:justify-end shrink-0">
