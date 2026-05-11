@@ -514,7 +514,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                       <div className="text-xs text-destructive mt-1 truncate">{p.status_message}</div>
                     )}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap md:justify-end shrink-0">
                     <Button
                       variant="outline"
                       size="sm"
