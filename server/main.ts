@@ -6,6 +6,7 @@ import { handlePanel } from "./panel.ts";
 import { handleSub } from "./sub.ts";
 import { handleUpdate, handleVersion, handleUpdateFromGithub } from "./update.ts";
 import { handleAdminAuth } from "./adminAuth.ts";
+import { handleInstall } from "./install.ts";
 import { contentType } from "https://deno.land/std@0.224.0/media_types/mod.ts";
 import { extname, join, normalize } from "https://deno.land/std@0.224.0/path/mod.ts";
 
@@ -130,6 +131,9 @@ Deno.serve({ port: PORT }, async (req) => {
   }
   if (url.pathname === "/api/update" || url.pathname === "/api/update/") {
     return withStrictCors(req, await handleUpdate(req, url));
+  }
+  if (url.pathname === "/api/install-panel" || url.pathname === "/api/install-panel/") {
+    return withStrictCors(req, await handleInstall(req, url));
   }
   if (url.pathname === "/api/version" || url.pathname === "/api/version/") {
     return withCors(await handleVersion(req));
