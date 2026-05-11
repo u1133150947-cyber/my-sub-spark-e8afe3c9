@@ -17,6 +17,7 @@ const cors = {
 };
 const json = (b: unknown, status = 200) =>
   new Response(JSON.stringify(b), { status, headers: { ...cors, "Content-Type": "application/json" } });
+const XUI_BIN = "/usr/local/x-ui/x-ui";
 
 type SSHOpts = {
   host: string;
@@ -37,6 +38,9 @@ function sshConnect(opts: SSHOpts): Promise<Client> {
       username: opts.username,
       readyTimeout: opts.readyTimeout ?? 20000,
       tryKeyboard: true,
+      algorithms: {
+        cipher: ["aes128-ctr", "aes192-ctr", "aes256-ctr", "aes128-cbc", "aes256-cbc"],
+      },
     };
     if (opts.privateKey) cfg.privateKey = opts.privateKey;
     if (opts.passphrase) cfg.passphrase = opts.passphrase;
@@ -73,6 +77,11 @@ function execSsh(c: Client, cmd: string, timeoutMs = 600_000): Promise<{ code: n
 function shQuote(v: string): string {
   // Escape for double-quoted bash context.
   return `"${String(v).replace(/(["\\$`])/g, "\\$1")}"`;
+}
+
+function defaultLetsEncryptEmail(domain?: string): string {
+  const suffix = (domain ?? "example.com").split(".").slice(-2).join(".") || "example.com";
+  return `admin-${crypto.randomUUID().slice(0, 8)}@${suffix}`;
 }
 
 type InstallParams = {
@@ -174,10 +183,11 @@ async function runInstall(v: InstallParams): Promise<{ ok: boolean; panel_url?: 
 
     if (!alreadyInstalled) {
       push(`• x-ui not detected — running official installer`);
-      // Pipe "n" to decline the interactive "customize panel" prompt; we'll set creds via CLI afterwards.
+      // Pipe answers to decline the interactive "customize panel" prompt and skip the installer's
+      // SSL wizard; credentials/port/cert are applied non-interactively below.
       // Use bash -c with set -o pipefail so installer failures bubble up.
       const inst = await run(
-        `bash -c 'set -o pipefail; echo n | bash <(curl -fsSL https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)'`,
+        `bash -c 'set -o pipefail; printf "n\\n4\\n" | bash <(curl -fsSL https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)'`,
         "install 3x-ui",
         900_000,
       );
@@ -191,17 +201,30 @@ async function runInstall(v: InstallParams): Promise<{ ok: boolean; panel_url?: 
 
     // 3) Apply credentials / port / base path via CLI.
     const baseFlag = v.panel_path ? ` -webBasePath ${shQuote(v.panel_path)}` : "";
-    const setCmd = `x-ui setting -username ${shQuote(v.panel_username)} -password ${shQuote(v.panel_password)} -port ${v.panel_port}${baseFlag}`;
+    const setCmd = `${XUI_BIN} setting -username ${shQuote(v.panel_username)} -password ${shQuote(v.panel_password)} -port ${v.panel_port}${baseFlag}`;
     const setRes = await run(setCmd, "x-ui setting (creds/port/path)");
     if (setRes.code !== 0) {
       try { client.end(); } catch {}
       return { ok: false, log: log.join("\n"), error: `x-ui setting exit ${setRes.code}` };
     }
 
-    // 4) Optional Let's Encrypt for domain mode.
-    if (v.mode === "domain" && v.domain && v.letsencrypt_email) {
-      const certCmd = `x-ui cert -d ${shQuote(v.domain)} -e ${shQuote(v.letsencrypt_email)} || true`;
-      await run(certCmd, "x-ui cert (Let's Encrypt) — best effort");
+    // 4) Optional Let's Encrypt for domain mode. The x-ui CLI does not issue certs by
+    // domain/email directly, so use acme.sh then point the panel to the generated files.
+    if (v.mode === "domain" && v.domain) {
+      const email = v.letsencrypt_email || defaultLetsEncryptEmail(v.domain);
+      const certDir = `/root/cert/${v.domain}`;
+      await run(`mkdir -p ${shQuote(certDir)}`, "prepare cert directory");
+      const certCmd = [
+        `if ! test -x /root/.acme.sh/acme.sh; then curl -fsSL https://get.acme.sh | sh -s email=${shQuote(email)}; fi`,
+        `/root/.acme.sh/acme.sh --set-default-ca --server letsencrypt`,
+        `systemctl stop x-ui nginx caddy apache2 2>/dev/null || true`,
+        `/root/.acme.sh/acme.sh --issue -d ${shQuote(v.domain)} --standalone --httpport 80 --force`,
+        `/root/.acme.sh/acme.sh --installcert -d ${shQuote(v.domain)} --key-file ${shQuote(`${certDir}/privkey.pem`)} --fullchain-file ${shQuote(`${certDir}/fullchain.pem`)} --reloadcmd "systemctl restart x-ui || true" || true`,
+        `test -s ${shQuote(`${certDir}/fullchain.pem`)} -a -s ${shQuote(`${certDir}/privkey.pem`)}`,
+        `${XUI_BIN} cert -webCert ${shQuote(`${certDir}/fullchain.pem`)} -webCertKey ${shQuote(`${certDir}/privkey.pem`)}`,
+        `systemctl start nginx caddy apache2 2>/dev/null || true`,
+      ].join(" && ");
+      await run(certCmd, `Let's Encrypt certificate for ${v.domain}`);
     }
 
     // 5) Open firewall port (best-effort, ignore errors on systems without ufw).

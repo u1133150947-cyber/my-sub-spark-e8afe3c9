@@ -15,6 +15,17 @@ function rndStr(n: number) {
   return Array.from({ length: n }, () => a[Math.floor(Math.random() * a.length)]).join("");
 }
 
+const apiBase = () => {
+  const raw = (import.meta.env.VITE_SUPABASE_URL as string | undefined) || "";
+  if (!raw) return "";
+  try {
+    const u = new URL(raw);
+    return u.hostname.endsWith(".supabase.co") ? "" : raw.replace(/\/+$/, "");
+  } catch {
+    return raw.replace(/\/+$/, "");
+  }
+};
+
 const empty = () => ({
   host: "",
   ssh_port: "22",
@@ -63,7 +74,8 @@ export function PanelInstallDialog({
     setResult(null);
     try {
       const token = getAdminToken();
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/api/install-panel`;
+      const base = apiBase();
+      const url = `${base}/api/install-panel`;
       const res = await fetch(url, {
         method: "POST",
         headers: {
