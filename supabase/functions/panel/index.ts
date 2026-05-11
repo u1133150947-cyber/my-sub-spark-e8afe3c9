@@ -792,6 +792,21 @@ Deno.serve(async (req) => {
       const validSelections = selections.filter((s) => s?.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(Number(s.inboundId)));
       if (!validSelections.length) return new Response(JSON.stringify({ error: "Некорректные панели в импорте: panel=null. Обновите патч и импортируйте заново.", selections }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+      // Senior policy: deliver exactly ONE inbound per panel to keep the user's
+      // sub list clean (Чехия + RU = 2 entries). Keep the first selection per
+      // panel; drop the rest. Server-side cascade routing handles the rest.
+      {
+        const seen = new Set<string>();
+        const trimmed = [] as typeof validSelections;
+        for (const s of validSelections) {
+          if (seen.has(s.panel)) continue;
+          seen.add(s.panel);
+          trimmed.push(s);
+        }
+        validSelections.length = 0;
+        validSelections.push(...trimmed);
+      }
+
       const clientUuid = uuidv4();
       const desiredSlug = String(body.slug ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
       let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
@@ -934,13 +949,19 @@ Deno.serve(async (req) => {
 
       const { data: existingLinks } = await supabase.from("subscription_inbounds").select("panel, inbound_id").eq("subscription_id", subId);
       const existingSet = new Set((existingLinks ?? []).map((l) => `${l.panel}:${l.inbound_id}`));
+      // Senior policy: 1 inbound per panel per subscription. Skip any selection
+      // whose panel already has an inbound, and dedupe selections by panel.
+      const existingPanels = new Set((existingLinks ?? []).map((l) => l.panel));
 
       const created: any[] = [];
       const errors: any[] = [];
       const subIdShort = sub.slug.slice(0, 16);
+      const panelsSeen = new Set<string>(existingPanels);
       for (const sel of selections) {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existingSet.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
+        if (panelsSeen.has(sel.panel)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "panel already has an inbound (one-per-panel policy)" }); continue; }
+        panelsSeen.add(sel.panel);
         try {
           const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
