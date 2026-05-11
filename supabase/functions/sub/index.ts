@@ -814,15 +814,39 @@ Deno.serve(async (req) => {
       });
     }
     if (fmt === "xray" || fmt === "json") {
-      const outbounds: any[] = [];
+      // Split outbounds by country (detected via flag emoji in remark) so each
+      // country becomes its OWN Xray profile with leastPing balancer. Happ
+      // shows 2 entries; each one auto-tests its own pool internally.
+      const ruObs: any[] = [];
+      const czObs: any[] = [];
       lines.forEach((link, i) => {
-        const ob = linkToOutbound(link, i + 1);
-        if (ob) outbounds.push(ob);
+        let label = "";
+        try { label = decodeURIComponent(link.split("#")[1] || ""); } catch { label = link.split("#")[1] || ""; }
+        const isRU = label.includes("🇷🇺");
+        const prefix = isRU ? "ru-" : "cz-";
+        const tag = `${prefix}${(isRU ? ruObs.length : czObs.length) + 1}`;
+        const proto = link.split("://")[0].toLowerCase();
+        let ob: any = null;
+        if (proto === "vless") ob = vlessToOutbound(parseUrlGeneric(link), tag);
+        else if (proto === "trojan") ob = trojanToOutbound(parseUrlGeneric(link), tag);
+        else if (proto === "hysteria2" || proto === "hy2") ob = hysteria2ToOutbound(parseUrlGeneric(link), tag);
+        else if (proto === "vmess") ob = vmessToOutbound(link, tag);
+        else if (proto === "ss") ob = ssToOutbound(link, tag);
+        if (!ob) return;
+        (isRU ? ruObs : czObs).push(ob);
       });
-      outbounds.push({ tag: "direct", protocol: "freedom" });
-      outbounds.push({ tag: "block", protocol: "blackhole" });
-      const profile = buildXrayProfile(sub.name, outbounds);
-      return new Response(JSON.stringify([profile], null, 2), {
+      const profiles: any[] = [];
+      if (czObs.length) profiles.push(buildXrayGroupProfile("⚡ Чехия — Авто (каскад RU→CZ)", czObs, "cz-"));
+      if (ruObs.length) profiles.push(buildXrayGroupProfile("🇷🇺 RU — YouTube без рекламы (Авто)", ruObs, "ru-"));
+      if (!profiles.length) {
+        // Fallback: legacy single-balancer profile if no country split detected.
+        const all: any[] = [];
+        lines.forEach((link, i) => { const ob = linkToOutbound(link, i + 1); if (ob) all.push(ob); });
+        all.push({ tag: "direct", protocol: "freedom" });
+        all.push({ tag: "block", protocol: "blackhole" });
+        profiles.push(buildXrayProfile(sub.name, all));
+      }
+      return new Response(JSON.stringify(profiles, null, 2), {
         status: 200,
         headers: {
           ...corsHeaders,
