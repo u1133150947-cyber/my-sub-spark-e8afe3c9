@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Loader2, Rocket } from "lucide-react";
+import { Loader2, Rocket, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { getAdminToken } from "@/lib/adminAuth";
 
@@ -56,7 +56,26 @@ export function PanelInstallDialog({
   const [f, setF] = useState(empty());
   const [running, setRunning] = useState(false);
   const [log, setLog] = useState<string>("");
-  const [result, setResult] = useState<{ panel_url?: string; saved?: { slug: string } } | null>(null);
+  const [result, setResult] = useState<{
+    panel_url?: string;
+    saved?: { slug: string };
+    username?: string;
+    password?: string;
+    path?: string;
+    port?: number;
+    host?: string;
+  } | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const copy = async (label: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(label);
+      setTimeout(() => setCopied((c) => (c === label ? null : c)), 1500);
+    } catch {
+      toast.error("Не удалось скопировать");
+    }
+  };
 
   const upd = <K extends keyof ReturnType<typeof empty>>(k: K, v: any) =>
     setF((s) => ({ ...s, [k]: v }));
@@ -107,7 +126,15 @@ export function PanelInstallDialog({
       if (!res.ok || !data.ok) {
         toast.error(data?.error ?? `HTTP ${res.status}`);
       } else {
-        setResult({ panel_url: data.panel_url, saved: data.saved });
+        setResult({
+          panel_url: data.panel_url,
+          saved: data.saved,
+          username: f.panel_username.trim(),
+          password: f.panel_password,
+          path: f.panel_path.trim(),
+          port: Number(f.panel_port),
+          host: f.mode === "domain" ? f.domain.trim() : f.host.trim(),
+        });
         toast.success(f.save ? "Панель установлена и добавлена в список" : "Панель установлена");
         onInstalled?.();
       }
@@ -228,14 +255,41 @@ export function PanelInstallDialog({
             )}
           </div>
 
-          {(log || result) && (
-            <div className="rounded-md border bg-muted/30 p-3">
-              {result?.panel_url && (
-                <div className="text-sm mb-2">
-                  <span className="text-muted-foreground">URL панели: </span>
-                  <a className="text-primary underline break-all" href={result.panel_url} target="_blank" rel="noreferrer">{result.panel_url}</a>
+          {result && (
+            <div className="rounded-md border border-primary/40 bg-primary/5 p-3 space-y-2">
+              <div className="text-sm font-semibold text-primary">✓ Панель готова — сохраните доступы</div>
+              {([
+                ["URL", result.panel_url ?? ""],
+                ["Логин", result.username ?? ""],
+                ["Пароль", result.password ?? ""],
+                ...(result.path ? [["Path", `/${result.path}`] as [string, string]] : []),
+                ["Хост:Порт", `${result.host}:${result.port}`],
+              ] as [string, string][]).map(([label, value]) => (
+                <div key={label} className="flex items-center gap-2 text-sm">
+                  <span className="text-muted-foreground w-20 shrink-0">{label}:</span>
+                  {label === "URL" ? (
+                    <a className="text-primary underline break-all flex-1 font-mono text-xs" href={value} target="_blank" rel="noreferrer">{value}</a>
+                  ) : (
+                    <span className="flex-1 font-mono text-xs break-all select-all">{value}</span>
+                  )}
+                  <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => copy(label, value)}>
+                    {copied === label ? <Check className="size-3.5 text-primary" /> : <Copy className="size-3.5" />}
+                  </Button>
                 </div>
-              )}
+              ))}
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full mt-1"
+                onClick={() => copy("ALL", `URL: ${result.panel_url}\nЛогин: ${result.username}\nПароль: ${result.password}${result.path ? `\nPath: /${result.path}` : ""}`)}
+              >
+                {copied === "ALL" ? <Check className="size-3.5 mr-1 text-primary" /> : <Copy className="size-3.5 mr-1" />}
+                Скопировать все доступы
+              </Button>
+            </div>
+          )}
+          {log && (
+            <div className="rounded-md border bg-muted/30 p-3">
               <pre className="text-xs whitespace-pre-wrap break-words max-h-72 overflow-y-auto font-mono">{log}</pre>
             </div>
           )}
