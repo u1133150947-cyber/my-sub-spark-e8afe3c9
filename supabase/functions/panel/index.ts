@@ -187,15 +187,28 @@ async function loginPanel(slug: PanelKey): Promise<string> {
   const cached = cookieCache.get(slug);
   if (cached && Date.now() - cached.ts < COOKIE_TTL_MS) return cached.cookie;
   const cfg = panelCfg(await getPanelBySlug(slug));
-  const res = await nodeRequest(`${cfg.url}/login`, {
+  const csrf = await getCsrfToken(cfg.url).catch(() => ({ token: "", cookie: "" }));
+  const res = await nodeRequestRetry(`${cfg.url}/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ username: cfg.username, password: cfg.password }).toString(),
-  });
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      Accept: "application/json",
+      "X-Requested-With": "XMLHttpRequest",
+      ...(csrf.token ? { "X-CSRF-Token": csrf.token } : {}),
+      ...(csrf.cookie ? { Cookie: csrf.cookie } : {}),
+    },
+    body: new URLSearchParams({ username: cfg.username, password: cfg.password, twoFactorCode: "" }).toString(),
+  }, 1);
   if (res.status < 200 || res.status >= 300) throw new Error(`Login failed [${slug}] ${res.status}: ${res.body}`);
+  try {
+    const parsed = JSON.parse(res.body);
+    if (parsed?.success === false) throw new Error(parsed.msg ?? "Login refused");
+  } catch (e) {
+    if (e instanceof Error && e.message !== "Unexpected end of JSON input") throw e;
+  }
   const sc = res.headers["set-cookie"];
   const setCookies: string[] = Array.isArray(sc) ? sc : sc ? [sc as string] : [];
-  const cookie = setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  const cookie = [csrf.cookie, setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ")].filter(Boolean).join("; ");
   if (!cookie) throw new Error(`No cookie from panel ${slug}`);
   cookieCache.set(slug, { cookie, ts: Date.now() });
   return cookie;
