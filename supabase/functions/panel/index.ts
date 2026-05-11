@@ -957,6 +957,59 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "getRealityKeys") {
+      const slug = url.searchParams.get("panel") ?? "";
+      if (!slug) return new Response(JSON.stringify({ ok: false, error: "panel required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      try {
+        // Try common 3x-ui endpoints (varies by version)
+        const paths = ["/server/getNewX25519Cert", "/panel/api/server/getNewX25519Cert", "/xui/API/server/getNewX25519Cert"];
+        let lastErr = "";
+        for (const p of paths) {
+          const res = await panelFetch(slug as PanelKey, p, { method: "POST" });
+          let j: any = null;
+          try { j = JSON.parse(res.body); } catch {}
+          if (j?.success && j?.obj?.privateKey && j?.obj?.publicKey) {
+            return new Response(JSON.stringify({ ok: true, privateKey: j.obj.privateKey, publicKey: j.obj.publicKey }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          }
+          lastErr = j?.msg ?? `HTTP ${res.status}`;
+        }
+        return new Response(JSON.stringify({ ok: false, error: lastErr || "panel did not return reality keys" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ ok: false, error: e?.message ?? String(e) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
+    if (action === "createInbound" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const slug: string = body.panel;
+      const payload = body.payload;
+      if (!slug || !payload || typeof payload !== "object") {
+        return new Response(JSON.stringify({ ok: false, error: "panel и payload обязательны" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      try {
+        // settings/streamSettings/sniffing/allocate must be JSON strings per 3x-ui API
+        const norm = { ...payload };
+        for (const k of ["settings", "streamSettings", "sniffing", "allocate"]) {
+          if (norm[k] !== undefined && typeof norm[k] !== "string") norm[k] = JSON.stringify(norm[k]);
+        }
+        const res = await panelFetch(slug as PanelKey, "/panel/api/inbounds/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(norm),
+        });
+        let j: any = null;
+        try { j = JSON.parse(res.body); } catch {}
+        if (!j?.success) {
+          await writeAudit("error", "create_inbound", j?.msg ?? `HTTP ${res.status}`, { panel: slug, remark: norm?.remark, port: norm?.port });
+          return new Response(JSON.stringify({ ok: false, error: j?.msg ?? `HTTP ${res.status}: ${(res.body || "").slice(0, 200)}` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        }
+        await writeAudit("info", "ok", null, { panel: slug, action_kind: "create_inbound", remark: norm?.remark, port: norm?.port });
+        return new Response(JSON.stringify({ ok: true, obj: j.obj }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      } catch (e: any) {
+        return new Response(JSON.stringify({ ok: false, error: e?.message ?? String(e) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+    }
+
     await writeAudit("warn", "unknown", "Unknown action");
     return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
