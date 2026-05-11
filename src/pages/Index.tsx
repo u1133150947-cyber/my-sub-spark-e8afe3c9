@@ -213,6 +213,7 @@ const Index = () => {
   const [days, setDays] = useState(30);
   const [totalGB, setTotalGB] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
   const [activeQr, setActiveQr] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
