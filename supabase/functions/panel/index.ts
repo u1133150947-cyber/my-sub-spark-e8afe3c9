@@ -300,17 +300,17 @@ async function getClientExpiryByEmail(slug: PanelKey): Promise<Record<string, nu
 async function addClient(
   slug: PanelKey,
   inboundId: number,
-  client: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string },
+  client: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string; protocol?: string },
 ) {
-  const settings = JSON.stringify({
-    clients: [{ id: client.id, flow: client.flow ?? "", email: client.email, limitIp: 0, totalGB: client.totalGB, expiryTime: client.expiryTime, enable: true, tgId: "", subId: client.subId, reset: 0 }],
-  });
+  const settings = JSON.stringify({ clients: [buildClientObj(client)] });
   const res = await panelFetch(slug, "/panel/api/inbounds/addClient", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: inboundId, settings }),
   });
-  const json = JSON.parse(res.body);
+  let json: any = null;
+  try { json = JSON.parse(res.body); } catch {}
+  if (!json) throw new Error(`addClient [${slug}/${inboundId}]: HTTP ${res.status}, body=${(res.body || "").slice(0, 200) || "<empty>"}`);
   if (!json.success) throw new Error(`addClient [${slug}/${inboundId}]: ${json.msg}`);
   return json;
 }
@@ -318,19 +318,33 @@ async function addClient(
 async function updateClient(
   slug: PanelKey,
   inboundId: number,
-  client: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string },
+  client: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string; protocol?: string },
 ) {
-  const settings = JSON.stringify({
-    clients: [{ id: client.id, flow: client.flow ?? "", email: client.email, limitIp: 0, totalGB: client.totalGB, expiryTime: client.expiryTime, enable: true, tgId: "", subId: client.subId, reset: 0 }],
-  });
+  const settings = JSON.stringify({ clients: [buildClientObj(client)] });
   const res = await panelFetch(slug, `/panel/api/inbounds/updateClient/${client.id}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ id: inboundId, settings }),
   });
-  const json = JSON.parse(res.body);
+  let json: any = null;
+  try { json = JSON.parse(res.body); } catch {}
+  if (!json) throw new Error(`updateClient [${slug}/${inboundId}]: HTTP ${res.status}, body=${(res.body || "").slice(0, 200) || "<empty>"}`);
   if (!json.success) throw new Error(`updateClient [${slug}/${inboundId}]: ${json.msg}`);
   return json;
+}
+
+// Build per-protocol client object for 3x-ui addClient/updateClient
+function buildClientObj(c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string; protocol?: string }) {
+  const base = { email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
+  const proto = (c.protocol ?? "vless").toLowerCase();
+  if (proto === "trojan") {
+    return { ...base, password: c.id };
+  }
+  if (proto === "shadowsocks") {
+    return { ...base, password: c.id, method: "" };
+  }
+  // vless / vmess / default
+  return { ...base, id: c.id, flow: c.flow ?? "" };
 }
 
 function uuidv4() { return crypto.randomUUID(); }
@@ -805,7 +819,20 @@ Deno.serve(async (req) => {
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
 
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
-          await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId, flow });
+          if (ib.protocol === "shadowsocks") {
+            // Plain Shadowsocks inbounds in 3x-ui are single-user; no per-client addition.
+            // (SS-2022 multi-user is supported via clients[], but base SS isn't.)
+            try {
+              let s: any = {};
+              try { s = JSON.parse(ib.settings ?? "{}"); } catch {}
+              if (!Array.isArray(s.clients)) {
+                throw new Error(`inbound ${ib.id} (${ib.protocol}) — single-user, не поддерживает добавление клиентов. Используйте VLESS / VMess / Trojan.`);
+              }
+            } catch (e) {
+              throw e;
+            }
+          }
+          await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId, flow, protocol: ib.protocol });
 
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
