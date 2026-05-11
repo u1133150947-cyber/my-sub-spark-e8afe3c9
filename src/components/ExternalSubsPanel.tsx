@@ -647,11 +647,11 @@ export function ExternalSubsPanel() {
                   />
                   <div className="flex flex-col gap-0.5">
                     <Button size="icon" variant="ghost" className="h-6 w-6"
-                      disabled={idx === 0} onClick={() => move(idx, -1)} title="Поднять">
+                      disabled={idx === 0 || reordering} onClick={() => move(idx, -1)} title="Поднять">
                       <ArrowUp className="size-3" />
                     </Button>
                     <Button size="icon" variant="ghost" className="h-6 w-6"
-                      disabled={idx === items.length - 1} onClick={() => move(idx, 1)} title="Опустить">
+                      disabled={idx === items.length - 1 || reordering} onClick={() => move(idx, 1)} title="Опустить">
                       <ArrowDown className="size-3" />
                     </Button>
                   </div>
