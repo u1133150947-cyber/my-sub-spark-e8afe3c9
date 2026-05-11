@@ -466,6 +466,38 @@ function buildXrayProfile(name: string, outbounds: any[]): any {
   };
 }
 
+// Build an Xray profile with ONE balancer over a custom outbound prefix.
+// Used to deliver per-country auto-select profiles (Чехия, RU YouTube).
+function buildXrayGroupProfile(name: string, outbounds: any[], prefix: string): any {
+  const ruDomains = ["geosite:category-ru","domain:gosuslugi.ru","domain:mos.ru","domain:vk.com","domain:vk.ru","domain:yandex.ru","domain:yandex.net","domain:mail.ru","domain:ozon.ru","domain:wildberries.ru","domain:avito.ru","domain:2gis.ru","domain:2gis.com"];
+  const fallback = outbounds.find((o) => typeof o.tag === "string" && o.tag.startsWith(prefix))?.tag || `${prefix}1`;
+  return {
+    remarks: name,
+    dns: { queryStrategy: "UseIPv4", servers: ["77.88.8.8", "1.1.1.1", "8.8.8.8"] },
+    inbounds: [
+      { tag: "socks", listen: "127.0.0.1", port: 10808, protocol: "socks", settings: { auth: "noauth", udp: true }, sniffing: { enabled: true, destOverride: ["http","tls","quic"] } },
+      { tag: "http", listen: "127.0.0.1", port: 10809, protocol: "http", settings: { allowTransparent: false }, sniffing: { enabled: true, destOverride: ["http","tls","quic"] } },
+    ],
+    log: { loglevel: "warning" },
+    meta: { serverDescription: name, splitTunnel: { mode: "bypass", domains: ruDomains.map((d) => d.replace(/^domain:/, "")), ips: [] } },
+    outbounds: [
+      ...outbounds,
+      { tag: "direct", protocol: "freedom" },
+      { tag: "block", protocol: "blackhole" },
+    ],
+    observatory: { subjectSelector: [prefix], probeUrl: "http://cp.cloudflare.com/generate_204", probeInterval: "10s", enableConcurrency: true },
+    routing: {
+      domainStrategy: "IPIfNonMatch",
+      domainMatcher: "hybrid",
+      rules: [
+        { type: "field", domain: ruDomains, outboundTag: "direct" },
+        { type: "field", inboundTag: ["socks", "http"], balancerTag: "auto-best" },
+      ],
+      balancers: [{ tag: "auto-best", selector: [prefix], fallbackTag: fallback, strategy: { type: "leastPing" } }],
+    },
+  };
+}
+
 // ===== sing-box JSON profile builder (Hiddify / Karing / sing-box / Happ-singbox) =====
 // Groups raw vless://, hysteria2://, trojan://, vmess://, ss:// links into
 // per-protocol urltest selectors (⚡ Автовыбор, ⚡ Автовыбор HY2, …) plus a
@@ -782,15 +814,39 @@ Deno.serve(async (req) => {
       });
     }
     if (fmt === "xray" || fmt === "json") {
-      const outbounds: any[] = [];
+      // Split outbounds by country (detected via flag emoji in remark) so each
+      // country becomes its OWN Xray profile with leastPing balancer. Happ
+      // shows 2 entries; each one auto-tests its own pool internally.
+      const ruObs: any[] = [];
+      const czObs: any[] = [];
       lines.forEach((link, i) => {
-        const ob = linkToOutbound(link, i + 1);
-        if (ob) outbounds.push(ob);
+        let label = "";
+        try { label = decodeURIComponent(link.split("#")[1] || ""); } catch { label = link.split("#")[1] || ""; }
+        const isRU = label.includes("🇷🇺");
+        const prefix = isRU ? "ru-" : "cz-";
+        const tag = `${prefix}${(isRU ? ruObs.length : czObs.length) + 1}`;
+        const proto = link.split("://")[0].toLowerCase();
+        let ob: any = null;
+        if (proto === "vless") ob = vlessToOutbound(parseUrlGeneric(link), tag);
+        else if (proto === "trojan") ob = trojanToOutbound(parseUrlGeneric(link), tag);
+        else if (proto === "hysteria2" || proto === "hy2") ob = hysteria2ToOutbound(parseUrlGeneric(link), tag);
+        else if (proto === "vmess") ob = vmessToOutbound(link, tag);
+        else if (proto === "ss") ob = ssToOutbound(link, tag);
+        if (!ob) return;
+        (isRU ? ruObs : czObs).push(ob);
       });
-      outbounds.push({ tag: "direct", protocol: "freedom" });
-      outbounds.push({ tag: "block", protocol: "blackhole" });
-      const profile = buildXrayProfile(sub.name, outbounds);
-      return new Response(JSON.stringify([profile], null, 2), {
+      const profiles: any[] = [];
+      if (czObs.length) profiles.push(buildXrayGroupProfile("⚡ Чехия — Авто (каскад RU→CZ)", czObs, "cz-"));
+      if (ruObs.length) profiles.push(buildXrayGroupProfile("🇷🇺 RU — YouTube без рекламы (Авто)", ruObs, "ru-"));
+      if (!profiles.length) {
+        // Fallback: legacy single-balancer profile if no country split detected.
+        const all: any[] = [];
+        lines.forEach((link, i) => { const ob = linkToOutbound(link, i + 1); if (ob) all.push(ob); });
+        all.push({ tag: "direct", protocol: "freedom" });
+        all.push({ tag: "block", protocol: "blackhole" });
+        profiles.push(buildXrayProfile(sub.name, all));
+      }
+      return new Response(JSON.stringify(profiles, null, 2), {
         status: 200,
         headers: {
           ...corsHeaders,
