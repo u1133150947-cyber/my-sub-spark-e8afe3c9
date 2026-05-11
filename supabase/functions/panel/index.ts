@@ -57,7 +57,7 @@ function headersToRecord(headers: Headers): Record<string, string | string[]> {
 
 function shouldFallbackToNodeRequest(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
-  return /cert|certificate|tls|ssl|issuer|authority/i.test(msg);
+  return /cert|certificate|tls|ssl|issuer|authority|unexpected end of file/i.test(msg);
 }
 
 async function fetchRequest(
@@ -69,7 +69,7 @@ async function fetchRequest(
   try {
     const res = await fetch(urlStr, {
       method: opts.method ?? "GET",
-      headers: { "User-Agent": "Lovable 3x-ui connector", ...(opts.headers ?? {}) },
+      headers: { "User-Agent": "Mozilla/5.0 Lovable 3x-ui connector", "Accept-Encoding": "identity", ...(opts.headers ?? {}) },
       body: opts.body,
       redirect: "manual",
       signal: controller.signal,
