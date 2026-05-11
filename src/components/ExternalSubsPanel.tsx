@@ -184,12 +184,9 @@ export function ExternalSubsPanel() {
       if (error) throw error;
       const createdId = (data as any)?.id;
       if (createdId && targetSubId === "all" && subs.length) {
-        for (const s of subs) {
-          const { error: e2 } = await supabase
-            .from("subscription_external_subs")
-            .insert({ subscription_id: s.id, external_sub_id: createdId, sort_order: initialSort });
-          if (e2 && !/duplicate|unique/i.test(e2.message)) throw e2;
-        }
+        const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: createdId, sort_order: initialSort }));
+        const { error: e2 } = await supabase.from("subscription_external_subs").insert(rows);
+        if (e2 && !/duplicate|unique/i.test(e2.message)) throw e2;
       } else if (createdId && targetSubId !== "none") {
         const r = await supabase
           .from("subscription_external_subs")
@@ -233,18 +230,10 @@ export function ExternalSubsPanel() {
       if (!createdId) throw new Error("Сервер добавлен, но не удалось получить ID для привязки");
       if (createdId) {
         if (targetSubId === "all" && subs.length) {
-          let added = 0;
-          for (const s of subs) {
-            const { error } = await supabase
-              .from("subscription_external_subs")
-              .insert({
-                subscription_id: s.id, external_sub_id: createdId,
-                sort_order: initialSort,
-              });
-            if (!error) added++;
-            else if (!/duplicate|unique/i.test(error.message)) throw error;
-          }
-          toast.success(`Привязано ко всем (${added} из ${subs.length})`);
+          const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: createdId, sort_order: initialSort }));
+          const { error } = await supabase.from("subscription_external_subs").insert(rows);
+          if (error && !/duplicate|unique/i.test(error.message)) throw error;
+          toast.success(`Привязано ко всем (${subs.length})`);
         } else if (targetSubId !== "none") {
           const r = await supabase.from("subscription_external_subs").insert({
             subscription_id: targetSubId, external_sub_id: createdId,
@@ -276,15 +265,11 @@ export function ExternalSubsPanel() {
       if (!missing.length) {
         toast.success(`Уже привязано ко всем (${subs.length})`);
       } else {
-        let added = 0;
-        for (const s of missing) {
-          const { error } = await supabase
-            .from("subscription_external_subs")
-            .insert({ subscription_id: s.id, external_sub_id: extId, sort_order: item ? linkSortFor(item) : DEFAULT_EXTERNAL_SORT });
-          if (!error) added++;
-          else if (!/duplicate|unique/i.test(error.message)) throw error;
-        }
-        toast.success(`Добавлено ${added} из ${subs.length}`);
+        const sort_order = item ? linkSortFor(item) : DEFAULT_EXTERNAL_SORT;
+        const rows = missing.map((s) => ({ subscription_id: s.id, external_sub_id: extId, sort_order }));
+        const { error } = await supabase.from("subscription_external_subs").insert(rows);
+        if (error && !/duplicate|unique/i.test(error.message)) throw error;
+        toast.success(`Добавлено ${missing.length} из ${subs.length}`);
       }
       loadAll();
     } catch (e: any) {
@@ -366,8 +351,8 @@ export function ExternalSubsPanel() {
     try {
       const { error } = await supabase.from("external_subs").update({ raw_links: next }).eq("id", item.id);
       if (error) throw error;
-      setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, raw_links: next } : x));
       toast.success(`Удалено ${removed}, осталось ${next.length}`);
+      loadAll();
     } catch (e: any) {
       toast.error("Не удалось", { description: e?.message ?? String(e) });
     } finally { setBusy(null); }
@@ -398,10 +383,10 @@ export function ExternalSubsPanel() {
       toast.warning("Закреплённые текстовые блоки всегда остаются выше обычных серверов");
       return;
     }
+    if (reordering) return;
     // Reorder locally for snappy UI, then renumber as 10, 20, 30…
-    // These arrows only re-order the listing inside the "Сторонние" tab.
     // Per-subscription ordering (set in the subscription editor) is NOT
-    // touched here — it is the source of truth for what the client sees.
+    // touched — it remains the source of truth for what the client sees.
     const next = items.slice();
     next[idx] = b; next[j] = a;
     let normalPos = 0;
@@ -410,13 +395,19 @@ export function ExternalSubsPanel() {
       return { ...it, sort_order: isPinnedSort(cur) ? (PINNED_SORT + i) : (++normalPos * 10) };
     });
     setItems(renum);
+    setReordering(true);
     try {
-      await Promise.all(renum.map((it) =>
-        supabase.from("external_subs").update({ sort_order: it.sort_order }).eq("id", it.id)
-      ));
+      // Single round-trip upsert instead of N parallel UPDATEs (avoids races on rapid clicks).
+      const { error } = await supabase.from("external_subs").upsert(
+        renum.map((it) => ({ id: it.id, sort_order: it.sort_order })),
+        { onConflict: "id" },
+      );
+      if (error) throw error;
     } catch (e: any) {
       toast.error("Не удалось сохранить порядок", { description: e?.message ?? String(e) });
       loadAll();
+    } finally {
+      setReordering(false);
     }
   }
 
