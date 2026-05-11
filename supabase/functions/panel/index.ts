@@ -1173,6 +1173,117 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (action === "bulkInstallPreset" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const slug: string = body.panel;
+      const count: number = Math.min(50, Math.max(1, Number(body.count ?? 25)));
+      const portStart: number = Number.isFinite(Number(body.portStart)) ? Number(body.portStart) : 12000;
+      if (!slug) {
+        return new Response(JSON.stringify({ ok: false, error: "panel обязателен" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // 1) Acquire one shared Reality x25519 keypair (panel preferred, local fallback).
+      let privateKey = "", publicKey = "";
+      try {
+        const keyPaths = [
+          "/panel/server/getNewX25519Cert",
+          "/panel/setting/getNewX25519Cert",
+          "/panel/api/server/getNewX25519Cert",
+        ];
+        for (const p of keyPaths) {
+          const r = await panelFetch(slug as PanelKey, p, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" } });
+          let j: any = null; try { j = JSON.parse(r.body); } catch {}
+          if (j?.success && j?.obj?.privateKey && j?.obj?.publicKey) {
+            privateKey = j.obj.privateKey; publicKey = j.obj.publicKey; break;
+          }
+        }
+        if (!privateKey || !publicKey) {
+          const kp = await crypto.subtle.generateKey({ name: "X25519" } as any, true, ["deriveBits"]) as CryptoKeyPair;
+          const rawPub = new Uint8Array(await crypto.subtle.exportKey("raw", kp.publicKey));
+          const pkcs8 = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+          const rawPriv = pkcs8.slice(pkcs8.length - 32);
+          const b64u = (b: Uint8Array) => btoa(String.fromCharCode(...b)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+          privateKey = b64u(rawPriv); publicKey = b64u(rawPub);
+        }
+      } catch (e: any) {
+        return new Response(JSON.stringify({ ok: false, error: "Не удалось получить Reality ключи: " + (e?.message ?? e) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+
+      // 2) Pool of safe SNIs / fingerprints (rotated across inbounds).
+      const SNIS = [
+        "www.microsoft.com", "www.apple.com", "www.cloudflare.com", "www.amazon.com",
+        "www.icloud.com", "www.yahoo.com", "www.lovable.dev", "discord.com",
+        "www.samsung.com", "www.tesla.com",
+      ];
+      const FPS = ["chrome", "firefox", "safari", "edge", "ios"];
+      const hex = (n: number) => {
+        const a = new Uint8Array(n / 2); crypto.getRandomValues(a);
+        return Array.from(a, (b) => b.toString(16).padStart(2, "0")).join("");
+      };
+      const shortIdsSet = () => [2, 4, 6, 8, 10, 12, 14, 16].map((n) => hex(n));
+
+      // 3) Probe taken ports to skip collisions.
+      const taken = new Set<number>();
+      try {
+        const ibs = await listInbounds(slug as PanelKey);
+        for (const ib of ibs) taken.add(Number(ib.port));
+      } catch {}
+
+      // 4) Build & POST inbounds sequentially (panel doesn't like parallel /add).
+      const created: { port: number; remark: string; sni: string }[] = [];
+      const errors: { port: number; error: string }[] = [];
+      let port = portStart;
+      for (let i = 0; i < count; i++) {
+        while (taken.has(port) || port < 1024) port++;
+        if (port > 65000) break;
+        const sni = SNIS[i % SNIS.length];
+        const fp = FPS[i % FPS.length];
+        const remark = `auto-reality-${String(i + 1).padStart(2, "0")}-${sni.split(".").slice(-2, -1)[0]}`;
+        const isPro = i >= count - Math.min(5, Math.floor(count / 5)); // last 5 are Vision-pro multi-SNI
+        const serverNames = isPro ? [sni, "www." + sni.replace(/^www\./, "")] : [sni];
+        const reality: Record<string, unknown> = {
+          show: false, xver: 0,
+          dest: `${sni}:443`,
+          serverNames,
+          privateKey,
+          minClient: "", maxClient: "", maxTimediff: 0,
+          shortIds: shortIdsSet(),
+          settings: { publicKey, fingerprint: fp, serverName: "", spiderX: "/" },
+        };
+        const payload = {
+          up: 0, down: 0, total: 0,
+          remark, enable: true, expiryTime: 0, listen: "",
+          port, protocol: "vless",
+          settings: JSON.stringify({ clients: [], decryption: "none", fallbacks: [] }),
+          streamSettings: JSON.stringify({
+            network: "tcp", security: "reality", externalProxy: [], realitySettings: reality,
+            tcpSettings: { acceptProxyProtocol: false, header: { type: "none" } },
+          }),
+          tag: `inbound-${port}`,
+          sniffing: JSON.stringify({ enabled: true, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false }),
+          allocate: JSON.stringify({ strategy: "always", refresh: 5, concurrency: 3 }),
+        };
+        try {
+          const res = await panelFetch(slug as PanelKey, "/panel/api/inbounds/add", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          let j: any = null; try { j = JSON.parse(res.body); } catch {}
+          if (!j?.success) {
+            errors.push({ port, error: j?.msg ?? `HTTP ${res.status}` });
+          } else {
+            created.push({ port, remark, sni });
+            taken.add(port);
+          }
+        } catch (e: any) {
+          errors.push({ port, error: e?.message ?? String(e) });
+        }
+        port++;
+      }
+      await writeAudit(errors.length ? "warn" : "info", "ok", null, { panel: slug, action_kind: "bulk_install_preset", created: created.length, errors: errors.length });
+      return new Response(JSON.stringify({ ok: true, created, errors, privateKey: privateKey.slice(0, 8) + "…", publicKey }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     await writeAudit("warn", "unknown", "Unknown action");
     return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {

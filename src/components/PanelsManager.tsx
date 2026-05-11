@@ -103,6 +103,30 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [protoPanel, setProtoPanel] = useState<Panel | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
   const [attachPanel, setAttachPanel] = useState<Panel | null>(null);
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+
+  const bulkInstall = async (p: Panel) => {
+    if (!p.slug) return toast.error("Сначала «Проверить» — нужен slug панели");
+    if (!confirm(`Создать 25 готовых VLESS Reality инбаундов на «${p.name}»?\n\nПорты 12000-12024, разные SNI и fingerprint, общий x25519 ключ.`)) return;
+    setBulkBusy(p.slug);
+    const t = toast.loading(`Генерирую 25 инбаундов на ${p.name}…`);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=bulkInstallPreset", {
+        method: "POST",
+        body: { panel: p.slug, count: 25, portStart: 12000 },
+      });
+      if (error) throw error;
+      if (!data?.ok) throw new Error(data?.error ?? "Панель отклонила запрос");
+      const ok = Array.isArray(data.created) ? data.created.length : 0;
+      const bad = Array.isArray(data.errors) ? data.errors.length : 0;
+      toast.success(`Готово: создано ${ok}, ошибок ${bad}`, { id: t });
+      load(); onChanged?.();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e), { id: t });
+    } finally {
+      setBulkBusy(null);
+    }
+  };
 
   const load = async () => {
     const { data, error } = await supabase
@@ -551,6 +575,18 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                       title={p.slug ? "Создать inbound" : "Slug появится после «Проверить»"}
                     >
                       <Wand2 className="size-3.5 mr-1" /> Протоколы
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      disabled={!p.slug || bulkBusy === p.slug}
+                      onClick={() => bulkInstall(p)}
+                      title="Создать 25 готовых VLESS Reality инбаундов одной кнопкой"
+                    >
+                      {bulkBusy === p.slug
+                        ? <Loader2 className="size-3.5 mr-1 animate-spin" />
+                        : <Rocket className="size-3.5 mr-1" />}
+                      25 пресетов
                     </Button>
                     <Button variant="outline" size="sm" onClick={() => setAttachPanel(p)} title="Выпустить SSL для домена и привязать к панели">
                       <Lock className="size-3.5 mr-1" /> Домен
