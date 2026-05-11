@@ -1173,8 +1173,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    await writeAudit("warn", "unknown", "Unknown action");
-
     if (action === "bulkInstallPreset" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
       const slug: string = body.panel;
@@ -1286,6 +1284,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, created, errors, privateKey: privateKey.slice(0, 8) + "…", publicKey }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    await writeAudit("warn", "unknown", "Unknown action");
     return new Response(JSON.stringify({ error: "Unknown action" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
