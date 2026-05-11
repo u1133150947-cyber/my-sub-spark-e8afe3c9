@@ -11,6 +11,7 @@ const corsHeaders = {
 
 type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
 type PanelKey = string;
+type PanelResponse = { status: number; headers: Record<string, string | string[]>; body: string };
 
 const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -46,10 +47,43 @@ function panelCfg(p: PanelRow) {
   return { url: (p.panel_url ?? "").replace(/\/+$/, ""), username: p.username, password: p.password };
 }
 
+function headersToRecord(headers: Headers): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {};
+  headers.forEach((value, key) => { out[key.toLowerCase()] = value; });
+  const setCookies = (headers as any).getSetCookie?.();
+  if (Array.isArray(setCookies) && setCookies.length) out["set-cookie"] = setCookies;
+  return out;
+}
+
+function shouldFallbackToNodeRequest(e: unknown) {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /cert|certificate|tls|ssl|issuer|authority/i.test(msg);
+}
+
+async function fetchRequest(
+  urlStr: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
+): Promise<PanelResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort("request timeout 15s"), 15_000);
+  try {
+    const res = await fetch(urlStr, {
+      method: opts.method ?? "GET",
+      headers: { "User-Agent": "Lovable 3x-ui connector", ...(opts.headers ?? {}) },
+      body: opts.body,
+      redirect: "manual",
+      signal: controller.signal,
+    });
+    return { status: res.status, headers: headersToRecord(res.headers), body: await res.text() };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function nodeRequest(
   urlStr: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
-): Promise<{ status: number; headers: Record<string, string | string[]>; body: string }> {
+): Promise<PanelResponse> {
   return new Promise((resolve, reject) => {
     const u = new URL(urlStr);
     const isHttps = u.protocol === "https:";
