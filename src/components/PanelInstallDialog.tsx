@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Loader2, Rocket, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
 import { getAdminToken } from "@/lib/adminAuth";
@@ -25,6 +26,38 @@ const apiBase = () => {
     return raw.replace(/\/+$/, "");
   }
 };
+
+const COUNTRIES: { code: string; flag: string; name: string }[] = [
+  { code: "RU", flag: "🇷🇺", name: "Россия" },
+  { code: "CZ", flag: "🇨🇿", name: "Чехия" },
+  { code: "DE", flag: "🇩🇪", name: "Германия" },
+  { code: "NL", flag: "🇳🇱", name: "Нидерланды" },
+  { code: "FR", flag: "🇫🇷", name: "Франция" },
+  { code: "GB", flag: "🇬🇧", name: "Великобритания" },
+  { code: "US", flag: "🇺🇸", name: "США" },
+  { code: "CA", flag: "🇨🇦", name: "Канада" },
+  { code: "JP", flag: "🇯🇵", name: "Япония" },
+  { code: "SG", flag: "🇸🇬", name: "Сингапур" },
+  { code: "TR", flag: "🇹🇷", name: "Турция" },
+  { code: "UA", flag: "🇺🇦", name: "Украина" },
+  { code: "PL", flag: "🇵🇱", name: "Польша" },
+  { code: "FI", flag: "🇫🇮", name: "Финляндия" },
+  { code: "SE", flag: "🇸🇪", name: "Швеция" },
+  { code: "NO", flag: "🇳🇴", name: "Норвегия" },
+  { code: "ES", flag: "🇪🇸", name: "Испания" },
+  { code: "IT", flag: "🇮🇹", name: "Италия" },
+  { code: "CH", flag: "🇨🇭", name: "Швейцария" },
+  { code: "AT", flag: "🇦🇹", name: "Австрия" },
+  { code: "KZ", flag: "🇰🇿", name: "Казахстан" },
+  { code: "CN", flag: "🇨🇳", name: "Китай" },
+  { code: "HK", flag: "🇭🇰", name: "Гонконг" },
+  { code: "IN", flag: "🇮🇳", name: "Индия" },
+  { code: "BR", flag: "🇧🇷", name: "Бразилия" },
+  { code: "AE", flag: "🇦🇪", name: "ОАЭ" },
+  { code: "LV", flag: "🇱🇻", name: "Латвия" },
+  { code: "LT", flag: "🇱🇹", name: "Литва" },
+  { code: "EE", flag: "🇪🇪", name: "Эстония" },
+];
 
 const empty = () => ({
   host: "",
@@ -245,7 +278,18 @@ export function PanelInstallDialog({
               <>
                 <div>
                   <Label className="text-xs text-muted-foreground">Страна (код, опц.)</Label>
-                  <Input value={f.country} onChange={(e) => upd("country", e.target.value.toUpperCase())} placeholder="DE" maxLength={2} />
+                  <Select value={f.country || undefined} onValueChange={(v) => upd("country", v)}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Выберите страну" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-72">
+                      {COUNTRIES.map((c) => (
+                        <SelectItem key={c.code} value={c.code}>
+                          <span className="mr-2">{c.flag}</span>{c.name} <span className="text-muted-foreground">({c.code})</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="md:col-span-2">
                   <Label className="text-xs text-muted-foreground">Название (опц.)</Label>
