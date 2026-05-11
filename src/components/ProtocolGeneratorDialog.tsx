@@ -417,6 +417,14 @@ export function ProtocolGeneratorDialog({
               </Button>
               <Button
                 type="button"
+                variant={template === "vless-reality-simple" ? "default" : "outline"}
+                size="sm"
+                onClick={() => { setTemplate("vless-reality-simple"); setPort(443); setFingerprint("chrome"); }}
+              >
+                VLESS · Reality (PrimeVPN)
+              </Button>
+              <Button
+                type="button"
                 variant={template === "vless-reality-vision" ? "default" : "outline"}
                 size="sm"
                 onClick={() => {
@@ -426,6 +434,14 @@ export function ProtocolGeneratorDialog({
                 }}
               >
                 VLESS · Reality · Vision (Pro)
+              </Button>
+              <Button
+                type="button"
+                variant={template === "hysteria2" ? "default" : "outline"}
+                size="sm"
+                onClick={() => { setTemplate("hysteria2"); setPort(8443); setSni("vpnprime.ru"); }}
+              >
+                Hysteria2
               </Button>
               <Button
                 type="button"
@@ -491,7 +507,7 @@ export function ProtocolGeneratorDialog({
             </div>
           </div>
 
-          {template === "vless-reality" && (
+          {(template === "vless-reality" || template === "vless-reality-simple") && (
             <div className="space-y-2 border rounded-md p-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs text-muted-foreground">Reality ключи (x25519)</Label>
@@ -570,6 +586,19 @@ export function ProtocolGeneratorDialog({
               <Input value={keyFile} onChange={(e) => setKeyFile(e.target.value)} placeholder="keyFile" />
               <p className="text-xs text-muted-foreground">
                 Файлы должны существовать на сервере панели. Можно указать пути от Let's Encrypt / acme.sh.
+              </p>
+            </div>
+          )}
+
+          {template === "hysteria2" && (
+            <div className="space-y-2 border rounded-md p-3">
+              <Label className="text-xs text-muted-foreground">TLS сертификат (пути на сервере панели)</Label>
+              <Input value={certFile} onChange={(e) => setCertFile(e.target.value)} placeholder="certificateFile" />
+              <Input value={keyFile} onChange={(e) => setKeyFile(e.target.value)} placeholder="keyFile" />
+              <Label className="text-xs text-muted-foreground">Obfs password (опц., salamander)</Label>
+              <Input value={obfsPassword} onChange={(e) => setObfsPassword(e.target.value)} placeholder="оставьте пустым — без обфускации" />
+              <p className="text-xs text-muted-foreground">
+                ALPN h3, congestion bbr. SNI берётся из поля выше. Подписка отдаст ссылку <code>hysteria2://...</code>.
               </p>
             </div>
           )}
