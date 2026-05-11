@@ -9,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
+type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string; status?: string };
 type PanelKey = string;
 type PanelResponse = { status: number; headers: Record<string, string | string[]>; body: string };
 
