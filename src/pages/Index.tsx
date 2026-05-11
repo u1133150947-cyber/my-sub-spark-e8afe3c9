@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, ArrowUp, ArrowDown, Eye, Download, Upload, FileText, Trash, Search, ArrowUpDown } from "lucide-react";
+import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, ArrowUp, ArrowDown, Eye, Download, Upload, FileText, Trash, Search, ArrowUpDown, Settings2, Sparkles, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
