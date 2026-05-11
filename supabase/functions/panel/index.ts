@@ -367,11 +367,18 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: false, error: "panel_url, username, password обязательны" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
       try {
-        const res = await nodeRequest(`${panelUrl}/login`, {
+        const csrf = await getCsrfToken(panelUrl).catch(() => ({ token: "", cookie: "" }));
+        const res = await nodeRequestRetry(`${panelUrl}/login`, {
           method: "POST",
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ username, password }).toString(),
-        });
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            Accept: "application/json",
+            "X-Requested-With": "XMLHttpRequest",
+            ...(csrf.token ? { "X-CSRF-Token": csrf.token } : {}),
+            ...(csrf.cookie ? { Cookie: csrf.cookie } : {}),
+          },
+          body: new URLSearchParams({ username, password, twoFactorCode: "" }).toString(),
+        }, 1);
         if (res.status < 200 || res.status >= 300) {
           return new Response(JSON.stringify({ ok: false, error: `HTTP ${res.status}: ${res.body.slice(0, 200)}` }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
