@@ -296,3 +296,120 @@ export async function handleInstall(req: Request, _url: URL): Promise<Response> 
   }
   return json({ ...result, saved });
 }
+
+// =====================================================================
+// Attach a Let's Encrypt domain certificate to an already-installed 3x-ui.
+// Called from UI when the user wants to switch an existing panel
+// (running on IP / self-signed) over to a real domain with a valid SSL cert.
+// =====================================================================
+type AttachParams = {
+  host: string;
+  ssh_port: number;
+  ssh_user: string;
+  ssh_auth: "password" | "key";
+  ssh_password?: string;
+  ssh_private_key?: string;
+  ssh_passphrase?: string;
+  domain: string;
+  letsencrypt_email?: string;
+  panel_port?: number;
+  panel_path?: string;
+};
+
+function validateAttach(p: any): { ok: true; v: AttachParams } | { ok: false; error: string } {
+  const errs: string[] = [];
+  if (!p?.host) errs.push("host обязателен");
+  if (!p?.domain) errs.push("domain обязателен");
+  const auth = p?.ssh_auth === "key" ? "key" : "password";
+  if (auth === "password" && !p?.ssh_password) errs.push("ssh_password обязателен");
+  if (auth === "key" && !p?.ssh_private_key) errs.push("ssh_private_key обязателен");
+  if (errs.length) return { ok: false, error: errs.join("; ") };
+  return {
+    ok: true,
+    v: {
+      host: String(p.host).trim(),
+      ssh_port: Number(p.ssh_port) || 22,
+      ssh_user: String(p.ssh_user || "root").trim(),
+      ssh_auth: auth,
+      ssh_password: p.ssh_password ? String(p.ssh_password) : undefined,
+      ssh_private_key: p.ssh_private_key ? String(p.ssh_private_key) : undefined,
+      ssh_passphrase: p.ssh_passphrase ? String(p.ssh_passphrase) : undefined,
+      domain: String(p.domain).trim(),
+      letsencrypt_email: p.letsencrypt_email ? String(p.letsencrypt_email).trim() : undefined,
+      panel_port: p.panel_port ? Number(p.panel_port) : undefined,
+      panel_path: p.panel_path ? String(p.panel_path).trim().replace(/^\/+|\/+$/g, "") : undefined,
+    },
+  };
+}
+
+async function runAttach(v: AttachParams): Promise<{ ok: boolean; panel_url?: string; log: string; error?: string }> {
+  const log: string[] = [];
+  const push = (s: string) => log.push(s.replace(/\r/g, ""));
+  let client: Client;
+  try {
+    push(`→ SSH ${v.ssh_user}@${v.host}:${v.ssh_port}`);
+    client = await sshConnect({
+      host: v.host, port: v.ssh_port, username: v.ssh_user,
+      password: v.ssh_auth === "password" ? v.ssh_password : undefined,
+      privateKey: v.ssh_auth === "key" ? v.ssh_private_key : undefined,
+      passphrase: v.ssh_passphrase,
+    });
+    push(`✓ SSH connected`);
+  } catch (e: any) {
+    return { ok: false, log: `${log.join("\n")}\n✗ SSH: ${e?.message ?? e}`, error: `SSH: ${e?.message ?? e}` };
+  }
+  const run = async (cmd: string, label?: string, timeout = 600_000) => {
+    push(`$ ${label ?? cmd}`);
+    const r = await execSsh(client, cmd, timeout);
+    const out = (r.stdout + (r.stderr ? `\n[stderr]\n${r.stderr}` : "")).trim();
+    if (out) push(out.length > 4000 ? out.slice(0, 4000) + "\n…(truncated)" : out);
+    push(`(exit ${r.code})`);
+    return r;
+  };
+  try {
+    const det = await run(`test -x ${XUI_BIN} && echo OK || echo MISSING`, "detect x-ui binary");
+    if (!/OK/.test(det.stdout)) {
+      try { client.end(); } catch {}
+      return { ok: false, log: log.join("\n"), error: "x-ui не установлен на этом сервере" };
+    }
+    const email = v.letsencrypt_email || defaultLetsEncryptEmail(v.domain);
+    const certDir = `/root/cert/${v.domain}`;
+    await run(`mkdir -p ${shQuote(certDir)}`, "prepare cert dir");
+    const certCmd = [
+      `if ! test -x /root/.acme.sh/acme.sh; then curl -fsSL https://get.acme.sh | sh -s email=${shQuote(email)}; fi`,
+      `/root/.acme.sh/acme.sh --set-default-ca --server letsencrypt`,
+      `systemctl stop x-ui nginx caddy apache2 2>/dev/null || true`,
+      `/root/.acme.sh/acme.sh --issue -d ${shQuote(v.domain)} --standalone --httpport 80 --force`,
+      `/root/.acme.sh/acme.sh --installcert -d ${shQuote(v.domain)} --key-file ${shQuote(`${certDir}/privkey.pem`)} --fullchain-file ${shQuote(`${certDir}/fullchain.pem`)} --reloadcmd "systemctl restart x-ui || true" || true`,
+      `test -s ${shQuote(`${certDir}/fullchain.pem`)} -a -s ${shQuote(`${certDir}/privkey.pem`)}`,
+      `${XUI_BIN} cert -webCert ${shQuote(`${certDir}/fullchain.pem`)} -webCertKey ${shQuote(`${certDir}/privkey.pem`)}`,
+      `systemctl start nginx caddy apache2 2>/dev/null || true`,
+      `x-ui restart`,
+    ].join(" && ");
+    const r = await run(certCmd, `Let's Encrypt + x-ui cert for ${v.domain}`);
+    try { client.end(); } catch {}
+    if (r.code !== 0) return { ok: false, log: log.join("\n"), error: `cert pipeline exit ${r.code}` };
+    let panel_url: string | undefined;
+    if (v.panel_port) {
+      const pathPart = v.panel_path ? `/${v.panel_path}` : "";
+      panel_url = `https://${v.domain}:${v.panel_port}${pathPart}`;
+      push(`✓ panel URL: ${panel_url}`);
+    }
+    return { ok: true, panel_url, log: log.join("\n") };
+  } catch (e: any) {
+    try { client.end(); } catch {}
+    return { ok: false, log: `${log.join("\n")}\n✗ ${e?.message ?? e}`, error: e?.message ?? String(e) };
+  }
+}
+
+export async function handleAttachDomain(req: Request, _url: URL): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+  if (!verifyAdminSession(req)) return unauthorizedResponse(cors);
+  let body: any;
+  try { body = await req.json(); } catch { return json({ error: "invalid JSON" }, 400); }
+  const v = validateAttach(body);
+  if (!v.ok) return json({ error: v.error }, 400);
+  const result = await runAttach(v.v);
+  return json(result, result.ok ? 200 : 500);
+}
