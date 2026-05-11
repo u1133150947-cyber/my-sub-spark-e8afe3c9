@@ -399,11 +399,15 @@ export function ExternalSubsPanel() {
     setReordering(true);
     try {
       // Single round-trip upsert instead of N parallel UPDATEs (avoids races on rapid clicks).
-      const { error } = await supabase.from("external_subs").upsert(
-        renum.map((it) => ({ id: it.id, sort_order: it.sort_order })),
-        { onConflict: "id" },
+      // Update each row's sort_order in parallel; one round-trip per row but
+      // these are small writes (just an int) and we throttle via setReordering.
+      const results = await Promise.all(
+        renum.map((it) =>
+          supabase.from("external_subs").update({ sort_order: it.sort_order }).eq("id", it.id),
+        ),
       );
-      if (error) throw error;
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
     } catch (e: any) {
       toast.error("Не удалось сохранить порядок", { description: e?.message ?? String(e) });
       loadAll();
