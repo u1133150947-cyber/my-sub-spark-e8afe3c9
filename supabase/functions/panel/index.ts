@@ -118,6 +118,18 @@ function nodeRequest(
 }
 
 // Retry wrapper: 3 attempts with exp backoff for network/5xx errors
+async function panelHttpRequest(
+  urlStr: string,
+  opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
+) {
+  try {
+    return await fetchRequest(urlStr, opts);
+  } catch (e) {
+    if (!shouldFallbackToNodeRequest(e)) throw e;
+    return await nodeRequest(urlStr, opts);
+  }
+}
+
 async function nodeRequestRetry(
   urlStr: string,
   opts: { method?: string; headers?: Record<string, string>; body?: string } = {},
@@ -126,7 +138,7 @@ async function nodeRequestRetry(
   let lastErr: any;
   for (let i = 0; i < retries; i++) {
     try {
-      const res = await nodeRequest(urlStr, opts);
+      const res = await panelHttpRequest(urlStr, opts);
       if (res.status >= 500 && i < retries - 1) {
         await new Promise((r) => setTimeout(r, 300 * Math.pow(2, i)));
         continue;
@@ -138,6 +150,22 @@ async function nodeRequestRetry(
     }
   }
   throw lastErr;
+}
+
+async function getCsrfToken(baseUrl: string, cookie = ""): Promise<{ token: string; cookie: string }> {
+  const res = await nodeRequestRetry(`${baseUrl}/csrf-token`, {
+    method: "GET",
+    headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest", ...(cookie ? { Cookie: cookie } : {}) },
+  }, 1);
+  const sc = res.headers["set-cookie"];
+  const setCookies: string[] = Array.isArray(sc) ? sc : sc ? [sc as string] : [];
+  const csrfCookie = setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ");
+  let token = "";
+  try {
+    const j = JSON.parse(res.body);
+    if (j?.success && typeof j.obj === "string") token = j.obj;
+  } catch {}
+  return { token, cookie: [cookie, csrfCookie].filter(Boolean).join("; ") };
 }
 
 // Bounded concurrency runner (pool of N workers)
