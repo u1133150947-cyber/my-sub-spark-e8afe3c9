@@ -217,6 +217,13 @@ export function ProtocolGeneratorDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {!panelSlug && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive">
+            У панели ещё нет slug. Нажмите «Проверить» на карточке панели, чтобы установить подключение — после этого
+            генератор сможет отправить запрос.
+          </div>
+        )}
+
         <div className="space-y-4">
           <div>
             <Label className="text-xs text-muted-foreground">Шаблон</Label>
