@@ -194,6 +194,76 @@ function buildVless(
   return [`vless://${effectiveUuid}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`];
 }
 
+function inboundDisplay(
+  inbound: { panel?: string; inbound_id?: number; remark: string },
+  overrides?: Map<string, string>,
+  panelInfo?: { name?: string; country?: string },
+): string {
+  const overrideKey = `${inbound.panel ?? ""}:${inbound.inbound_id ?? ""}`;
+  const label = String(overrides?.get(overrideKey) ?? "").trim();
+  if (label) return label;
+  const country = String(panelInfo?.country ?? "").trim().toUpperCase();
+  const ci = country ? COUNTRY_INFO[country] : undefined;
+  return ci ? `${ci.flag} ${ci.name}` : String(panelInfo?.name ?? "").trim() || inbound.remark;
+}
+
+function buildTrojan(uuid: string, inbound: any, overrides?: Map<string, string>, panelInfo?: { name?: string; country?: string }): string[] {
+  if (inbound.protocol !== "trojan") return [];
+  const password = String(uuid || "").trim();
+  if (!password) return [];
+  const ss = inbound.stream_settings ?? {};
+  const network = firstString(ss.network) || "tcp";
+  const security = firstString(ss.security) || "none";
+  const params = new URLSearchParams();
+  params.set("type", network);
+  applyNetworkParams(params, ss, network);
+  if (security === "tls") applyTlsParams(params, ss);
+  else if (security === "reality") applyRealityParams(params, ss);
+  else params.set("security", "none");
+  const display = inboundDisplay(inbound, overrides, panelInfo);
+  return [`trojan://${encodeURIComponent(password)}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`];
+}
+
+function buildVmess(uuid: string, inbound: any, overrides?: Map<string, string>, panelInfo?: { name?: string; country?: string }): string[] {
+  if (inbound.protocol !== "vmess") return [];
+  const id = cleanUuid(uuid);
+  if (!id) return [];
+  const ss = inbound.stream_settings ?? {};
+  const network = firstString(ss.network) || "tcp";
+  const security = firstString(ss.security) || "none";
+  const display = inboundDisplay(inbound, overrides, panelInfo);
+  const cfg: Record<string, any> = {
+    v: "2", ps: display, add: inbound.host, port: String(inbound.port), id, aid: "0",
+    scy: "auto", net: network, type: "none", host: "", path: "", tls: security === "tls" ? "tls" : "",
+  };
+  if (network === "ws") {
+    cfg.path = String(ss.wsSettings?.path ?? "");
+    cfg.host = String(ss.wsSettings?.host ?? ss.wsSettings?.headers?.Host ?? "");
+  } else if (network === "grpc") {
+    cfg.path = String(ss.grpcSettings?.serviceName ?? "");
+  } else if (network === "tcp" && ss.tcpSettings?.header?.type === "http") {
+    cfg.type = "http";
+    cfg.path = String(ss.tcpSettings.header.request?.path?.[0] ?? "");
+    cfg.host = String(ss.tcpSettings.header.request?.headers?.Host?.[0] ?? "");
+  }
+  if (security === "tls") cfg.sni = String(findDeep(ss.tlsSettings ?? {}, "serverName") ?? "");
+  return [`vmess://${base64Utf8(JSON.stringify(cfg))}`];
+}
+
+function buildShadowsocks(uuid: string, inbound: any, overrides?: Map<string, string>, panelInfo?: { name?: string; country?: string }): string[] {
+  if (inbound.protocol !== "shadowsocks") return [];
+  const ss = inbound.stream_settings ?? {};
+  const meta = ss._ss ?? {};
+  // Single-user inbound: shared password/method stored at link-time.
+  // Multi-user (SS-2022): per-client password = uuid, method from inbound._ss.method.
+  const password = String(meta.password || uuid || "").trim();
+  const method = String(meta.method || "chacha20-ietf-poly1305").trim();
+  if (!password || !method) return [];
+  const userinfo = btoa(`${method}:${password}`).replace(/=+$/, "");
+  const display = inboundDisplay(inbound, overrides, panelInfo);
+  return [`ss://${userinfo}@${inbound.host}:${inbound.port}#${encodeURIComponent(display)}`];
+}
+
 function withHost(link: string, host: string) {
   const h = host.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
   if (!h) return link;
@@ -328,10 +398,15 @@ Deno.serve(async (req) => {
       items.push({
         sort_order: Number((ib as any).sort_order ?? 0),
         created_at: String((ib as any).created_at ?? ""),
-        lines: buildVless(sub.client_uuid, sub.client_email, ib as any, overridesMap, {
-          name: (ib as any).panel_name,
-          country: (ib as any).panel_country,
-        }),
+        lines: (() => {
+          const pInfo = { name: (ib as any).panel_name, country: (ib as any).panel_country };
+          const proto = String((ib as any).protocol || "").toLowerCase();
+          if (proto === "vless") return buildVless(sub.client_uuid, sub.client_email, ib as any, overridesMap, pInfo);
+          if (proto === "trojan") return buildTrojan(sub.client_uuid, ib as any, overridesMap, pInfo);
+          if (proto === "vmess") return buildVmess(sub.client_uuid, ib as any, overridesMap, pInfo);
+          if (proto === "shadowsocks") return buildShadowsocks(sub.client_uuid, ib as any, overridesMap, pInfo);
+          return [];
+        })(),
       });
     }
     try {

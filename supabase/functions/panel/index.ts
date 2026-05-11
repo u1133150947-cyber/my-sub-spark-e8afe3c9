@@ -819,25 +819,18 @@ Deno.serve(async (req) => {
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
 
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
-          if (ib.protocol === "shadowsocks") {
-            // Plain Shadowsocks inbounds in 3x-ui are single-user; no per-client addition.
-            // (SS-2022 multi-user is supported via clients[], but base SS isn't.)
-            try {
-              let s: any = {};
-              try { s = JSON.parse(ib.settings ?? "{}"); } catch {}
-              if (!Array.isArray(s.clients)) {
-                throw new Error(`inbound ${ib.id} (${ib.protocol}) — single-user, не поддерживает добавление клиентов. Используйте VLESS / VMess / Trojan.`);
-              }
-            } catch (e) {
-              throw e;
-            }
+          let ibSettings: any = {};
+          try { ibSettings = JSON.parse(ib.settings ?? "{}"); } catch {}
+          const isSsSingleUser = ib.protocol === "shadowsocks" && !Array.isArray(ibSettings.clients);
+          if (!isSsSingleUser) {
+            await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId, flow, protocol: ib.protocol });
           }
-          await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId, flow, protocol: ib.protocol });
-
+          const streamPlus: any = { ...stream };
+          if (isSsSingleUser) streamPlus._ss = { password: ibSettings.password ?? "", method: ibSettings.method ?? "" };
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
             remark: ib.remark ?? `${sel.panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
-            host: panelConnectionHost(panelRow), stream_settings: stream, client_email: email,
+            host: panelConnectionHost(panelRow), stream_settings: streamPlus, client_email: isSsSingleUser ? `__shared_ss_${sel.panel}_${ib.id}` : email,
           });
           if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
@@ -952,11 +945,18 @@ Deno.serve(async (req) => {
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
 
           const email = `${sub.client_email}_${sel.panel}${ib.id}`;
-          await addClient(sel.panel, sel.inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: subIdShort, flow });
+          let ibSettings2: any = {};
+          try { ibSettings2 = JSON.parse(ib.settings ?? "{}"); } catch {}
+          const isSsSingleUser2 = ib.protocol === "shadowsocks" && !Array.isArray(ibSettings2.clients);
+          if (!isSsSingleUser2) {
+            await addClient(sel.panel, sel.inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: subIdShort, flow, protocol: ib.protocol });
+          }
+          const streamPlus2: any = { ...stream };
+          if (isSsSingleUser2) streamPlus2._ss = { password: ibSettings2.password ?? "", method: ibSettings2.method ?? "" };
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
             remark: ib.remark ?? `${sel.panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
-            host: panelConnectionHost(panelRow), stream_settings: stream, client_email: email,
+            host: panelConnectionHost(panelRow), stream_settings: streamPlus2, client_email: isSsSingleUser2 ? `__shared_ss_${sel.panel}_${ib.id}` : email,
           });
           if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
