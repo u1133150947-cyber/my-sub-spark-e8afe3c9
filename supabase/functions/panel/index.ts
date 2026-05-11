@@ -830,6 +830,9 @@ Deno.serve(async (req) => {
           }
           const streamPlus: any = { ...stream };
           if (isSsSingleUser) streamPlus._ss = { password: ibSettings.password ?? "", method: ibSettings.method ?? "" };
+          if ((ib.protocol === "hysteria2" || ib.protocol === "hysteria") && ibSettings.obfs?.password) {
+            streamPlus._obfsPassword = ibSettings.obfs.password;
+          }
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
             remark: ib.remark ?? `${sel.panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
@@ -956,6 +959,9 @@ Deno.serve(async (req) => {
           }
           const streamPlus2: any = { ...stream };
           if (isSsSingleUser2) streamPlus2._ss = { password: ibSettings2.password ?? "", method: ibSettings2.method ?? "" };
+          if ((ib.protocol === "hysteria2" || ib.protocol === "hysteria") && ibSettings2.obfs?.password) {
+            streamPlus2._obfsPassword = ibSettings2.obfs.password;
+          }
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
             remark: ib.remark ?? `${sel.panel}-${ib.id}`, protocol: ib.protocol, port: ib.port,
