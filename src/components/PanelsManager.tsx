@@ -552,6 +552,18 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                     >
                       <Wand2 className="size-3.5 mr-1" /> Протоколы
                     </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      disabled={!p.slug || bulkBusy === p.slug}
+                      onClick={() => bulkInstall(p)}
+                      title="Создать 25 готовых VLESS Reality инбаундов одной кнопкой"
+                    >
+                      {bulkBusy === p.slug
+                        ? <Loader2 className="size-3.5 mr-1 animate-spin" />
+                        : <Rocket className="size-3.5 mr-1" />}
+                      25 пресетов
+                    </Button>
                     <Button variant="outline" size="sm" onClick={() => setAttachPanel(p)} title="Выпустить SSL для домена и привязать к панели">
                       <Lock className="size-3.5 mr-1" /> Домен
                     </Button>
