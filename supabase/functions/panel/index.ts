@@ -28,7 +28,7 @@ async function getAllPanels(): Promise<PanelRow[]> {
   if (Date.now() - panelsCache.ts < PANELS_CACHE_TTL_MS && panelsCache.rows.length) return panelsCache.rows;
   const { data, error } = await supabaseAdmin
     .from("panels")
-    .select("id, slug, name, host, public_host, panel_url, username, password")
+    .select("id, slug, name, host, public_host, panel_url, username, password, status")
     .order("created_at", { ascending: true });
   if (error) throw new Error(`load panels: ${error.message}`);
   panelsCache.rows = (data ?? []) as PanelRow[];
