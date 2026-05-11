@@ -552,6 +552,9 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                     >
                       <Wand2 className="size-3.5 mr-1" /> Протоколы
                     </Button>
+                    <Button variant="outline" size="sm" onClick={() => setAttachPanel(p)} title="Выпустить SSL для домена и привязать к панели">
+                      <Lock className="size-3.5 mr-1" /> Домен
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => remove(p.id)}>
                       <Trash2 className="size-3.5 text-destructive" />
                     </Button>
@@ -630,6 +633,13 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         open={installOpen}
         onOpenChange={setInstallOpen}
         onInstalled={() => { load(); onChanged?.(); }}
+      />
+
+      <AttachDomainDialog
+        panel={attachPanel}
+        open={!!attachPanel}
+        onOpenChange={(o) => !o && setAttachPanel(null)}
+        onAttached={() => { load(); onChanged?.(); }}
       />
     </div>
   );
