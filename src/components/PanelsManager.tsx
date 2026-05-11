@@ -533,7 +533,12 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                     <Button variant="outline" size="sm" onClick={() => openCreds(p)}>
                       <Pencil className="size-3.5 mr-1" /> Доступы
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => setProtoPanel(p)} disabled={!p.slug} title={p.slug ? "Создать inbound" : "Сначала проверьте подключение, чтобы получить slug"}>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setProtoPanel(p)}
+                      title={p.slug ? "Создать inbound" : "Slug появится после «Проверить»"}
+                    >
                       <Wand2 className="size-3.5 mr-1" /> Протоколы
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => remove(p.id)}>
