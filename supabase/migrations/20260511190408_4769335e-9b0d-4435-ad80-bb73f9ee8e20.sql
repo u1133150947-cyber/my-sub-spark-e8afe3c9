@@ -1,0 +1,2 @@
+UPDATE public.panels SET host='3xru.panelsu.ru', public_host='3xru.panelsu.ru', panel_url='https://3xru.panelsu.ru:45475/ru54e50ghl', status='ok', status_message='', last_checked_at=now() WHERE id='f0843dda-057a-489c-8444-fa7fb78f7a98';
+DELETE FROM public.panels WHERE id='4d177943-3847-45f3-8de4-1ae0fed412a8';
