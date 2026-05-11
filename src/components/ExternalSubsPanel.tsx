@@ -109,6 +109,7 @@ export function ExternalSubsPanel() {
   // bulk-select
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [reordering, setReordering] = useState(false);
 
   const linksByExt = useMemo(() => {
     const m = new Map<string, Set<string>>();
