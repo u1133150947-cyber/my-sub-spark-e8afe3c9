@@ -447,6 +447,11 @@ Deno.serve(async (req) => {
       const result: Record<string, any> = {};
       const meta = all.map((p) => ({ slug: p.slug, name: p.name }));
       await Promise.all(all.map(async (p) => {
+        // Skip panels known to be unreachable to avoid blocking the UI for 30+ s
+        if (p.status && p.status !== "ok" && p.status !== "unknown") {
+          result[p.slug] = { error: "panel offline (skipped)" };
+          return;
+        }
         try {
           const inbounds = await listInbounds(p.slug);
           result[p.slug] = inbounds.map((ib) => {
