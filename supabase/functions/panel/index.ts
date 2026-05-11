@@ -55,6 +55,18 @@ function headersToRecord(headers: Headers): Record<string, string | string[]> {
   return out;
 }
 
+function mergeCookies(...parts: string[]) {
+  const byName = new Map<string, string>();
+  for (const part of parts.filter(Boolean)) {
+    for (const item of part.split(";")) {
+      const cookie = item.trim();
+      const eq = cookie.indexOf("=");
+      if (eq > 0) byName.set(cookie.slice(0, eq), cookie);
+    }
+  }
+  return Array.from(byName.values()).join("; ");
+}
+
 function shouldFallbackToNodeRequest(e: unknown) {
   const msg = e instanceof Error ? e.message : String(e);
   return /cert|certificate|tls|ssl|issuer|authority|unexpected end of file/i.test(msg);
@@ -166,7 +178,7 @@ async function getCsrfToken(baseUrl: string, cookie = ""): Promise<{ token: stri
     const j = JSON.parse(res.body);
     if (j?.success && typeof j.obj === "string") token = j.obj;
   } catch {}
-  return { token, cookie: [cookie, csrfCookie].filter(Boolean).join("; ") };
+  return { token, cookie: mergeCookies(cookie, csrfCookie) };
 }
 
 // Bounded concurrency runner (pool of N workers)
