@@ -472,6 +472,27 @@ Deno.serve(async (req) => {
     items.sort((a, b) => (a.sort_order - b.sort_order) || a.created_at.localeCompare(b.created_at));
     for (const it of items) for (const l of it.lines) lines.push(l);
 
+    // ---- Xray JSON (PrimeVPN-style) format ----
+    const fmt = (url.searchParams.get("format") || "").toLowerCase();
+    if (fmt === "xray" || fmt === "json") {
+      const outbounds: any[] = [];
+      lines.forEach((link, i) => {
+        const ob = linkToOutbound(link, i + 1);
+        if (ob) outbounds.push(ob);
+      });
+      outbounds.push({ tag: "direct", protocol: "freedom" });
+      outbounds.push({ tag: "block", protocol: "blackhole" });
+      const profile = buildXrayProfile(sub.name, outbounds);
+      return new Response(JSON.stringify([profile], null, 2), {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "content-type": "application/json; charset=utf-8",
+          "content-disposition": `attachment; filename=${encodeURIComponent(sub.name)}.json`,
+        },
+      });
+    }
+
     const body = base64Utf8(lines.join("\n"));
 
     // Fire-and-forget hit counter
