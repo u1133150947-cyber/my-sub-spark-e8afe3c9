@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Loader2, Rocket, Copy, Check } from "lucide-react";
+import { Loader2, Rocket, Copy, Check, ScanSearch } from "lucide-react";
 import { toast } from "sonner";
 import { getAdminToken } from "@/lib/adminAuth";
 
@@ -88,6 +88,8 @@ export function PanelInstallDialog({
 }) {
   const [f, setF] = useState(empty());
   const [running, setRunning] = useState(false);
+  const [detecting, setDetecting] = useState(false);
+  const [detected, setDetected] = useState<{ installed: boolean; port?: number; path?: string; ssl?: boolean } | null>(null);
   const [log, setLog] = useState<string>("");
   const [result, setResult] = useState<{
     panel_url?: string;
@@ -114,6 +116,43 @@ export function PanelInstallDialog({
     setF((s) => ({ ...s, [k]: v }));
 
   const reset = () => { setF(empty()); setLog(""); setResult(null); };
+
+  const detect = async () => {
+    if (!f.host.trim()) return toast.error("Укажите IP/хост сервера");
+    if (f.ssh_auth === "password" && !f.ssh_password) return toast.error("SSH-пароль обязателен");
+    if (f.ssh_auth === "key" && !f.ssh_private_key.trim()) return toast.error("Приватный ключ обязателен");
+    setDetecting(true); setDetected(null);
+    try {
+      const token = getAdminToken();
+      const res = await fetch(`${apiBase()}/api/detect-panel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { "x-admin-token": token } : {}) },
+        body: JSON.stringify({
+          host: f.host.trim(),
+          ssh_port: Number(f.ssh_port) || 22,
+          ssh_user: f.ssh_user.trim() || "root",
+          ssh_auth: f.ssh_auth,
+          ssh_password: f.ssh_auth === "password" ? f.ssh_password : undefined,
+          ssh_private_key: f.ssh_auth === "key" ? f.ssh_private_key : undefined,
+          ssh_passphrase: f.ssh_passphrase || undefined,
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (!res.ok || !data.ok) { toast.error(data?.error ?? `HTTP ${res.status}`); return; }
+      setDetected({ installed: !!data.installed, port: data.port, path: data.path, ssl: data.ssl });
+      if (data.installed) {
+        if (data.port) upd("panel_port", String(data.port));
+        if (data.path !== undefined) upd("panel_path", data.path);
+        toast.success(`3X-UI найден (порт ${data.port ?? "?"}${data.path ? `, /${data.path}` : ""}). Логин/пароль будут заменены при сохранении.`);
+      } else {
+        toast.success("3X-UI не найден — будет установлен с нуля.");
+      }
+    } catch (e: any) {
+      toast.error("Ошибка проверки: " + (e?.message ?? e));
+    } finally {
+      setDetecting(false);
+    }
+  };
 
   const submit = async () => {
     if (!f.host.trim()) return toast.error("Укажите IP или домен сервера");
@@ -225,6 +264,20 @@ export function PanelInstallDialog({
                 </TabsContent>
               </Tabs>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/30 px-3 py-2">
+            <div className="text-xs text-muted-foreground">
+              {detected
+                ? detected.installed
+                  ? `✓ 3X-UI обнаружен (порт ${detected.port ?? "?"}${detected.path ? `, путь /${detected.path}` : ""}${detected.ssl ? ", SSL" : ""}). Установка пропустится — только сменим логин/пароль.`
+                  : "3X-UI не найден на сервере — будет установлен."
+                : "Можно сначала проверить, стоит ли уже 3X-UI на сервере."}
+            </div>
+            <Button size="sm" variant="outline" onClick={detect} disabled={detecting || running}>
+              {detecting ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <ScanSearch className="size-3.5 mr-1" />}
+              Проверить сервер
+            </Button>
           </div>
 
           {/* MODE */}
