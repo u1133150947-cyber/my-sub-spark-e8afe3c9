@@ -9,7 +9,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
-type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
+type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string; status?: string };
 type PanelKey = string;
 type PanelResponse = { status: number; headers: Record<string, string | string[]>; body: string };
 
@@ -28,7 +28,7 @@ async function getAllPanels(): Promise<PanelRow[]> {
   if (Date.now() - panelsCache.ts < PANELS_CACHE_TTL_MS && panelsCache.rows.length) return panelsCache.rows;
   const { data, error } = await supabaseAdmin
     .from("panels")
-    .select("id, slug, name, host, public_host, panel_url, username, password")
+    .select("id, slug, name, host, public_host, panel_url, username, password, status")
     .order("created_at", { ascending: true });
   if (error) throw new Error(`load panels: ${error.message}`);
   panelsCache.rows = (data ?? []) as PanelRow[];
@@ -447,6 +447,11 @@ Deno.serve(async (req) => {
       const result: Record<string, any> = {};
       const meta = all.map((p) => ({ slug: p.slug, name: p.name }));
       await Promise.all(all.map(async (p) => {
+        // Skip panels known to be unreachable to avoid blocking the UI for 30+ s
+        if (p.status && p.status !== "ok" && p.status !== "unknown") {
+          result[p.slug] = { error: "panel offline (skipped)" };
+          return;
+        }
         try {
           const inbounds = await listInbounds(p.slug);
           result[p.slug] = inbounds.map((ib) => {
