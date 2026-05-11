@@ -819,7 +819,7 @@ Deno.serve(async (req) => {
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
 
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
-          await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId, flow });
+          await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId, flow, protocol: ib.protocol });
 
           const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
             subscription_id: sub.id, panel: sel.panel, inbound_id: ib.id,
