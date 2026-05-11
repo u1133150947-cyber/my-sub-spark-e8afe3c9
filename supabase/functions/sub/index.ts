@@ -427,6 +427,7 @@ Deno.serve(async (req) => {
           if (proto === "trojan") return buildTrojan(sub.client_uuid, ib as any, overridesMap, pInfo);
           if (proto === "vmess") return buildVmess(sub.client_uuid, ib as any, overridesMap, pInfo);
           if (proto === "shadowsocks") return buildShadowsocks(sub.client_uuid, ib as any, overridesMap, pInfo);
+          if (proto === "hysteria2" || proto === "hysteria") return buildHysteria2(sub.client_uuid, ib as any, overridesMap, pInfo);
           return [];
         })(),
       });
