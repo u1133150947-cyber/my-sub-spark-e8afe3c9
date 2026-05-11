@@ -527,6 +527,17 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
         if (newSlug && newSlug.length >= 4 && newSlug !== sub.slug) {
           const clash = row<any>(`SELECT id FROM subscriptions WHERE slug = ?`, [newSlug]);
           if (clash) return json({ error: `slug "${newSlug}" уже занят` }, 409);
+          // If newSlug was previously used as an alias (e.g. revert), free it.
+          db.query(`DELETE FROM subscription_slug_aliases WHERE old_slug = ?`, [newSlug]);
+          // Preserve the OLD slug as alias so previously distributed links keep resolving.
+          try {
+            db.query(
+              `INSERT OR IGNORE INTO subscription_slug_aliases (old_slug, subscription_id) VALUES (?, ?)`,
+              [sub.slug, sub.id],
+            );
+          } catch (e) {
+            console.warn(`[panel:update] alias insert failed for ${sub.slug}:`, e instanceof Error ? e.message : e);
+          }
           sets.push("slug = ?"); args.push(newSlug);
         }
       }
