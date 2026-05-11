@@ -218,7 +218,7 @@ async function loginPanel(slug: PanelKey): Promise<string> {
   if (parsed?.success === false) throw new Error(parsed.msg ?? "Login refused");
   const sc = res.headers["set-cookie"];
   const setCookies: string[] = Array.isArray(sc) ? sc : sc ? [sc as string] : [];
-  const cookie = [csrf.cookie, setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ")].filter(Boolean).join("; ");
+  const cookie = mergeCookies(csrf.cookie, setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; "));
   if (!cookie) throw new Error(`No cookie from panel ${slug}`);
   cookieCache.set(slug, { cookie, ts: Date.now() });
   return cookie;
