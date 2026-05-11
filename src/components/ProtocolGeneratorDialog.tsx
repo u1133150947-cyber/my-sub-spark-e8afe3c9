@@ -296,6 +296,7 @@ export function ProtocolGeneratorDialog({
     setSpiderX("/");
     setMldsa65Seed("");
     setMldsa65Verify("");
+    setObfsPassword("");
   }, [open]);
 
   const payload = useMemo(() => {
