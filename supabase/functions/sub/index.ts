@@ -761,6 +761,21 @@ Deno.serve(async (req) => {
 
     // ---- Xray JSON (PrimeVPN-style) format ----
     const fmt = (url.searchParams.get("format") || "").toLowerCase();
+    // ---- sing-box JSON format (Hiddify / Karing / sing-box / NekoBox) ----
+    if (fmt === "singbox" || fmt === "sing-box" || fmt === "sb") {
+      const profile = buildSingboxProfile(sub.name, lines);
+      return new Response(JSON.stringify(profile, null, 2), {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "content-type": "application/json; charset=utf-8",
+          "profile-title": "base64:" + base64Utf8(sub.name),
+          "profile-update-interval": "3",
+          "subscription-update-interval": "3",
+          "content-disposition": `attachment; filename=${encodeURIComponent(sub.name)}.singbox.json`,
+        },
+      });
+    }
     if (fmt === "xray" || fmt === "json") {
       const outbounds: any[] = [];
       lines.forEach((link, i) => {
