@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload, Wand2 } from "lucide-react";
+import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload, Wand2, Rocket } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 import { ProtocolGeneratorDialog } from "@/components/ProtocolGeneratorDialog";
+import { PanelInstallDialog } from "@/components/PanelInstallDialog";
 
 type Panel = {
   id: string;
@@ -99,6 +100,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [credsTesting, setCredsTesting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [protoPanel, setProtoPanel] = useState<Panel | null>(null);
+  const [installOpen, setInstallOpen] = useState(false);
 
   const load = async () => {
     const { data, error } = await supabase
@@ -417,6 +419,13 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h2 className="text-lg font-semibold">Панели ({panels.length})</h2>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              onClick={() => setInstallOpen(true)}
+              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
+            >
+              <Rocket className="size-3.5 mr-1" /> Авто-установка
+            </Button>
             <Button variant="outline" size="sm" onClick={exportPanels} disabled={panels.length === 0}>
               <Download className="size-3.5 mr-1" /> Экспорт
             </Button>
@@ -613,6 +622,12 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         panelSlug={protoPanel?.slug ?? null}
         panelName={protoPanel?.name}
         onCreated={() => { load(); onChanged?.(); }}
+      />
+
+      <PanelInstallDialog
+        open={installOpen}
+        onOpenChange={setInstallOpen}
+        onInstalled={() => { load(); onChanged?.(); }}
       />
     </div>
   );
