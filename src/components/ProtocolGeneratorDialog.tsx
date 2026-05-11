@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { toast } from "sonner";
 import { Loader2, Wand2, KeyRound, Plus } from "lucide-react";
 
-type Template = "vless-reality" | "trojan-tls";
+type Template = "vless-reality" | "vless-reality-vision" | "trojan-tls";
 
 const REALITY_TARGETS = [
   "www.microsoft.com",
@@ -17,6 +17,8 @@ const REALITY_TARGETS = [
   "www.lovable.dev",
   "www.amazon.com",
   "www.icloud.com",
+  "ya.ru",
+  "www.ya.ru",
 ];
 const FINGERPRINTS = ["chrome", "firefox", "safari", "ios", "android", "edge", "random"];
 
@@ -24,6 +26,11 @@ function shortIdHex(len = 8) {
   const bytes = new Uint8Array(len / 2);
   crypto.getRandomValues(bytes);
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Generate a typical "Reality short IDs" set with varying lengths (2..16, even)
+function genShortIdsSet(): string[] {
+  return [2, 4, 6, 8, 10, 12, 14, 16].map((n) => shortIdHex(n));
 }
 
 function buildVlessReality(opts: { port: number; remark: string; sni: string; fingerprint: string; privateKey: string; publicKey: string; shortId: string }) {
@@ -52,6 +59,78 @@ function buildVlessReality(opts: { port: number; remark: string; sni: string; fi
     tcpSettings: { acceptProxyProtocol: false, header: { type: "none" } },
   };
   const sniffing = { enabled: true, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false };
+  const allocate = { strategy: "always", refresh: 5, concurrency: 3 };
+  return {
+    up: 0, down: 0, total: 0,
+    remark: opts.remark,
+    enable: true,
+    expiryTime: 0,
+    listen: "",
+    port: opts.port,
+    protocol: "vless",
+    settings,
+    streamSettings,
+    tag: `inbound-${opts.port}`,
+    sniffing,
+    allocate,
+  };
+}
+
+// "Pro" template matching the panel "Изменить подключение" screen:
+// multiple SNIs, multiple short IDs, optional mldsa65 seed/verify, custom spiderX,
+// uTLS firefox by default, Vision Seed (900,500,900,256), Sniffing + FAKEDNS.
+function buildVlessRealityVision(opts: {
+  port: number;
+  remark: string;
+  targetHost: string;          // e.g. "ya.ru"
+  targetPort: number;          // e.g. 443
+  serverNames: string[];       // e.g. ["ya.ru", "www.ya.ru"]
+  shortIds: string[];
+  fingerprint: string;
+  privateKey: string;
+  publicKey: string;
+  spiderX: string;
+  mldsa65Seed?: string;
+  mldsa65Verify?: string;
+  visionSeed?: [number, number, number, number];
+}) {
+  const settings = { clients: [], decryption: "none", fallbacks: [] };
+  const reality: Record<string, unknown> = {
+    show: false,
+    xver: 0,
+    dest: `${opts.targetHost}:${opts.targetPort}`,
+    target: `${opts.targetHost}:${opts.targetPort}`,
+    serverNames: opts.serverNames,
+    privateKey: opts.privateKey,
+    minClient: "",
+    maxClient: "",
+    maxTimediff: 0,
+    shortIds: opts.shortIds,
+    settings: {
+      publicKey: opts.publicKey,
+      fingerprint: opts.fingerprint,
+      serverName: "",
+      spiderX: opts.spiderX || "/",
+      mldsa65Verify: opts.mldsa65Verify || "",
+    },
+  };
+  if (opts.mldsa65Seed) (reality as any).mldsa65Seed = opts.mldsa65Seed;
+  if (opts.mldsa65Verify) (reality as any).mldsa65Verify = opts.mldsa65Verify;
+  if (opts.visionSeed) (reality as any).visionSeed = opts.visionSeed;
+
+  const streamSettings = {
+    network: "tcp",
+    security: "reality",
+    externalProxy: [],
+    realitySettings: reality,
+    tcpSettings: { acceptProxyProtocol: false, header: { type: "none" } },
+  };
+  const sniffing = {
+    enabled: true,
+    destOverride: ["http", "tls", "quic", "fakedns"],
+    metadataOnly: false,
+    routeOnly: false,
+  };
   const allocate = { strategy: "always", refresh: 5, concurrency: 3 };
   return {
     up: 0, down: 0, total: 0,
@@ -135,6 +214,15 @@ export function ProtocolGeneratorDialog({
   const [genKeys, setGenKeys] = useState(false);
   const [creating, setCreating] = useState(false);
 
+  // Pro / Vision template fields
+  const [targetHost, setTargetHost] = useState("ya.ru");
+  const [targetPort, setTargetPort] = useState<number>(443);
+  const [serverNamesText, setServerNamesText] = useState("ya.ru,www.ya.ru");
+  const [shortIdsText, setShortIdsText] = useState(genShortIdsSet().join(","));
+  const [spiderX, setSpiderX] = useState("/");
+  const [mldsa65Seed, setMldsa65Seed] = useState("");
+  const [mldsa65Verify, setMldsa65Verify] = useState("");
+
   // Reset on open
   useEffect(() => {
     if (!open) return;
@@ -148,15 +236,43 @@ export function ProtocolGeneratorDialog({
     setShortId(shortIdHex(8));
     setEditing(false);
     setJsonOverride("");
+    setTargetHost("ya.ru");
+    setTargetPort(443);
+    setServerNamesText("ya.ru,www.ya.ru");
+    setShortIdsText(genShortIdsSet().join(","));
+    setSpiderX("/");
+    setMldsa65Seed("");
+    setMldsa65Verify("");
   }, [open]);
 
   const payload = useMemo(() => {
-    const r = remark.trim() || (template === "vless-reality" ? `vless-reality-${port}` : `trojan-tls-${port}`);
+    const r = remark.trim() ||
+      (template === "vless-reality"
+        ? `vless-reality-${port}`
+        : template === "vless-reality-vision"
+        ? `vless-vision-${port}`
+        : `trojan-tls-${port}`);
     if (template === "vless-reality") {
       return buildVlessReality({ port, remark: r, sni, fingerprint, privateKey, publicKey, shortId });
     }
+    if (template === "vless-reality-vision") {
+      const sids = shortIdsText.split(",").map((s) => s.trim()).filter(Boolean);
+      const snis = serverNamesText.split(",").map((s) => s.trim()).filter(Boolean);
+      return buildVlessRealityVision({
+        port, remark: r,
+        targetHost, targetPort,
+        serverNames: snis.length ? snis : [targetHost],
+        shortIds: sids.length ? sids : [shortIdHex(8)],
+        fingerprint, privateKey, publicKey,
+        spiderX,
+        mldsa65Seed: mldsa65Seed.trim() || undefined,
+        mldsa65Verify: mldsa65Verify.trim() || undefined,
+        visionSeed: [900, 500, 900, 256],
+      });
+    }
     return buildTrojanTls({ port, remark: r, sni, fingerprint, certFile, keyFile });
-  }, [template, port, remark, sni, fingerprint, privateKey, publicKey, shortId, certFile, keyFile]);
+  }, [template, port, remark, sni, fingerprint, privateKey, publicKey, shortId, certFile, keyFile,
+      targetHost, targetPort, serverNamesText, shortIdsText, spiderX, mldsa65Seed, mldsa65Verify]);
 
   const previewJson = editing ? jsonOverride : JSON.stringify(payload, null, 2);
 
@@ -179,7 +295,7 @@ export function ProtocolGeneratorDialog({
 
   const handleCreate = async () => {
     if (!panelSlug) return toast.error("Нет slug панели");
-    if (template === "vless-reality" && (!privateKey || !publicKey)) {
+    if ((template === "vless-reality" || template === "vless-reality-vision") && (!privateKey || !publicKey)) {
       return toast.error("Сначала сгенерируйте Reality ключи");
     }
     if (!Number.isFinite(port) || port < 1 || port > 65535) return toast.error("Некорректный порт");
@@ -238,6 +354,18 @@ export function ProtocolGeneratorDialog({
               </Button>
               <Button
                 type="button"
+                variant={template === "vless-reality-vision" ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setTemplate("vless-reality-vision");
+                  setPort(8443);
+                  setFingerprint("firefox");
+                }}
+              >
+                VLESS · Reality · Vision (Pro)
+              </Button>
+              <Button
+                type="button"
                 variant={template === "trojan-tls" ? "default" : "outline"}
                 size="sm"
                 onClick={() => setTemplate("trojan-tls")}
@@ -268,6 +396,13 @@ export function ProtocolGeneratorDialog({
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">SNI / target</Label>
+              {template === "vless-reality-vision" ? (
+                <Input
+                  value={targetHost}
+                  onChange={(e) => setTargetHost(e.target.value)}
+                  placeholder="ya.ru"
+                />
+              ) : (
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
                 value={sni}
@@ -277,6 +412,7 @@ export function ProtocolGeneratorDialog({
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
+              )}
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">uTLS fingerprint</Label>
@@ -292,7 +428,7 @@ export function ProtocolGeneratorDialog({
             </div>
           </div>
 
-          {template === "vless-reality" ? (
+          {template === "vless-reality" && (
             <div className="space-y-2 border rounded-md p-3">
               <div className="flex items-center justify-between">
                 <Label className="text-xs text-muted-foreground">Reality ключи (x25519)</Label>
@@ -310,7 +446,61 @@ export function ProtocolGeneratorDialog({
                 </Button>
               </div>
             </div>
-          ) : (
+          )}
+
+          {template === "vless-reality-vision" && (
+            <div className="space-y-3 border rounded-md p-3">
+              <div className="grid gap-2 md:grid-cols-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">Target host</Label>
+                  <Input value={targetHost} onChange={(e) => setTargetHost(e.target.value)} placeholder="ya.ru" />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">Target port</Label>
+                  <Input type="number" min={1} max={65535} value={targetPort} onChange={(e) => setTargetPort(Number(e.target.value))} />
+                </div>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">Server names (SNI, через запятую)</Label>
+                <Input value={serverNamesText} onChange={(e) => setServerNamesText(e.target.value)} placeholder="ya.ru,www.ya.ru" />
+              </div>
+              <div>
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs text-muted-foreground">Short IDs (через запятую)</Label>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setShortIdsText(genShortIdsSet().join(","))}>↻ набор</Button>
+                </div>
+                <Textarea value={shortIdsText} onChange={(e) => setShortIdsText(e.target.value)} className="font-mono text-xs h-20" />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">SpiderX</Label>
+                <Input value={spiderX} onChange={(e) => setSpiderX(e.target.value)} placeholder="/" />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs text-muted-foreground">Reality x25519</Label>
+                <Button type="button" size="sm" variant="outline" onClick={handleGenKeys} disabled={genKeys || !panelSlug}>
+                  {genKeys ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <KeyRound className="size-3.5 mr-1" />}
+                  Сгенерировать через панель
+                </Button>
+              </div>
+              <Input value={privateKey} onChange={(e) => setPrivateKey(e.target.value)} placeholder="privateKey" />
+              <Input value={publicKey} onChange={(e) => setPublicKey(e.target.value)} placeholder="publicKey" />
+              <div className="grid gap-2 md:grid-cols-2">
+                <div>
+                  <Label className="text-xs text-muted-foreground">mldsa65 Seed (опц.)</Label>
+                  <Input value={mldsa65Seed} onChange={(e) => setMldsa65Seed(e.target.value)} placeholder="оставьте пустым — панель сгенерирует" />
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">mldsa65 Verify (опц.)</Label>
+                  <Input value={mldsa65Verify} onChange={(e) => setMldsa65Verify(e.target.value)} placeholder="опционально" />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Vision Seed = [900, 500, 900, 256], Sniffing: HTTP/TLS/QUIC/FAKEDNS, uTLS: firefox.
+              </p>
+            </div>
+          )}
+
+          {template === "trojan-tls" && (
             <div className="space-y-2 border rounded-md p-3">
               <Label className="text-xs text-muted-foreground">TLS сертификат (пути на сервере панели)</Label>
               <Input value={certFile} onChange={(e) => setCertFile(e.target.value)} placeholder="certificateFile" />
