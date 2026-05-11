@@ -413,3 +413,54 @@ export async function handleAttachDomain(req: Request, _url: URL): Promise<Respo
   const result = await runAttach(v.v);
   return json(result, result.ok ? 200 : 500);
 }
+
+// =====================================================================
+// Detect whether 3X-UI is already installed on a server, and if so
+// pull current port / web path / SSL flag via the x-ui CLI.
+// =====================================================================
+export async function handleDetectPanel(req: Request, _url: URL): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+  if (!verifyAdminSession(req)) return unauthorizedResponse(cors);
+  let body: any;
+  try { body = await req.json(); } catch { return json({ error: "invalid JSON" }, 400); }
+  const auth = body?.ssh_auth === "key" ? "key" : "password";
+  if (!body?.host) return json({ error: "host обязателен" }, 400);
+  if (auth === "password" && !body?.ssh_password) return json({ error: "ssh_password обязателен" }, 400);
+  if (auth === "key" && !body?.ssh_private_key) return json({ error: "ssh_private_key обязателен" }, 400);
+  let client: Client;
+  try {
+    client = await sshConnect({
+      host: String(body.host).trim(),
+      port: Number(body.ssh_port) || 22,
+      username: String(body.ssh_user || "root").trim(),
+      password: auth === "password" ? String(body.ssh_password) : undefined,
+      privateKey: auth === "key" ? String(body.ssh_private_key) : undefined,
+      passphrase: body.ssh_passphrase ? String(body.ssh_passphrase) : undefined,
+    });
+  } catch (e: any) {
+    return json({ ok: false, error: `SSH: ${e?.message ?? e}` }, 200);
+  }
+  try {
+    const r = await execSsh(client,
+      `if test -x ${XUI_BIN}; then echo INSTALLED; ${XUI_BIN} setting -show 2>&1; else echo NOT_INSTALLED; fi`,
+      30_000);
+    try { client.end(); } catch {}
+    const out = r.stdout || "";
+    if (/NOT_INSTALLED/.test(out)) return json({ ok: true, installed: false });
+    const portMatch = out.match(/^\s*port:\s*(\d+)/mi);
+    const pathMatch = out.match(/^\s*webBasePath:\s*\/?([^\s]*)/mi);
+    const ssl = /Panel is secure with SSL/i.test(out);
+    return json({
+      ok: true,
+      installed: true,
+      ssl,
+      port: portMatch ? Number(portMatch[1]) : undefined,
+      path: pathMatch ? pathMatch[1].replace(/^\/+|\/+$/g, "") : undefined,
+      raw: out.length > 2000 ? out.slice(0, 2000) : out,
+    });
+  } catch (e: any) {
+    try { client.end(); } catch {}
+    return json({ ok: false, error: e?.message ?? String(e) }, 200);
+  }
+}
