@@ -1064,6 +1064,8 @@ Deno.serve(async (req) => {
       try {
         // Try common 3x-ui endpoints (varies by version + trailing-slash redirects)
         const paths = [
+          "/panel/server/getNewX25519Cert",
+          "/panel/setting/getNewX25519Cert",
           "/server/getNewX25519Cert",
           "/panel/API/server/getNewX25519Cert",
           "/panel/api/server/getNewX25519Cert",
