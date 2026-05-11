@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
-import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload, Wand2, Rocket } from "lucide-react";
+import { Loader2, Plus, Server, Trash2, Wifi, WifiOff, CheckCircle2, AlertCircle, Pencil, Check, X, Download, Upload, Wand2, Rocket, Lock } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -16,6 +16,7 @@ import {
 import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 import { ProtocolGeneratorDialog } from "@/components/ProtocolGeneratorDialog";
 import { PanelInstallDialog } from "@/components/PanelInstallDialog";
+import { AttachDomainDialog } from "@/components/AttachDomainDialog";
 
 type Panel = {
   id: string;
@@ -101,6 +102,7 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [importing, setImporting] = useState(false);
   const [protoPanel, setProtoPanel] = useState<Panel | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
+  const [attachPanel, setAttachPanel] = useState<Panel | null>(null);
 
   const load = async () => {
     const { data, error } = await supabase
@@ -550,6 +552,9 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
                     >
                       <Wand2 className="size-3.5 mr-1" /> Протоколы
                     </Button>
+                    <Button variant="outline" size="sm" onClick={() => setAttachPanel(p)} title="Выпустить SSL для домена и привязать к панели">
+                      <Lock className="size-3.5 mr-1" /> Домен
+                    </Button>
                     <Button variant="ghost" size="sm" onClick={() => remove(p.id)}>
                       <Trash2 className="size-3.5 text-destructive" />
                     </Button>
@@ -628,6 +633,13 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
         open={installOpen}
         onOpenChange={setInstallOpen}
         onInstalled={() => { load(); onChanged?.(); }}
+      />
+
+      <AttachDomainDialog
+        panel={attachPanel}
+        open={!!attachPanel}
+        onOpenChange={(o) => !o && setAttachPanel(null)}
+        onAttached={() => { load(); onChanged?.(); }}
       />
     </div>
   );
