@@ -473,6 +473,10 @@ function buildXrayProfile(name: string, outbounds: any[]): any {
 function linkToSingboxOutbound(link: string, idx: number): { ob: any; group: string } | null {
   const proto = link.split("://")[0].toLowerCase();
   const tag = `${proto}-${idx}`;
+  // Country detection from fragment label (set by buildVless/etc via flag emoji prefix)
+  let label = "";
+  try { label = decodeURIComponent(link.split("#")[1] || ""); } catch { label = link.split("#")[1] || ""; }
+  const isRU = label.includes("🇷🇺");
   if (proto === "vless") {
     const p = parseUrlGeneric(link); if (!p) return null;
     const q = p.query;
@@ -498,7 +502,7 @@ function linkToSingboxOutbound(link: string, idx: number): { ob: any; group: str
         utls: { enabled: true, fingerprint: q.get("fp") || "chrome" },
       };
     }
-    return { ob, group: "vless" };
+    return { ob, group: isRU ? "vless_ru" : "vless" };
   }
   if (proto === "hysteria2" || proto === "hy2") {
     const p = parseUrlGeneric(link); if (!p) return null;
@@ -551,7 +555,7 @@ function linkToSingboxOutbound(link: string, idx: number): { ob: any; group: str
 
 function buildSingboxProfile(name: string, links: string[]): any {
   const outbounds: any[] = [];
-  const byGroup: Record<string, string[]> = { vless: [], hy2: [], trojan: [], vmess: [], ss: [] };
+  const byGroup: Record<string, string[]> = { vless: [], vless_ru: [], hy2: [], trojan: [], vmess: [], ss: [] };
   links.forEach((link, i) => {
     const r = linkToSingboxOutbound(link, i + 1);
     if (!r) return;
@@ -559,7 +563,8 @@ function buildSingboxProfile(name: string, links: string[]): any {
     byGroup[r.group].push(r.ob.tag);
   });
   const groupLabel: Record<string, string> = {
-    vless: "⚡ Автовыбор",
+    vless: "⚡ Автовыбор (Чехия)",
+    vless_ru: "🇷🇺 Россия (YouTube + Каскад→CZ)",
     hy2: "⚡ Автовыбор HY2",
     trojan: "⚡ Автовыбор Trojan",
     vmess: "⚡ Автовыбор VMess",
