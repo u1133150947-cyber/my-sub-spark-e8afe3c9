@@ -316,6 +316,20 @@ migrate("subscription_external_subs.cascade_fk", () => {
   console.log("[migration] subscription_external_subs rebuilt with ON DELETE CASCADE");
 });
 
+// Slug aliases: when admin changes a subscription's slug, the OLD slug keeps working.
+// This avoids breaking already-distributed subscription links.
+migrate("subscription_slug_aliases", () => {
+  db.execute(`
+    CREATE TABLE IF NOT EXISTS subscription_slug_aliases (
+      old_slug TEXT PRIMARY KEY,
+      subscription_id TEXT NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_ssa_sub ON subscription_slug_aliases(subscription_id);
+  `);
+  console.log("[migration] subscription_slug_aliases created");
+});
+
 // ─── Column cache ─────────────────────────────────────────────────────────────
 // PRAGMA table_info is fast but not free — schema never changes at runtime, so cache it.
 const _colCache = new Map<string, string[]>();

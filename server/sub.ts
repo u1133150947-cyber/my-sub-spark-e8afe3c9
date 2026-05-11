@@ -284,7 +284,14 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   const slug = parts[parts.length - 1];
   if (!slug || slug === "sub") return new Response("Not found", { status: 404, headers: cors });
 
-  const sub = db.queryEntries(`SELECT id, slug, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist, raw_links FROM subscriptions WHERE slug = ?`, [slug])[0] as any;
+  let sub = db.queryEntries(`SELECT id, slug, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist, raw_links FROM subscriptions WHERE slug = ?`, [slug])[0] as any;
+  if (!sub) {
+    // Fallback: this slug may be an old (renamed) URL — look up the current subscription via alias.
+    const alias = db.queryEntries(`SELECT subscription_id FROM subscription_slug_aliases WHERE old_slug = ?`, [slug])[0] as any;
+    if (alias?.subscription_id) {
+      sub = db.queryEntries(`SELECT id, slug, name, client_email, client_uuid, expiry_ms, total_bytes, hits, sni_whitelist, raw_links FROM subscriptions WHERE id = ?`, [alias.subscription_id])[0] as any;
+    }
+  }
   if (!sub) return new Response("Subscription not found", { status: 404, headers: cors });
   const subDecoded = decodeRow("subscriptions", sub);
 
