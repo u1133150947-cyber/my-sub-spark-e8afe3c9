@@ -792,6 +792,21 @@ Deno.serve(async (req) => {
       const validSelections = selections.filter((s) => s?.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(Number(s.inboundId)));
       if (!validSelections.length) return new Response(JSON.stringify({ error: "Некорректные панели в импорте: panel=null. Обновите патч и импортируйте заново.", selections }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
+      // Senior policy: deliver exactly ONE inbound per panel to keep the user's
+      // sub list clean (Чехия + RU = 2 entries). Keep the first selection per
+      // panel; drop the rest. Server-side cascade routing handles the rest.
+      {
+        const seen = new Set<string>();
+        const trimmed = [] as typeof validSelections;
+        for (const s of validSelections) {
+          if (seen.has(s.panel)) continue;
+          seen.add(s.panel);
+          trimmed.push(s);
+        }
+        validSelections.length = 0;
+        validSelections.push(...trimmed);
+      }
+
       const clientUuid = uuidv4();
       const desiredSlug = String(body.slug ?? "").trim().toLowerCase().replace(/[^a-z0-9]/g, "");
       let slug = desiredSlug && desiredSlug.length >= 4 ? desiredSlug : randomSlug(12);
