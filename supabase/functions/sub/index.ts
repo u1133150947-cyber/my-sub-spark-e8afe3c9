@@ -466,6 +466,161 @@ function buildXrayProfile(name: string, outbounds: any[]): any {
   };
 }
 
+// ===== sing-box JSON profile builder (Hiddify / Karing / sing-box / Happ-singbox) =====
+// Groups raw vless://, hysteria2://, trojan://, vmess://, ss:// links into
+// per-protocol urltest selectors (⚡ Автовыбор, ⚡ Автовыбор HY2, …) plus a
+// top-level "🚀 Авто" selector that defaults to the fastest VLESS server.
+function linkToSingboxOutbound(link: string, idx: number): { ob: any; group: string } | null {
+  const proto = link.split("://")[0].toLowerCase();
+  const tag = `${proto}-${idx}`;
+  if (proto === "vless") {
+    const p = parseUrlGeneric(link); if (!p) return null;
+    const q = p.query;
+    const security = q.get("security") || "none";
+    const network = q.get("type") || "tcp";
+    const ob: any = {
+      type: "vless", tag, server: p.host, server_port: p.port,
+      uuid: p.userinfo, flow: q.get("flow") || "", packet_encoding: "xudp",
+    };
+    if (network === "ws") ob.transport = { type: "ws", path: q.get("path") || "/", headers: q.get("host") ? { Host: q.get("host")! } : {} };
+    else if (network === "grpc") ob.transport = { type: "grpc", service_name: q.get("serviceName") || "" };
+    else if (network === "httpupgrade") ob.transport = { type: "httpupgrade", path: q.get("path") || "/", host: q.get("host") || "" };
+    if (security === "reality") {
+      ob.tls = {
+        enabled: true, server_name: q.get("sni") || "",
+        utls: { enabled: true, fingerprint: q.get("fp") || "chrome" },
+        reality: { enabled: true, public_key: q.get("pbk") || "", short_id: q.get("sid") || "" },
+      };
+    } else if (security === "tls") {
+      ob.tls = {
+        enabled: true, server_name: q.get("sni") || "",
+        alpn: (q.get("alpn") || "").split(",").filter(Boolean),
+        utls: { enabled: true, fingerprint: q.get("fp") || "chrome" },
+      };
+    }
+    return { ob, group: "vless" };
+  }
+  if (proto === "hysteria2" || proto === "hy2") {
+    const p = parseUrlGeneric(link); if (!p) return null;
+    const q = p.query;
+    const ob: any = {
+      type: "hysteria2", tag, server: p.host, server_port: p.port, password: p.userinfo,
+      tls: {
+        enabled: true, server_name: q.get("sni") || "",
+        alpn: (q.get("alpn") || "h3").split(",").filter(Boolean),
+        insecure: q.get("insecure") === "1",
+      },
+    };
+    if (q.get("obfs-password")) ob.obfs = { type: q.get("obfs") || "salamander", password: q.get("obfs-password")! };
+    return { ob, group: "hy2" };
+  }
+  if (proto === "trojan") {
+    const p = parseUrlGeneric(link); if (!p) return null;
+    const q = p.query;
+    const ob: any = {
+      type: "trojan", tag, server: p.host, server_port: p.port, password: p.userinfo,
+      tls: { enabled: true, server_name: q.get("sni") || "", utls: { enabled: true, fingerprint: q.get("fp") || "chrome" } },
+    };
+    return { ob, group: "trojan" };
+  }
+  if (proto === "vmess") {
+    try {
+      const raw = link.slice(link.indexOf("//") + 2).split("#")[0].replace(/-/g, "+").replace(/_/g, "/");
+      const cfg = JSON.parse(decodeURIComponent(escape(atob(raw + "===".slice((raw.length + 3) % 4)))));
+      const ob: any = {
+        type: "vmess", tag, server: String(cfg.add), server_port: Number(cfg.port),
+        uuid: String(cfg.id), security: cfg.scy || "auto", alter_id: Number(cfg.aid || 0),
+      };
+      if (cfg.net === "ws") ob.transport = { type: "ws", path: cfg.path || "/", headers: cfg.host ? { Host: String(cfg.host) } : {} };
+      if (cfg.tls === "tls") ob.tls = { enabled: true, server_name: String(cfg.sni || cfg.host || "") };
+      return { ob, group: "vmess" };
+    } catch { return null; }
+  }
+  if (proto === "ss") {
+    try {
+      const m = link.match(/^ss:\/\/([^@]+)@([^:/?#]+):(\d+)(?:[^#]*)(#.*)?$/i);
+      if (!m) return null;
+      const userinfo = decodeURIComponent(atob(m[1].replace(/-/g, "+").replace(/_/g, "/") + "===".slice((m[1].length + 3) % 4)));
+      const [method, ...rest] = userinfo.split(":");
+      const ob: any = { type: "shadowsocks", tag, server: m[2], server_port: Number(m[3]), method, password: rest.join(":") };
+      return { ob, group: "ss" };
+    } catch { return null; }
+  }
+  return null;
+}
+
+function buildSingboxProfile(name: string, links: string[]): any {
+  const outbounds: any[] = [];
+  const byGroup: Record<string, string[]> = { vless: [], hy2: [], trojan: [], vmess: [], ss: [] };
+  links.forEach((link, i) => {
+    const r = linkToSingboxOutbound(link, i + 1);
+    if (!r) return;
+    outbounds.push(r.ob);
+    byGroup[r.group].push(r.ob.tag);
+  });
+  const groupLabel: Record<string, string> = {
+    vless: "⚡ Автовыбор",
+    hy2: "⚡ Автовыбор HY2",
+    trojan: "⚡ Автовыбор Trojan",
+    vmess: "⚡ Автовыбор VMess",
+    ss: "⚡ Автовыбор SS",
+  };
+  const autoTags: string[] = [];
+  for (const g of Object.keys(byGroup)) {
+    if (byGroup[g].length === 0) continue;
+    const tag = groupLabel[g];
+    autoTags.push(tag);
+    outbounds.push({
+      type: "urltest", tag, outbounds: byGroup[g],
+      url: "https://www.gstatic.com/generate_204",
+      interval: "5m", tolerance: 50, idle_timeout: "30m",
+    });
+  }
+  const selectorOutbounds = ["🚀 Авто (быстрейший)", ...autoTags, ...outbounds.filter(o => o.type !== "urltest").map(o => o.tag), "direct"];
+  outbounds.push({
+    type: "selector", tag: "🚀 Авто (быстрейший)",
+    outbounds: autoTags.length ? autoTags : ["direct"],
+    default: autoTags[0] || "direct",
+  });
+  outbounds.push({ type: "selector", tag: "🌍 Выбор сервера", outbounds: selectorOutbounds, default: "🚀 Авто (быстрейший)" });
+  outbounds.push({ type: "direct", tag: "direct" });
+  outbounds.push({ type: "block", tag: "block" });
+  outbounds.push({ type: "dns", tag: "dns-out" });
+  return {
+    log: { level: "warn", timestamp: true },
+    dns: {
+      servers: [
+        { tag: "remote", address: "https://1.1.1.1/dns-query", detour: "🚀 Авто (быстрейший)" },
+        { tag: "local", address: "https://77.88.8.8/dns-query", detour: "direct" },
+      ],
+      rules: [{ rule_set: ["geosite-ru"], server: "local" }],
+      strategy: "ipv4_only",
+    },
+    inbounds: [
+      { type: "tun", tag: "tun-in", interface_name: "tun0", inet4_address: "172.19.0.1/30", auto_route: true, strict_route: true, sniff: true, mtu: 1400 },
+    ],
+    outbounds,
+    route: {
+      auto_detect_interface: true,
+      final: "🌍 Выбор сервера",
+      rules: [
+        { protocol: "dns", outbound: "dns-out" },
+        { rule_set: ["geosite-ru", "geoip-ru"], outbound: "direct" },
+        { ip_is_private: true, outbound: "direct" },
+      ],
+      rule_set: [
+        { tag: "geosite-ru", type: "remote", format: "binary", url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-ru.srs", download_detour: "direct" },
+        { tag: "geoip-ru", type: "remote", format: "binary", url: "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-ru.srs", download_detour: "direct" },
+      ],
+    },
+    experimental: {
+      cache_file: { enabled: true, store_fakeip: true },
+      clash_api: { external_controller: "127.0.0.1:9090", default_mode: "rule" },
+    },
+    _profile_name: name,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -606,6 +761,21 @@ Deno.serve(async (req) => {
 
     // ---- Xray JSON (PrimeVPN-style) format ----
     const fmt = (url.searchParams.get("format") || "").toLowerCase();
+    // ---- sing-box JSON format (Hiddify / Karing / sing-box / NekoBox) ----
+    if (fmt === "singbox" || fmt === "sing-box" || fmt === "sb") {
+      const profile = buildSingboxProfile(sub.name, lines);
+      return new Response(JSON.stringify(profile, null, 2), {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "content-type": "application/json; charset=utf-8",
+          "profile-title": "base64:" + base64Utf8(sub.name),
+          "profile-update-interval": "3",
+          "subscription-update-interval": "3",
+          "content-disposition": `attachment; filename=${encodeURIComponent(sub.name)}.singbox.json`,
+        },
+      });
+    }
     if (fmt === "xray" || fmt === "json") {
       const outbounds: any[] = [];
       lines.forEach((link, i) => {
