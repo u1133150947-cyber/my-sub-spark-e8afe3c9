@@ -1065,9 +1065,8 @@ Deno.serve(async (req) => {
         // Try common 3x-ui endpoints (varies by version + trailing-slash redirects)
         const paths = [
           "/server/getNewX25519Cert",
-          "/server/getNewX25519Cert/",
+          "/panel/API/server/getNewX25519Cert",
           "/panel/api/server/getNewX25519Cert",
-          "/panel/api/server/getNewX25519Cert/",
           "/xui/API/server/getNewX25519Cert",
         ];
         const tried: { path: string; status: number; loc?: string; body?: string }[] = [];
@@ -1081,7 +1080,7 @@ Deno.serve(async (req) => {
           const loc = (res.headers["location"] ?? res.headers["Location"]) as string | undefined;
           tried.push({ path: p, status: res.status, loc, body: (res.body || "").slice(0, 120) });
         }
-        return new Response(JSON.stringify({ ok: false, error: "panel did not return reality keys (v80 debug)", tried }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ ok: false, error: "panel did not return reality keys", tried }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       } catch (e: any) {
         return new Response(JSON.stringify({ ok: false, error: e?.message ?? String(e) }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
