@@ -108,6 +108,7 @@ function nodeRequest(
             body: Buffer.concat(chunks).toString("utf8"),
           }),
         );
+        res.on("error", reject);
       },
     );
     req.on("error", reject);
@@ -200,12 +201,9 @@ async function loginPanel(slug: PanelKey): Promise<string> {
     body: new URLSearchParams({ username: cfg.username, password: cfg.password, twoFactorCode: "" }).toString(),
   }, 1);
   if (res.status < 200 || res.status >= 300) throw new Error(`Login failed [${slug}] ${res.status}: ${res.body}`);
-  try {
-    const parsed = JSON.parse(res.body);
-    if (parsed?.success === false) throw new Error(parsed.msg ?? "Login refused");
-  } catch (e) {
-    if (e instanceof Error && e.message !== "Unexpected end of JSON input") throw e;
-  }
+  let parsed: any = null;
+  try { parsed = JSON.parse(res.body); } catch {}
+  if (parsed?.success === false) throw new Error(parsed.msg ?? "Login refused");
   const sc = res.headers["set-cookie"];
   const setCookies: string[] = Array.isArray(sc) ? sc : sc ? [sc as string] : [];
   const cookie = [csrf.cookie, setCookies.map((c) => c.split(";")[0]).filter(Boolean).join("; ")].filter(Boolean).join("; ");
@@ -221,10 +219,19 @@ async function panelFetch(
 ) {
   const cfg = panelCfg(await getPanelBySlug(slug));
   let cookie = await loginPanel(slug);
+  const method = init?.method ?? "GET";
+  const needsCsrf = !["GET", "HEAD", "OPTIONS", "TRACE"].includes(method.toUpperCase());
+  let csrfToken = "";
+  if (needsCsrf) {
+    const csrf = await getCsrfToken(cfg.url, cookie).catch(() => ({ token: "", cookie }));
+    csrfToken = csrf.token;
+    cookie = csrf.cookie || cookie;
+    cookieCache.set(slug, { cookie, ts: Date.now() });
+  }
   const doReq = (ck: string) =>
     nodeRequestRetry(`${cfg.url}${path}`, {
-      method: init?.method ?? "GET",
-      headers: { ...(init?.headers ?? {}), Cookie: ck, Accept: "application/json" },
+      method,
+      headers: { ...(init?.headers ?? {}), ...(csrfToken ? { "X-CSRF-Token": csrfToken, "X-Requested-With": "XMLHttpRequest" } : {}), Cookie: ck, Accept: "application/json" },
       body: init?.body,
     });
   let res = await doReq(cookie);
