@@ -109,6 +109,7 @@ export function ExternalSubsPanel() {
   // bulk-select
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [reordering, setReordering] = useState(false);
 
   const linksByExt = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -184,12 +185,9 @@ export function ExternalSubsPanel() {
       if (error) throw error;
       const createdId = (data as any)?.id;
       if (createdId && targetSubId === "all" && subs.length) {
-        for (const s of subs) {
-          const { error: e2 } = await supabase
-            .from("subscription_external_subs")
-            .insert({ subscription_id: s.id, external_sub_id: createdId, sort_order: initialSort });
-          if (e2 && !/duplicate|unique/i.test(e2.message)) throw e2;
-        }
+        const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: createdId, sort_order: initialSort }));
+        const { error: e2 } = await supabase.from("subscription_external_subs").insert(rows);
+        if (e2 && !/duplicate|unique/i.test(e2.message)) throw e2;
       } else if (createdId && targetSubId !== "none") {
         const r = await supabase
           .from("subscription_external_subs")
@@ -233,18 +231,10 @@ export function ExternalSubsPanel() {
       if (!createdId) throw new Error("Сервер добавлен, но не удалось получить ID для привязки");
       if (createdId) {
         if (targetSubId === "all" && subs.length) {
-          let added = 0;
-          for (const s of subs) {
-            const { error } = await supabase
-              .from("subscription_external_subs")
-              .insert({
-                subscription_id: s.id, external_sub_id: createdId,
-                sort_order: initialSort,
-              });
-            if (!error) added++;
-            else if (!/duplicate|unique/i.test(error.message)) throw error;
-          }
-          toast.success(`Привязано ко всем (${added} из ${subs.length})`);
+          const rows = subs.map((s) => ({ subscription_id: s.id, external_sub_id: createdId, sort_order: initialSort }));
+          const { error } = await supabase.from("subscription_external_subs").insert(rows);
+          if (error && !/duplicate|unique/i.test(error.message)) throw error;
+          toast.success(`Привязано ко всем (${subs.length})`);
         } else if (targetSubId !== "none") {
           const r = await supabase.from("subscription_external_subs").insert({
             subscription_id: targetSubId, external_sub_id: createdId,
@@ -276,15 +266,11 @@ export function ExternalSubsPanel() {
       if (!missing.length) {
         toast.success(`Уже привязано ко всем (${subs.length})`);
       } else {
-        let added = 0;
-        for (const s of missing) {
-          const { error } = await supabase
-            .from("subscription_external_subs")
-            .insert({ subscription_id: s.id, external_sub_id: extId, sort_order: item ? linkSortFor(item) : DEFAULT_EXTERNAL_SORT });
-          if (!error) added++;
-          else if (!/duplicate|unique/i.test(error.message)) throw error;
-        }
-        toast.success(`Добавлено ${added} из ${subs.length}`);
+        const sort_order = item ? linkSortFor(item) : DEFAULT_EXTERNAL_SORT;
+        const rows = missing.map((s) => ({ subscription_id: s.id, external_sub_id: extId, sort_order }));
+        const { error } = await supabase.from("subscription_external_subs").insert(rows);
+        if (error && !/duplicate|unique/i.test(error.message)) throw error;
+        toast.success(`Добавлено ${missing.length} из ${subs.length}`);
       }
       loadAll();
     } catch (e: any) {
@@ -366,8 +352,8 @@ export function ExternalSubsPanel() {
     try {
       const { error } = await supabase.from("external_subs").update({ raw_links: next }).eq("id", item.id);
       if (error) throw error;
-      setItems((prev) => prev.map((x) => x.id === item.id ? { ...x, raw_links: next } : x));
       toast.success(`Удалено ${removed}, осталось ${next.length}`);
+      loadAll();
     } catch (e: any) {
       toast.error("Не удалось", { description: e?.message ?? String(e) });
     } finally { setBusy(null); }
@@ -398,10 +384,10 @@ export function ExternalSubsPanel() {
       toast.warning("Закреплённые текстовые блоки всегда остаются выше обычных серверов");
       return;
     }
+    if (reordering) return;
     // Reorder locally for snappy UI, then renumber as 10, 20, 30…
-    // These arrows only re-order the listing inside the "Сторонние" tab.
     // Per-subscription ordering (set in the subscription editor) is NOT
-    // touched here — it is the source of truth for what the client sees.
+    // touched — it remains the source of truth for what the client sees.
     const next = items.slice();
     next[idx] = b; next[j] = a;
     let normalPos = 0;
@@ -410,13 +396,23 @@ export function ExternalSubsPanel() {
       return { ...it, sort_order: isPinnedSort(cur) ? (PINNED_SORT + i) : (++normalPos * 10) };
     });
     setItems(renum);
+    setReordering(true);
     try {
-      await Promise.all(renum.map((it) =>
-        supabase.from("external_subs").update({ sort_order: it.sort_order }).eq("id", it.id)
-      ));
+      // Single round-trip upsert instead of N parallel UPDATEs (avoids races on rapid clicks).
+      // Update each row's sort_order in parallel; one round-trip per row but
+      // these are small writes (just an int) and we throttle via setReordering.
+      const results = await Promise.all(
+        renum.map((it) =>
+          supabase.from("external_subs").update({ sort_order: it.sort_order }).eq("id", it.id),
+        ),
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
     } catch (e: any) {
       toast.error("Не удалось сохранить порядок", { description: e?.message ?? String(e) });
       loadAll();
+    } finally {
+      setReordering(false);
     }
   }
 
@@ -651,11 +647,11 @@ export function ExternalSubsPanel() {
                   />
                   <div className="flex flex-col gap-0.5">
                     <Button size="icon" variant="ghost" className="h-6 w-6"
-                      disabled={idx === 0} onClick={() => move(idx, -1)} title="Поднять">
+                      disabled={idx === 0 || reordering} onClick={() => move(idx, -1)} title="Поднять">
                       <ArrowUp className="size-3" />
                     </Button>
                     <Button size="icon" variant="ghost" className="h-6 w-6"
-                      disabled={idx === items.length - 1} onClick={() => move(idx, 1)} title="Опустить">
+                      disabled={idx === items.length - 1 || reordering} onClick={() => move(idx, 1)} title="Опустить">
                       <ArrowDown className="size-3" />
                     </Button>
                   </div>
