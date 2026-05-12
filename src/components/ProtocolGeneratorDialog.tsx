@@ -213,9 +213,10 @@ function buildVlessRealitySimple(opts: { port: number; remark: string; sni: stri
 }
 
 function buildHysteria2(opts: { port: number; remark: string; sni: string; certFile: string; keyFile: string; obfsPassword: string }) {
-  const settings: any = { clients: [] };
+  const settings: any = { clients: [], version: 2 };
   if (opts.obfsPassword) settings.obfs = { password: opts.obfsPassword };
   const streamSettings = {
+    network: "hysteria",
     security: "tls",
     externalProxy: [],
     tlsSettings: {
@@ -229,7 +230,7 @@ function buildHysteria2(opts: { port: number; remark: string; sni: string; certF
   };
   return {
     up: 0, down: 0, total: 0, remark: opts.remark, enable: true, expiryTime: 0, listen: "",
-    port: opts.port, protocol: "hysteria2", settings, streamSettings,
+    port: opts.port, protocol: "hysteria", settings, streamSettings,
     tag: `inbound-${opts.port}`,
     sniffing: { enabled: false, destOverride: ["http", "tls", "quic"], metadataOnly: false, routeOnly: false },
     allocate: { strategy: "always", refresh: 5, concurrency: 3 },
