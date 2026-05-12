@@ -187,7 +187,7 @@ async function runInstall(v: InstallParams): Promise<{ ok: boolean; panel_url?: 
       // SSL wizard; credentials/port/cert are applied non-interactively below.
       // Use bash -c with set -o pipefail so installer failures bubble up.
       const inst = await run(
-        `bash -c 'set -o pipefail; printf "n\\n4\\n" | bash <(curl -fsSL https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh)'`,
+        `bash -c 'set -o pipefail; printf "n\\n4\\n" | bash <(curl -fsSL https://raw.githubusercontent.com/mhsanaei/3x-ui/master/install.sh) v2.6.7'`,
         "install 3x-ui",
         900_000,
       );
