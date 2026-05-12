@@ -1,4 +1,4 @@
-import { testPanelConnection, loginPanel, panelFetch } from './server/x3ui';
+import { testPanelConnection, loginPanel, panelFetch } from './server/x3ui.ts';
 const hosts = [
   { url: 'https://ru.panelsu.ru:2053', user: 'admin', pass: 'sD2bU8oJ7mQ!vR9wF@p' },
   { url: 'https://cz.panelsu.ru:35978', user: 'admin', pass: 'Z7xK#mN4vA$bC2yH9' },
