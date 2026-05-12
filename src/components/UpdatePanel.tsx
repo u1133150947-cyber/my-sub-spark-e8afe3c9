@@ -27,6 +27,7 @@ export function UpdatePanel() {
   const [checking, setChecking] = useState(false);
   const [ghBusy, setGhBusy] = useState(false);
 
+  const [testing, setTesting] = useState(false);
   const checkUpdates = async () => {
     setChecking(true);
     try {
@@ -73,6 +74,31 @@ export function UpdatePanel() {
       toast.error("Сеть: " + (e?.message ?? e));
     } finally {
       setGhBusy(false);
+    }
+  };
+
+  const runTests = async () => {
+    if (!confirm("Создать 10 тестовых аккаунтов прямо сейчас?")) return;
+    const adminToken = getAdminToken();
+    if (!adminToken) { toast.error("Нужно войти в админку"); return; }
+    setTesting(true);
+    setLog("⏳ Запускаю создание тестовых аккаунтов…\n");
+    try {
+      const r = await fetch("/api/test-accounts", {
+        method: "POST",
+        headers: { "x-admin-token": adminToken },
+      });
+      const d = await r.json().catch(() => ({} as any));
+      setLog(d?.log ? d.log.join("\n") : JSON.stringify(d));
+      if (!r.ok || !d?.ok) {
+        toast.error("Ошибка при создании: " + (d?.error ?? ""));
+      } else {
+        toast.success(`Успешно добавлено ${d.successCount} подключений!`);
+      }
+    } catch (e: any) {
+      toast.error("Сеть: " + (e?.message ?? e));
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -171,6 +197,11 @@ export function UpdatePanel() {
       </div>
 
       <p className="text-xs text-muted-foreground mb-4">
+        <Button onClick={runTests} disabled={testing || busy || ghBusy} className="w-full mb-4" variant="outline" size="sm">
+          {testing ? <Loader2 className="size-4 animate-spin mr-2" /> : <CheckCircle2 className="size-4 mr-2 text-primary" />}
+          Создать 10 тестовых аккаунтов (проверка работы панелей)
+        </Button>
+        <br/>
         Или загрузите архив вручную (<code>.zip</code> / <code>.tar.gz</code>). База в <code>data/</code> сохраняется.
       </p>
 
