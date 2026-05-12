@@ -259,6 +259,34 @@ function buildVless(uuid: string, email: string, ib: any, overrides?: Map<string
   return [`vless://${effectiveUuid}@${ib.host}:${ib.port}?${params.toString()}#${encodeURIComponent(display)}`];
 }
 
+function displayName(ib: any, overrides?: Map<string, string>) {
+  const overrideKey = `${ib.panel ?? ""}:${ib.inbound_id ?? ""}`;
+  const label = String(overrides?.get(overrideKey) ?? "").trim();
+  if (label) return label;
+  const country = String(ib.panel_country ?? "").trim().toUpperCase();
+  const ci = country ? COUNTRY_INFO[country] : undefined;
+  return ci ? `${ci.flag} ${ci.name}` : String(ib.panel_name ?? "").trim() || ib.remark;
+}
+
+function buildHysteria2(uuid: string, ib: any, overrides?: Map<string, string>): string[] {
+  const proto = String(ib.protocol ?? "").toLowerCase();
+  if (proto !== "hysteria2" && proto !== "hy2") return [];
+  const ss = ib.stream_settings ?? {};
+  const settings = ss._inboundSettings ?? {};
+  const password = firstString(ss._clientPassword) || firstString(settings.password) || uuid;
+  if (!password) return [];
+  const params = new URLSearchParams();
+  if (ss.security === "tls") {
+    const tls = ss.tlsSettings ?? {};
+    setParam(params, "sni", findDeep(tls, "serverName") || ib.host);
+    if (Array.isArray(tls.alpn) && tls.alpn.length) params.set("alpn", tls.alpn.join(","));
+    setParam(params, "fp", findDeep(tls.settings ?? tls, "fingerprint"));
+    params.set("insecure", "0");
+  }
+  const label = displayName(ib, overrides);
+  return [`hysteria2://${encodeURIComponent(password)}@${ib.host}:${ib.port}/?${params.toString()}#${encodeURIComponent(label)}`];
+}
+
 function withHost(link: string, host: string) {
   const h = host.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
   if (!h) return link;
