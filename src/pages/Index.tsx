@@ -1303,150 +1303,60 @@ const Index = () => {
               const isList = Array.isArray(list);
               const items = isList ? (list as InboundInfo[]) : [];
               const allKeys = items.map((ib) => `${panel}:${ib.id}`);
-              const onCount = allKeys.filter((k) => selected.has(k)).length;
-              const allOn = allKeys.length > 0 && onCount === allKeys.length;
-              const noneOn = onCount === 0;
-              const partial = !allOn && !noneOn;
-              const protos = Array.from(new Set(items.map((i) => i.protocol.toUpperCase()))).join(" · ");
-              const isExpanded = !!expandedPanels[panel];
-              const toggleAll = () => {
-                const next = new Set(selected);
-                if (allOn) allKeys.forEach((k) => next.delete(k));
-                else allKeys.forEach((k) => next.add(k));
-                setSelected(next);
-              };
               return (
-                <Card key={panel} className="p-4 bg-secondary/40 border-border">
-                  {/* HEADER: панель = одна группа «Авто» */}
-                  <div className="flex items-start gap-3">
-                    <button
-                      type="button"
-                      onClick={toggleAll}
-                      disabled={!isList || items.length === 0}
-                      className={`shrink-0 size-10 rounded-full grid place-items-center border transition ${
-                        allOn
-                          ? "border-primary bg-primary/15 text-primary"
-                          : partial
-                          ? "border-primary/50 bg-primary/5 text-primary"
-                          : "border-border bg-background text-muted-foreground hover:border-primary/40"
-                      }`}
-                      title={allOn ? "Снять все" : "Подключить все"}
-                    >
-                      {allOn ? <Check className="size-5" /> : partial ? <Sparkles className="size-4" /> : <Plus className="size-5" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="font-semibold flex items-center gap-1.5 min-w-0">
-                          <Server className="size-4 text-primary shrink-0" />
-                          <span className="truncate">{panelLabel(panel)}</span>
-                        </div>
-                        {isList && items.length >= 2 && allOn && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
-                            ⚡ Автовыбор
-                          </span>
-                        )}
-                      </div>
-                      {!inbounds && <div className="text-xs text-muted-foreground mt-1">Загрузка…</div>}
-                      {isList && items.length === 0 && (
-                        <div className="text-xs text-muted-foreground mt-1">Нет inbound'ов</div>
-                      )}
-                      {isList && items.length > 0 && (
-                        <div className="text-xs text-muted-foreground mt-1 truncate">
-                          {allOn
-                            ? `Все ${items.length} серверов · ${protos}`
-                            : partial
-                            ? `Выбрано ${onCount} из ${items.length} · ${protos}`
-                            : `${items.length} серверов · ${protos}`}
-                        </div>
-                      )}
-                      {list && "error" in (list as any) && (
-                        <div className="text-xs text-destructive mt-1">{(list as any).error}</div>
-                      )}
-                    </div>
-                    {isList && items.length > 0 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="shrink-0 h-7 px-2 text-xs"
-                        onClick={() => setExpandedPanels((p) => ({ ...p, [panel]: !isExpanded }))}
-                      >
-                        <Settings2 className="size-3.5 mr-1" />
-                        {isExpanded ? "Скрыть" : "Настроить"}
-                        <ChevronDown className={`size-3.5 ml-0.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                      </Button>
-                    )}
+                <div key={panel} className="space-y-2">
+                  <div className="font-semibold flex items-center gap-1.5 mb-2">
+                    <Server className="size-4 text-primary" />
+                    {panelLabel(panel)}
                   </div>
-
-                  {/* EXPANDED: продвинутый режим — все чекбоксы как раньше */}
-                  {isList && items.length > 0 && isExpanded && (
-                    <div className="mt-3 pt-3 border-t border-border space-y-2">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                          Выбрано {onCount} / {items.length}
-                        </span>
-                        {!allOn && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-[11px] text-primary"
-                            onClick={() => {
-                              const next = new Set(selected);
-                              allKeys.forEach((k) => next.add(k));
-                              setSelected(next);
-                            }}
-                          >
-                            <RotateCcw className="size-3 mr-1" /> Сбросить к Авто
-                          </Button>
-                        )}
-                      </div>
-                      {items.map((ib) => {
-                        const key = `${panel}:${ib.id}`;
-                        const busy = bulkBusy === `add:${key}` || bulkBusy === `rm:${key}`;
-                        return (
-                          <div key={key} className="flex items-center gap-2">
-                            <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
-                              <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm truncate">
-                                  {inboundLabel(panel, ib.id, ib.remark)}
-                                  {overrides[`${panel}:${ib.id}`] && (
-                                    <span className="ml-2 text-[10px] uppercase text-muted-foreground" title={ib.remark}>↺ {ib.remark}</span>
-                                  )}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {ib.protocol.toUpperCase()} · :{ib.port}
-                                </div>
-                              </div>
-                            </label>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}>
-                                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel className="text-xs">Действия</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => openRename(panel, ib.id, ib.remark || `#${ib.id}`)}>
-                                  <Pencil className="size-3.5 mr-2 text-primary" /> Переименовать
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => bulkAdd(panel, ib.id, ib.remark || `#${ib.id}`)}>
-                                  <UserPlus className="size-3.5 mr-2 text-green-500" /> Добавить всем
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => bulkRemove(panel, ib.id, ib.remark || `#${ib.id}`)} className="text-destructive focus:text-destructive">
-                                  <UserMinus className="size-3.5 mr-2" /> Убрать у всех
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  {!inbounds && <div className="text-sm text-muted-foreground">Загрузка...</div>}
+                  {list && "error" in (list as any) && (
+                    <div className="text-sm text-destructive">{(list as any).error}</div>
                   )}
-                </Card>
+                  {items.map((ib) => {
+                    const key = `${panel}:${ib.id}`;
+                    const busy = bulkBusy === `add:${key}` || bulkBusy === `rm:${key}`;
+                    return (
+                      <div key={key} className="flex items-center gap-2 mb-2">
+                        <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                          <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm truncate">
+                              {inboundLabel(panel, ib.id, ib.remark)}
+                              {overrides[`${panel}:${ib.id}`] && (
+                                <span className="ml-2 text-[10px] uppercase text-muted-foreground" title={ib.remark}>↺ {ib.remark}</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {ib.protocol.toUpperCase()} · :{ib.port}
+                            </div>
+                          </div>
+                        </label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}>
+                              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel className="text-xs">Действия</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => openRename(panel, ib.id, ib.remark || `#${ib.id}`)}>
+                              <Pencil className="size-3.5 mr-2 text-primary" /> Переименовать
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => bulkAdd(panel, ib.id, ib.remark || `#${ib.id}`)}>
+                              <UserPlus className="size-3.5 mr-2 text-green-500" /> Добавить всем
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => bulkRemove(panel, ib.id, ib.remark || `#${ib.id}`)} className="text-destructive focus:text-destructive">
+                              <UserMinus className="size-3.5 mr-2" /> Убрать у всех
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>
