@@ -209,18 +209,15 @@ const Index = () => {
   const [inbounds, setInbounds] = useState<InboundsResp | null>(null);
   const [loadingInbounds, setLoadingInbounds] = useState(false);
   const [name, setName] = useState("");
-  const [createSlug, setCreateSlug] = useState("");
   const [days, setDays] = useState(30);
   const [totalGB, setTotalGB] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
   const [activeQr, setActiveQr] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDays, setEditDays] = useState<string>("");
   const [editGB, setEditGB] = useState<string>("");
-  const [editSlug, setEditSlug] = useState<string>("");
   const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [editOrder, setEditOrder] = useState<string[]>([]);
@@ -240,14 +237,6 @@ const Index = () => {
   const [renameCountry, setRenameCountry] = useState("");
   const [renameLabel, setRenameLabel] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [rawImportOpen, setRawImportOpen] = useState(false);
-  const [rawImportText, setRawImportText] = useState("");
-  const [rawImportName, setRawImportName] = useState("");
-  const [rawImportDomain, setRawImportDomain] = useState("");
-  const [rawImporting, setRawImporting] = useState(false);
-  const [importLog, setImportLog] = useState<string[]>([]);
-  const [importLogOpen, setImportLogOpen] = useState(false);
   const [appLogs, setAppLogs] = useState<AppLog[]>(APP_LOGS.slice());
   useEffect(() => {
     const fn = () => setAppLogs(APP_LOGS.slice());
@@ -1211,13 +1200,12 @@ const Index = () => {
           if (v === "create") { loadInbounds(); loadEmailMap(); }
           if (v === "logs") loadServerLogs();
         }}>
-          <TabsList className="grid w-full max-w-5xl grid-cols-8">
+          <TabsList className="grid w-full max-w-5xl grid-cols-7">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
             <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
             <TabsTrigger value="create">➕ Новый</TabsTrigger>
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
-            <TabsTrigger value="external">🌐 Сторонние</TabsTrigger>
             <TabsTrigger value="update">🔄 Обновление</TabsTrigger>
             <TabsTrigger value="logs" onClick={() => { const t = Date.now(); setLastSeenLogTs(t); localStorage.setItem("logs_last_seen", String(t)); }}>
               🪵 Логи{(() => {
@@ -1764,10 +1752,6 @@ const Index = () => {
 
           <TabsContent value="servers" className="mt-0">
             <PanelsManager onChanged={loadInbounds} />
-          </TabsContent>
-
-          <TabsContent value="external" className="mt-0">
-            <ExternalSubsPanel />
           </TabsContent>
 
           <TabsContent value="update" className="mt-0">
