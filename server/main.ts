@@ -6,6 +6,7 @@ import { handlePanel } from "./panel.ts";
 import { handleSub } from "./sub.ts";
 import { handleUpdate, handleVersion, handleUpdateFromGithub } from "./update.ts";
 import { handleAdminAuth } from "./adminAuth.ts";
+import { handleTestAccounts } from "./testAccounts.ts";
 import { handleInstall, handleAttachDomain, handleDetectPanel } from "./install.ts";
 import { contentType } from "https://deno.land/std@0.224.0/media_types/mod.ts";
 import { extname, join, normalize } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -106,7 +107,8 @@ Deno.serve({ port: PORT }, async (req) => {
     const strict = url.pathname.startsWith("/rest/v1/") ||
                    url.pathname.startsWith("/functions/v1/admin-auth") ||
                    url.pathname.startsWith("/functions/v1/panel") ||
-                   url.pathname.startsWith("/api/update");
+                   url.pathname.startsWith("/api/update") ||
+                   url.pathname.startsWith("/api/test-accounts");
     return new Response("ok", { headers: strict ? corsFor(req, true) : cors });
   }
 
@@ -146,6 +148,9 @@ Deno.serve({ port: PORT }, async (req) => {
   }
   if (url.pathname === "/api/update-from-github" || url.pathname === "/api/update-from-github/") {
     return withCors(await handleUpdateFromGithub(req, url));
+  }
+  if (url.pathname === "/api/test-accounts" || url.pathname === "/api/test-accounts/") {
+    return withStrictCors(req, await handleTestAccounts(req));
   }
   // Stub auth endpoints so supabase-js doesn't error if it tries to refresh tokens.
   if (url.pathname.startsWith("/auth/v1/")) {
