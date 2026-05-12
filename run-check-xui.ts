@@ -11,7 +11,8 @@ const panelPass = 'XUIhh5sj3!';
 
 conn.on('ready', () => {
   const script = `
-  cookie=$(curl -s -c cookies.txt -d "username=${panelUser}&password=${panelPass}" http://127.0.0.1:2053/login)
+  rm -f cookies.txt
+  curl -s -c cookies.txt -X POST http://127.0.0.1:2053/login -d "username=${panelUser}&password=${panelPass}"
   curl -s -b cookies.txt -X POST http://127.0.0.1:2053/server/getXrayVersion
   `;
   conn.exec(script, (err, stream) => {
