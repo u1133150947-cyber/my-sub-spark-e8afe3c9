@@ -486,8 +486,6 @@ const Index = () => {
   const create = async () => {
     if (!name.trim()) return toast.error("Введите имя клиента");
     if (selected.size === 0) return toast.error("Выберите хотя бы один inbound");
-    const desiredSlug = createSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (createSlug.trim() && desiredSlug.length < 4) return toast.error("URL должен быть минимум 4 символа (a-z 0-9)");
 
     const selections = Array.from(selected).map((s) => {
       const [panel, id] = s.split(":");
@@ -498,7 +496,7 @@ const Index = () => {
     try {
       const { data, error } = await supabase.functions.invoke("panel?action=create", {
         method: "POST",
-        body: { name: name.trim(), days, totalGB, selections, ...(desiredSlug ? { slug: desiredSlug } : {}) },
+        body: { name: name.trim(), days, totalGB, selections },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -510,7 +508,6 @@ const Index = () => {
         });
       }
       setName("");
-      setCreateSlug("");
       setSelected(new Set());
       loadSubs();
     } catch (e: any) {
@@ -788,11 +785,6 @@ const Index = () => {
       if (editName.trim() && editName.trim() !== s.name) updateBody.name = editName.trim();
       if (editDays !== "") updateBody.days = Number(editDays);
       if (editGB !== "") updateBody.totalGB = Number(editGB);
-      const newSlug = editSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (newSlug && newSlug !== s.slug) {
-        if (newSlug.length < 4) throw new Error("URL должен быть минимум 4 символа (a-z 0-9)");
-        updateBody.slug = newSlug;
-      }
       if (Object.keys(updateBody).length > 1) {
         const { data, error } = await supabase.functions.invoke("panel?action=update", {
           method: "POST",
@@ -1590,11 +1582,6 @@ const Index = () => {
                             <Label className="text-xs text-muted-foreground">Трафик GB (0 = безлимит)</Label>
                             <Input type="number" min={0} placeholder="не менять" value={editGB} onChange={(e) => setEditGB(e.target.value)} />
                           </div>
-                        </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">URL подписки (slug, a-z 0-9)</Label>
-                          <Input data-slug-input="1" value={editSlug} onChange={(e) => setEditSlug(e.target.value)} maxLength={32} placeholder="например 8ic8nngcvdz7" />
-                          <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${editSlug || s.slug}`}</p>
                         </div>
 
                         <div>
