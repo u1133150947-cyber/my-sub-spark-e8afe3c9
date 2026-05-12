@@ -553,7 +553,6 @@ const Index = () => {
     setEditName(s.name);
     setEditDays("");
     setEditGB("");
-    setEditSlug(s.slug);
     if (!inbounds) loadInbounds();
     // load current whitelist
     const { data: subRow } = await supabase
