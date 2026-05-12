@@ -6,9 +6,31 @@ const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
 const commands = [
-  `sqlite3 /opt/sub-manager/data/app.db "SELECT id, slug, client_email FROM subscriptions WHERE slug = 'ejzyw1olmdgn7' OR slug = 'ejzyw1olmdgn';"`,
-  `sqlite3 /opt/sub-manager/data/app.db "UPDATE subscriptions SET slug = 'ejzyw1olmdgn' WHERE slug = 'ejzyw1olmdgn7';"`,
-  `sqlite3 /opt/sub-manager/data/app.db "SELECT id, slug, client_email FROM subscriptions WHERE slug = 'ejzyw1olmdgn';"`,
+  `cat << 'PY' > /tmp/update_slug.py
+import sqlite3
+db = '/opt/sub-manager/data/app.db'
+conn = sqlite3.connect(db)
+cursor = conn.cursor()
+
+# Check old
+cursor.execute("SELECT id, slug, client_email FROM subscriptions WHERE slug = 'ejzyw1olmdgn7' OR slug = 'ejzyw1olmdgn'")
+print("Before update:")
+for row in cursor.fetchall():
+    print(row)
+
+# Update
+cursor.execute("UPDATE subscriptions SET slug = 'ejzyw1olmdgn' WHERE slug = 'ejzyw1olmdgn7'")
+conn.commit()
+
+# Check new
+cursor.execute("SELECT id, slug, client_email FROM subscriptions WHERE slug = 'ejzyw1olmdgn'")
+print("After update:")
+for row in cursor.fetchall():
+    print(row)
+
+conn.close()
+PY`,
+  `python3 /tmp/update_slug.py`
 ];
 
 conn.on('ready', () => {
