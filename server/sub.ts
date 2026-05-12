@@ -119,6 +119,7 @@ async function refreshInboundsFromPanels(inbounds: any[], sub: any) {
         ib.remark = fresh.remark ?? ib.remark;
         ib.protocol = fresh.protocol ?? ib.protocol;
         ib.port = Number(fresh.port ?? ib.port);
+        ib.enable = fresh.enable !== false;
         const snap = streamSnapshot(fresh, ib.client_email, sub.client_uuid);
         ib.stream_settings = snap;
         const desiredFlow = fresh.protocol === "vless" && snap.security === "reality" && snap.network === "tcp" ? "xtls-rprx-vision" : "";
@@ -364,6 +365,7 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
   type Item = { sort_order: number; created_at: string; lines: string[] };
   const items: Item[] = [];
   for (const ib of inbounds as any[]) {
+    if (ib.enable === false || ib.enable === 0) continue;
     items.push({
       sort_order: Number(ib.sort_order ?? 0),
       created_at: String(ib.created_at ?? ""),
