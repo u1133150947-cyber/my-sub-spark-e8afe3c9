@@ -1,11 +1,12 @@
 import { Client } from 'ssh2';
 const conn = new Client();
-const cmd = String.raw`cd /opt/sub-manager && cat > /tmp/test-list.ts <<'TS'
+const cmd = String.raw`cd /opt/sub-manager && cat > test-list.ts <<'TS'
 import { listInbounds } from './server/x3ui.ts';
 console.log('CZ', (await listInbounds('pd4e485d3c9')).length);
 console.log('RU', (await listInbounds('pee9e3676f7')).length);
 TS
-deno run -A /tmp/test-list.ts`;
+deno run -A test-list.ts
+rm -f test-list.ts`;
 conn.on('ready', () => {
   conn.exec(cmd, (err, stream) => {
     if (err) throw err;
