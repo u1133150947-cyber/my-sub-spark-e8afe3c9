@@ -80,8 +80,8 @@ rsync -a --delete --exclude node_modules --exclude .git --exclude data \
   ./ "$APP_DIR/"
 cd "$APP_DIR"
 
-# ---- 7. Сборка фронта -------------------------------------------------
-log "Собираем фронтенд"
+# ---- 7. Настройка окружения -------------------------------------------
+log "Настраиваем окружение"
 cat > .env <<EOF
 VITE_SUPABASE_URL=$PUBLIC_URL
 VITE_SUPABASE_PUBLISHABLE_KEY=local-anon-key
@@ -98,8 +98,6 @@ fi
 if [[ -n "${ADMIN_TELEGRAM_ID:-}" ]]; then
   printf 'ADMIN_TELEGRAM_ID=%s\n' "$ADMIN_TELEGRAM_ID" >> .env
 fi
-bun install --silent
-bun run build
 
 # ---- 8. systemd сервис ------------------------------------------------
 log "Регистрируем systemd-сервис sub-manager"
