@@ -13,7 +13,9 @@ conn.on('ready', () => {
   const script = `
   rm -f cookies.txt
   curl -s -c cookies.txt -X POST http://127.0.0.1:2053/login -d "username=${panelUser}&password=${panelPass}"
-  curl -s -b cookies.txt -X POST http://127.0.0.1:2053/server/getXrayVersion
+  echo "---"
+  curl -s -b cookies.txt -X POST http://127.0.0.1:2053/server/installXray/v25.8.29
+  echo "---"
   `;
   conn.exec(script, (err, stream) => {
     if (err) throw err;
