@@ -576,10 +576,11 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (!subIds.length) return json({ removed: 0, errors: [] });
       const placeholders = subIds.map(() => "?").join(",");
       const subs = rows<any>(`SELECT id, client_uuid FROM subscriptions WHERE id IN (${placeholders})`, subIds);
+      const link = row<any>(`SELECT protocol FROM subscription_inbounds WHERE panel = ? AND inbound_id = ? LIMIT 1`, [panel, inboundId]);
       const errors: any[] = []; let removed = 0;
       await Promise.all(subs.map(async (s) => {
         try {
-          await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${s.client_uuid}`, { method: "POST" });
+          await deleteClient(panel, inboundId, s.client_uuid, link?.protocol ?? "vless");
           removed++;
         } catch (e) { errors.push({ sub: s.id, error: e instanceof Error ? e.message : String(e) }); }
       }));
