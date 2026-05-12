@@ -7,7 +7,7 @@ const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
 conn.on('ready', () => {
-  conn.exec('curl -I http://127.0.0.1:2053/login && curl -I http://127.0.0.1:2053/panel', (err, stream) => {
+  conn.exec('/usr/local/x-ui/x-ui setting -show', (err, stream) => {
     if (err) throw err;
     stream.on('close', () => {
       conn.end();
