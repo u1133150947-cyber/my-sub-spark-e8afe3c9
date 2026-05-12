@@ -130,6 +130,30 @@ export async function addClient(slug: string, inboundId: number, c: { id: string
   return json;
 }
 
+export async function addInbound(slug: string, payload: {
+  up: number;
+  down: number;
+  total: number;
+  remark: string;
+  enable: boolean;
+  expiryTime: number;
+  listen: string;
+  port: number;
+  protocol: string;
+  settings: string;
+  streamSettings: string;
+  sniffing: string;
+}) {
+  const bodyParams = new URLSearchParams(Object.entries(payload).map(([k, v]) => [k, String(v)]));
+  const res = await panelFetch(slug, "/panel/api/inbounds/add", {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: bodyParams.toString(),
+  });
+  const json = JSON.parse(res.body);
+  if (!json.success) throw new Error(`addInbound [${slug}]: ${json.msg}`);
+  return json;
+}
+
 export async function updateClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }) {
   const settings = JSON.stringify({
     clients: [{ id: c.id, flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 }],
