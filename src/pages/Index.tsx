@@ -1379,28 +1379,6 @@ const Index = () => {
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 className="text-lg font-semibold">Подписки ({subs.length})</h2>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={exportSubs} disabled={subs.length === 0}>
-                <Download className="size-3.5 mr-1" /> Экспорт
-              </Button>
-              <Button variant="outline" size="sm" disabled={importing} asChild>
-                <label className="cursor-pointer">
-                  {importing ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <Upload className="size-3.5 mr-1" />}
-                  Импорт
-                  <input
-                    type="file"
-                    accept="application/json,.json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = "";
-                      if (f) importSubs(f);
-                    }}
-                  />
-                </label>
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setRawImportOpen(true)}>
-                <Plus className="size-3.5 mr-1" /> Из текста
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
