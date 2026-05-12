@@ -324,7 +324,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           let flow = ""; let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
-          await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId: subIdShort, flow });
+          await addClient(sel.panel, sel.inboundId, { id: clientUuid, email, expiryTime: expiryMs, totalGB: totalBytes, subId: subIdShort, flow }, ib.protocol);
           db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [uid(), sub!.id, sel.panel, ib.id, ib.remark ?? `${sel.panel}-${ib.id}`, ib.protocol, ib.port, panelConnectionHost(panelRow), JSON.stringify(stream), email]);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
@@ -425,7 +425,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           let flow = ""; let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
           const email = `${sub.client_email}_${sel.panel}${ib.id}`;
-          await addClient(sel.panel, sel.inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: subIdShort, flow });
+          await addClient(sel.panel, sel.inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: subIdShort, flow }, ib.protocol);
           db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [uid(), sub.id, sel.panel, ib.id, ib.remark ?? `${sel.panel}-${ib.id}`, ib.protocol, ib.port, panelConnectionHost(panelRow), JSON.stringify(stream), email]);
           created.push({ panel: sel.panel, inboundId: ib.id, remark: ib.remark });
@@ -514,7 +514,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           try {
             let stream: any = {}; try { stream = JSON.parse(l.stream_settings); } catch {}
             let flow = ""; if (l.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
-            await updateClient(l.panel, l.inbound_id, { id: sub.client_uuid, email: l.client_email ?? sub.client_email, expiryTime: newExpiry, totalGB: newTotal, subId: subIdShort, flow });
+            await updateClient(l.panel, l.inbound_id, { id: sub.client_uuid, email: l.client_email ?? sub.client_email, expiryTime: newExpiry, totalGB: newTotal, subId: subIdShort, flow }, l.protocol);
           } catch (e) { errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) }); }
         }
       }
@@ -562,7 +562,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       await Promise.all(targets.map(async (sub) => {
         try {
           const email = `${sub.client_email}_${panel}${ib.id}`;
-          await addClient(panel, inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: String(sub.slug).slice(0, 16), flow });
+          await addClient(panel, inboundId, { id: sub.client_uuid, email, expiryTime: sub.expiry_ms, totalGB: sub.total_bytes, subId: String(sub.slug).slice(0, 16), flow }, ib.protocol);
           db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [uid(), sub.id, panel, ib.id, ib.remark ?? `${panel}-${ib.id}`, ib.protocol, ib.port, panelConnectionHost(panelRow), JSON.stringify(stream), email]);
           created.push(sub.id);

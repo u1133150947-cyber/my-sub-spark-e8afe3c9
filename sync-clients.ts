@@ -41,7 +41,7 @@ async function main() {
           totalGB: ib.total_bytes,
           subId: String(ib.slug).slice(0, 16),
           flow: flow
-        });
+        }, ib.protocol);
         console.log(`Successfully added ${ib.client_email}.`);
       }
     } catch (e: any) {
