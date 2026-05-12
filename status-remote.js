@@ -7,7 +7,7 @@ const password = "6WYia!Y5gV5D";
 const conn = new Client();
 
 conn.on('ready', () => {
-  const cmd = `x-ui setting -show`;
+  const cmd = `x-ui settings`;
   conn.exec(cmd, { pty: true }, (err, stream) => {
     if (err) throw err;
     stream.on('close', (code, signal) => {
