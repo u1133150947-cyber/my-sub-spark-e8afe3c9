@@ -209,18 +209,15 @@ const Index = () => {
   const [inbounds, setInbounds] = useState<InboundsResp | null>(null);
   const [loadingInbounds, setLoadingInbounds] = useState(false);
   const [name, setName] = useState("");
-  const [createSlug, setCreateSlug] = useState("");
   const [days, setDays] = useState(30);
   const [totalGB, setTotalGB] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
   const [creating, setCreating] = useState(false);
   const [activeQr, setActiveQr] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
   const [editDays, setEditDays] = useState<string>("");
   const [editGB, setEditGB] = useState<string>("");
-  const [editSlug, setEditSlug] = useState<string>("");
   const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
   const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
   const [editOrder, setEditOrder] = useState<string[]>([]);
@@ -240,14 +237,6 @@ const Index = () => {
   const [renameCountry, setRenameCountry] = useState("");
   const [renameLabel, setRenameLabel] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [rawImportOpen, setRawImportOpen] = useState(false);
-  const [rawImportText, setRawImportText] = useState("");
-  const [rawImportName, setRawImportName] = useState("");
-  const [rawImportDomain, setRawImportDomain] = useState("");
-  const [rawImporting, setRawImporting] = useState(false);
-  const [importLog, setImportLog] = useState<string[]>([]);
-  const [importLogOpen, setImportLogOpen] = useState(false);
   const [appLogs, setAppLogs] = useState<AppLog[]>(APP_LOGS.slice());
   useEffect(() => {
     const fn = () => setAppLogs(APP_LOGS.slice());
@@ -486,8 +475,6 @@ const Index = () => {
   const create = async () => {
     if (!name.trim()) return toast.error("Введите имя клиента");
     if (selected.size === 0) return toast.error("Выберите хотя бы один inbound");
-    const desiredSlug = createSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-    if (createSlug.trim() && desiredSlug.length < 4) return toast.error("URL должен быть минимум 4 символа (a-z 0-9)");
 
     const selections = Array.from(selected).map((s) => {
       const [panel, id] = s.split(":");
@@ -498,7 +485,7 @@ const Index = () => {
     try {
       const { data, error } = await supabase.functions.invoke("panel?action=create", {
         method: "POST",
-        body: { name: name.trim(), days, totalGB, selections, ...(desiredSlug ? { slug: desiredSlug } : {}) },
+        body: { name: name.trim(), days, totalGB, selections },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
@@ -510,7 +497,6 @@ const Index = () => {
         });
       }
       setName("");
-      setCreateSlug("");
       setSelected(new Set());
       loadSubs();
     } catch (e: any) {
@@ -567,7 +553,6 @@ const Index = () => {
     setEditName(s.name);
     setEditDays("");
     setEditGB("");
-    setEditSlug(s.slug);
     if (!inbounds) loadInbounds();
     // load current whitelist
     const { data: subRow } = await supabase
@@ -788,11 +773,6 @@ const Index = () => {
       if (editName.trim() && editName.trim() !== s.name) updateBody.name = editName.trim();
       if (editDays !== "") updateBody.days = Number(editDays);
       if (editGB !== "") updateBody.totalGB = Number(editGB);
-      const newSlug = editSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (newSlug && newSlug !== s.slug) {
-        if (newSlug.length < 4) throw new Error("URL должен быть минимум 4 символа (a-z 0-9)");
-        updateBody.slug = newSlug;
-      }
       if (Object.keys(updateBody).length > 1) {
         const { data, error } = await supabase.functions.invoke("panel?action=update", {
           method: "POST",
@@ -908,283 +888,6 @@ const Index = () => {
       .map((x) => x.trim())
       .filter((x) => /^(vless|vmess|trojan|ss):\/\//i.test(x));
 
-  const importRawSubscription = async () => {
-    const links = extractConfigLinks(rawImportText);
-    if (!links.length) return toast.error("Не нашёл vless/vmess/trojan/ss ссылки в тексте");
-    const name = rawImportName.trim() || `Импорт ${new Date().toLocaleDateString("ru-RU")}`;
-    setRawImporting(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("panel?action=importRaw", {
-        method: "POST",
-        body: { name, links, domain: rawImportDomain.trim() },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast.success("Создана подписка из текста");
-      setRawImportOpen(false);
-      setRawImportText("");
-      setRawImportName("");
-      setRawImportDomain("");
-      loadSubs();
-    } catch (e: any) {
-      toast.error("Ошибка импорта текстом: " + (e?.message ?? e));
-    } finally {
-      setRawImporting(false);
-    }
-  };
-
-  const exportSubs = async () => {
-    try {
-      const { data: subsData, error: e1 } = await supabase
-        .from("subscriptions")
-        .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at, sni_whitelist");
-      if (e1) throw e1;
-      const { data: linksData, error: e2 } = await supabase
-        .from("subscription_inbounds")
-        .select("subscription_id, panel, inbound_id, remark, sort_order");
-      if (e2) throw e2;
-      const byId: Record<string, any[]> = {};
-      (linksData ?? []).forEach((r: any) => {
-        (byId[r.subscription_id] ||= []).push({
-          panel: r.panel, inbound_id: r.inbound_id, remark: r.remark, sort_order: r.sort_order,
-        });
-      });
-      const out = {
-        version: 1,
-        exported_at: new Date().toISOString(),
-        subscriptions: (subsData ?? []).map((s: any) => ({
-          slug: s.slug,
-          name: s.name,
-          client_email: s.client_email,
-          expiry_ms: s.expiry_ms,
-          total_bytes: s.total_bytes,
-          sni_whitelist: s.sni_whitelist ?? [],
-          inbounds: byId[s.id] ?? [],
-        })),
-      };
-      const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `subscriptions-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success(`Экспортировано: ${out.subscriptions.length}`);
-    } catch (e: any) {
-      toast.error("Ошибка экспорта: " + (e?.message ?? e));
-    }
-  };
-
-  const importSubs = async (file: File) => {
-    setImporting(true);
-    const L: string[] = [];
-    const log = (s: string) => { L.push(s); console.log("[import]", s); };
-    setImportLog([]);
-    log(`=== Импорт подписок ${new Date().toISOString()} ===`);
-    log(`Файл: ${file.name} (${file.size} bytes)`);
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const list: any[] = parsed?.subscriptions ?? (Array.isArray(parsed) ? parsed : []);
-      log(`Найдено в файле: ${list.length} подписок`);
-      if (!list.length) throw new Error("Пустой файл импорта");
-      if (!confirm(`Импортировать ${list.length} подписок? Будут созданы новые клиенты на панелях.`)) {
-        setImporting(false);
-        return;
-      }
-      const fallbackAll = confirm(
-        "Если inbound не найден по имени — создать подписку на ВСЕХ доступных inbound'ах текущих панелей?\n\nOK = да (рекомендуется при разных названиях панелей)\nОтмена = пропускать такие подписки"
-      );
-      log(`fallbackAll=${fallbackAll}`);
-      const detachedIfNoInbound = confirm(
-        "Если inbound'ы текущих панелей не загрузились или не совпали — всё равно создать подписки БЕЗ привязки к панелям?\n\nOK = да, потом добавите панели вручную в редактировании подписки\nОтмена = пропускать такие подписки"
-      );
-      log(`detachedIfNoInbound=${detachedIfNoInbound}`);
-      // Загружаем актуальные inbounds для матчинга по remark (т.к. slug панелей и id могут отличаться)
-      let live: InboundsResp | null = null;
-      const { data: liveData, error: liveError } = await supabase.functions.invoke("panel?action=inbounds", { method: "GET" });
-      if (liveError) {
-        log(`WARN: не удалось свежо загрузить inbound'ы: ${liveError.message ?? liveError}`);
-        live = inbounds;
-      } else {
-        live = liveData;
-        setInbounds(liveData);
-      }
-      const responsePanelKeys = Object.keys(live ?? {}).filter((k) => k !== "_panels" && Array.isArray((live as any)[k]) && k && k !== "null" && k !== "undefined");
-      const livePanels = (((live?._panels as PanelMeta[]) ?? [])
-        .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
-      if (!livePanels.length && responsePanelKeys.length) livePanels.push(...responsePanelKeys.map((slug) => ({ slug, name: slug })));
-      log(`Панели (${livePanels.length}): ${livePanels.map(p=>p.slug).join(", ")}`);
-      // Нормализация remark: убираем эмодзи, флаги, пунктуацию, пробелы
-      const norm = (s: string) =>
-        (s || "")
-          .toLowerCase()
-          .replace(/[\u{1F1E6}-\u{1F1FF}]/gu, "")
-          .replace(/[^\p{L}\p{N}]+/gu, "")
-          .trim();
-      // Индекс: remark(lower) -> [{panel, inboundId}]
-      const byRemark = new Map<string, { panel: string; inboundId: number }[]>();
-      const byNorm = new Map<string, { panel: string; inboundId: number }[]>();
-      const allLive: { panel: string; inboundId: number; remark: string; nrm: string }[] = [];
-      const byPanelId = new Map<string, { panel: string; inboundId: number }>();
-      for (const pm of livePanels) {
-        const ibs = live?.[pm.slug];
-        if (Array.isArray(ibs)) {
-          for (const ib of ibs as InboundInfo[]) {
-            byPanelId.set(`${pm.slug}:${ib.id}`, { panel: pm.slug, inboundId: ib.id });
-            const key = (ib.remark || "").trim().toLowerCase();
-            if (key) {
-              const arr = byRemark.get(key) ?? [];
-              arr.push({ panel: pm.slug, inboundId: ib.id });
-              byRemark.set(key, arr);
-            }
-            const nk = norm(ib.remark || "");
-            if (nk) {
-              const arr = byNorm.get(nk) ?? [];
-              arr.push({ panel: pm.slug, inboundId: ib.id });
-              byNorm.set(nk, arr);
-              allLive.push({ panel: pm.slug, inboundId: ib.id, remark: ib.remark || "", nrm: nk });
-            }
-          }
-        }
-      }
-      log(`Live inbound'ов всего: ${allLive.length}`);
-      for (const l of allLive) log(`  - panel=${l.panel} id=${l.inboundId} remark="${l.remark}" norm="${l.nrm}"`);
-      let ok = 0;
-      const errors: string[] = [];
-      for (const item of list) {
-        try {
-          const name = String(item.name || "").trim();
-          log(`\n--- Подписка "${name}" ---`);
-          if (!name) { errors.push("пустое имя"); continue; }
-          const rawSelections: any[] = item.inbounds ?? [];
-          log(`  исходные inbound'ы (${rawSelections.length}): ${JSON.stringify(rawSelections)}`);
-          const selections: { panel: string; inboundId: number }[] = [];
-          const missing: string[] = [];
-          const seen = new Set<string>();
-          for (const x of rawSelections) {
-            if (!x) continue;
-            // 1) точное совпадение по panel:inbound_id
-            const exactKey = `${x.panel}:${x.inbound_id}`;
-            const exact = byPanelId.get(exactKey);
-            if (exact) {
-              const k = `${exact.panel}:${exact.inboundId}`;
-              log(`    [exact] "${x.remark}" -> ${k}`);
-              if (!seen.has(k)) { seen.add(k); selections.push(exact); }
-              continue;
-            }
-            // 2) матчинг по remark
-            const rk = String(x.remark || "").trim().toLowerCase();
-            const matches = rk ? byRemark.get(rk) : undefined;
-            if (matches && matches.length) {
-              log(`    [remark] "${x.remark}" -> ${matches.map(m=>`${m.panel}:${m.inboundId}`).join(",")}`);
-              for (const m of matches) {
-                const k = `${m.panel}:${m.inboundId}`;
-                if (!seen.has(k)) { seen.add(k); selections.push(m); }
-              }
-              continue;
-            }
-            // 3) матчинг по нормализованному remark (без эмодзи/пунктуации)
-            const nk = norm(String(x.remark || ""));
-            let fuzzy = nk ? byNorm.get(nk) : undefined;
-            // 4) substring: ищем live remark, содержащий искомый или наоборот
-            if ((!fuzzy || !fuzzy.length) && nk) {
-              fuzzy = allLive
-                .filter((l) => l.nrm === nk || l.nrm.includes(nk) || nk.includes(l.nrm))
-                .map((l) => ({ panel: l.panel, inboundId: l.inboundId }));
-            }
-            if (fuzzy && fuzzy.length) {
-              log(`    [fuzzy nk="${nk}"] "${x.remark}" -> ${fuzzy.map(m=>`${m.panel}:${m.inboundId}`).join(",")}`);
-              for (const m of fuzzy) {
-                const k = `${m.panel}:${m.inboundId}`;
-                if (!seen.has(k)) { seen.add(k); selections.push(m); }
-              }
-            } else {
-              log(`    [MISS nk="${nk}"] "${x.remark}" не найден`);
-              missing.push(x.remark || `${x.panel}#${x.inbound_id}`);
-            }
-          }
-          if (!selections.length) {
-            if (fallbackAll) {
-              const all = Array.from(byPanelId.values());
-              if (all.length) {
-                for (const m of all) selections.push(m);
-                log(`  fallback: использованы все ${all.length} inbound'ов`);
-                errors.push(`${name}: использованы все доступные inbound'ы (исходные: ${missing.join(", ")})`);
-              }
-            }
-          }
-          const expiryMs = Number(item.expiry_ms || 0);
-          const days = expiryMs > 0 ? Math.max(1, Math.ceil((expiryMs - Date.now()) / 86400000)) : 0;
-          const totalGB = item.total_bytes ? Math.round(Number(item.total_bytes) / 1024 / 1024 / 1024) : 0;
-          if (!selections.length) {
-            if (!detachedIfNoInbound) {
-              log(`  SKIP: нет inbound'ов`);
-              errors.push(`${name}: не нашёл inbound'ы (${missing.join(", ") || "пусто"})`);
-              continue;
-            }
-            const desiredSlug = String(item.slug ?? "").trim();
-            log(`  -> createDetached: days=${days} GB=${totalGB} slug=${desiredSlug || "(auto)"}`);
-            const { data, error } = await supabase.functions.invoke("panel?action=createDetached", {
-              method: "POST",
-              body: { name, days, totalGB, slug: desiredSlug || undefined },
-            });
-            if (error) { log(`  ERROR detached invoke: ${error.message ?? error}`); throw error; }
-            if (data?.error) { log(`  ERROR detached data: ${data.error}`); throw new Error(data.error); }
-            log(`  OK detached: ${JSON.stringify(data).slice(0,300)}`);
-            ok++;
-            errors.push(`${name}: создана без inbound'ов — добавьте панели вручную`);
-            continue;
-          }
-          const validSelections = selections.filter((s) => s.panel && s.panel !== "null" && s.panel !== "undefined" && Number.isFinite(s.inboundId));
-          if (validSelections.length !== selections.length) log(`  FIX: удалены некорректные selections=${selections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
-          if (!validSelections.length) throw new Error("панели загрузились без slug — обновите список inbound'ов и повторите импорт");
-          const desiredSlug2 = String(item.slug ?? "").trim();
-          log(`  -> create: days=${days} GB=${totalGB} slug=${desiredSlug2 || "(auto)"} selections=${validSelections.map(s=>`${s.panel}:${s.inboundId}`).join(",")}`);
-          const { data, error } = await supabase.functions.invoke("panel?action=create", {
-            method: "POST",
-            body: { name, days, totalGB, selections: validSelections, slug: desiredSlug2 || undefined },
-          });
-          if (error) {
-            log(`  ERROR invoke: ${error.message ?? error}`);
-            log(`  ERROR detail: ${JSON.stringify(error)}`);
-            throw error;
-          }
-          if (data?.error) {
-            log(`  ERROR data: ${data.error}`);
-            log(`  data: ${JSON.stringify(data).slice(0,500)}`);
-            throw new Error(data.error);
-          }
-          log(`  OK: ${JSON.stringify(data).slice(0,300)}`);
-          ok++;
-          if (missing.length) errors.push(`${name}: пропущены inbound'ы (${missing.join(", ")})`);
-        } catch (e: any) {
-          log(`  EXCEPTION: ${e?.message ?? e}`);
-          errors.push(`${item?.name ?? "?"}: ${e?.message ?? e}`);
-        }
-      }
-      log(`\n=== Итог: ok=${ok}, ошибок/предупреждений=${errors.length} ===`);
-      for (const e of errors) log(`  ! ${e}`);
-      if (errors.length) {
-        toast.warning(`Импорт: ${ok} успешно, ${errors.length} с предупреждениями`, {
-          description: errors.slice(0, 8).join("\n"),
-        });
-      } else {
-        toast.success(`Импортировано: ${ok}`);
-      }
-      loadSubs();
-    } catch (e: any) {
-      log(`FATAL: ${e?.message ?? e}`);
-      toast.error("Ошибка импорта: " + (e?.message ?? e));
-    } finally {
-      setImportLog(L);
-      setImportLogOpen(true);
-      setImporting(false);
-    }
-  };
-
   const applyPreset = (p: { days: number; gb: number }) => {
     setDays(p.days);
     setTotalGB(p.gb);
@@ -1219,13 +922,12 @@ const Index = () => {
           if (v === "create") { loadInbounds(); loadEmailMap(); }
           if (v === "logs") loadServerLogs();
         }}>
-          <TabsList className="grid w-full max-w-5xl grid-cols-8">
+          <TabsList className="grid w-full max-w-5xl grid-cols-7">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
             <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
             <TabsTrigger value="create">➕ Новый</TabsTrigger>
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
-            <TabsTrigger value="external">🌐 Сторонние</TabsTrigger>
             <TabsTrigger value="update">🔄 Обновление</TabsTrigger>
             <TabsTrigger value="logs" onClick={() => { const t = Date.now(); setLastSeenLogTs(t); localStorage.setItem("logs_last_seen", String(t)); }}>
               🪵 Логи{(() => {
@@ -1276,15 +978,10 @@ const Index = () => {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3 mb-4">
+          <div className="grid gap-4 md:grid-cols-2 mb-4">
             <div>
               <Label className="text-xs text-muted-foreground">Имя клиента</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Иван" maxLength={64} />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Принудительный URL</Label>
-              <Input value={createSlug} onChange={(e) => setCreateSlug(e.target.value)} placeholder="например ivan2026" maxLength={32} />
-              <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${createSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "авто"}`}</p>
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Срок (дней, 0 = безлимит)</Label>
@@ -1296,185 +993,72 @@ const Index = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-between mb-2">
-            <Label className="text-xs text-muted-foreground">Серверы для подписки</Label>
-            {(() => {
-              const allKeys: string[] = [];
-              for (const { slug: p } of panelMeta) {
-                const l = inbounds?.[p];
-                if (Array.isArray(l)) l.forEach((ib) => allKeys.push(`${p}:${ib.id}`));
-              }
-              if (allKeys.length === 0) return null;
-              const allOn = allKeys.every((k) => selected.has(k));
-              return (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={allOn ? "default" : "outline"}
-                  onClick={() => {
-                    const next = new Set(selected);
-                    if (allOn) allKeys.forEach((k) => next.delete(k));
-                    else allKeys.forEach((k) => next.add(k));
-                    setSelected(next);
-                  }}
-                  style={allOn ? { background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" } : undefined}
-                >
-                  <Sparkles className="size-3.5 mr-1" />
-                  {allOn ? `Все панели подключены (${allKeys.length})` : `Подключить все (${allKeys.length})`}
-                </Button>
-              );
-            })()}
+          <div className="mb-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground mb-1 block">Серверы для подписки</Label>
+              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())} className="h-6 px-2 text-xs">Снять все</Button>
+            </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 mb-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mb-4">
             {panelMeta.map(({ slug: panel }) => {
               const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
               const isList = Array.isArray(list);
               const items = isList ? (list as InboundInfo[]) : [];
               const allKeys = items.map((ib) => `${panel}:${ib.id}`);
-              const onCount = allKeys.filter((k) => selected.has(k)).length;
-              const allOn = allKeys.length > 0 && onCount === allKeys.length;
-              const noneOn = onCount === 0;
-              const partial = !allOn && !noneOn;
-              const protos = Array.from(new Set(items.map((i) => i.protocol.toUpperCase()))).join(" · ");
-              const isExpanded = !!expandedPanels[panel];
-              const toggleAll = () => {
-                const next = new Set(selected);
-                if (allOn) allKeys.forEach((k) => next.delete(k));
-                else allKeys.forEach((k) => next.add(k));
-                setSelected(next);
-              };
               return (
-                <Card key={panel} className="p-4 bg-secondary/40 border-border">
-                  {/* HEADER: панель = одна группа «Авто» */}
-                  <div className="flex items-start gap-3">
-                    <button
-                      type="button"
-                      onClick={toggleAll}
-                      disabled={!isList || items.length === 0}
-                      className={`shrink-0 size-10 rounded-full grid place-items-center border transition ${
-                        allOn
-                          ? "border-primary bg-primary/15 text-primary"
-                          : partial
-                          ? "border-primary/50 bg-primary/5 text-primary"
-                          : "border-border bg-background text-muted-foreground hover:border-primary/40"
-                      }`}
-                      title={allOn ? "Снять все" : "Подключить все"}
-                    >
-                      {allOn ? <Check className="size-5" /> : partial ? <Sparkles className="size-4" /> : <Plus className="size-5" />}
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="font-semibold flex items-center gap-1.5 min-w-0">
-                          <Server className="size-4 text-primary shrink-0" />
-                          <span className="truncate">{panelLabel(panel)}</span>
-                        </div>
-                        {isList && items.length >= 2 && allOn && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
-                            ⚡ Автовыбор
-                          </span>
-                        )}
-                      </div>
-                      {!inbounds && <div className="text-xs text-muted-foreground mt-1">Загрузка…</div>}
-                      {isList && items.length === 0 && (
-                        <div className="text-xs text-muted-foreground mt-1">Нет inbound'ов</div>
-                      )}
-                      {isList && items.length > 0 && (
-                        <div className="text-xs text-muted-foreground mt-1 truncate">
-                          {allOn
-                            ? `Все ${items.length} серверов · ${protos}`
-                            : partial
-                            ? `Выбрано ${onCount} из ${items.length} · ${protos}`
-                            : `${items.length} серверов · ${protos}`}
-                        </div>
-                      )}
-                      {list && "error" in (list as any) && (
-                        <div className="text-xs text-destructive mt-1">{(list as any).error}</div>
-                      )}
-                    </div>
-                    {isList && items.length > 0 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="shrink-0 h-7 px-2 text-xs"
-                        onClick={() => setExpandedPanels((p) => ({ ...p, [panel]: !isExpanded }))}
-                      >
-                        <Settings2 className="size-3.5 mr-1" />
-                        {isExpanded ? "Скрыть" : "Настроить"}
-                        <ChevronDown className={`size-3.5 ml-0.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
-                      </Button>
-                    )}
+                <div key={panel} className="space-y-2">
+                  <div className="font-semibold flex items-center gap-1.5 mb-2">
+                    <Server className="size-4 text-primary" />
+                    {panelLabel(panel)}
                   </div>
-
-                  {/* EXPANDED: продвинутый режим — все чекбоксы как раньше */}
-                  {isList && items.length > 0 && isExpanded && (
-                    <div className="mt-3 pt-3 border-t border-border space-y-2">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                          Выбрано {onCount} / {items.length}
-                        </span>
-                        {!allOn && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 text-[11px] text-primary"
-                            onClick={() => {
-                              const next = new Set(selected);
-                              allKeys.forEach((k) => next.add(k));
-                              setSelected(next);
-                            }}
-                          >
-                            <RotateCcw className="size-3 mr-1" /> Сбросить к Авто
-                          </Button>
-                        )}
-                      </div>
-                      {items.map((ib) => {
-                        const key = `${panel}:${ib.id}`;
-                        const busy = bulkBusy === `add:${key}` || bulkBusy === `rm:${key}`;
-                        return (
-                          <div key={key} className="flex items-center gap-2">
-                            <label className="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
-                              <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
-                              <div className="flex-1 min-w-0">
-                                <div className="text-sm truncate">
-                                  {inboundLabel(panel, ib.id, ib.remark)}
-                                  {overrides[`${panel}:${ib.id}`] && (
-                                    <span className="ml-2 text-[10px] uppercase text-muted-foreground" title={ib.remark}>↺ {ib.remark}</span>
-                                  )}
-                                </div>
-                                <div className="text-xs text-muted-foreground">
-                                  {ib.protocol.toUpperCase()} · :{ib.port}
-                                </div>
-                              </div>
-                            </label>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}>
-                                  {busy ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel className="text-xs">Действия</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => openRename(panel, ib.id, ib.remark || `#${ib.id}`)}>
-                                  <Pencil className="size-3.5 mr-2 text-primary" /> Переименовать
-                                </DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem onClick={() => bulkAdd(panel, ib.id, ib.remark || `#${ib.id}`)}>
-                                  <UserPlus className="size-3.5 mr-2 text-green-500" /> Добавить всем
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => bulkRemove(panel, ib.id, ib.remark || `#${ib.id}`)} className="text-destructive focus:text-destructive">
-                                  <UserMinus className="size-3.5 mr-2" /> Убрать у всех
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        );
-                      })}
-                    </div>
+                  {!inbounds && <div className="text-sm text-muted-foreground">Загрузка...</div>}
+                  {list && "error" in (list as any) && (
+                    <div className="text-sm text-destructive">{(list as any).error}</div>
                   )}
-                </Card>
+                  {items.map((ib) => {
+                    const key = `${panel}:${ib.id}`;
+                    const busy = bulkBusy === `add:${key}` || bulkBusy === `rm:${key}`;
+                    return (
+                      <div key={key} className="flex items-center gap-2 mb-2">
+                        <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+                          <Checkbox checked={selected.has(key)} onCheckedChange={() => toggle(key)} />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm truncate">
+                              {inboundLabel(panel, ib.id, ib.remark)}
+                              {overrides[`${panel}:${ib.id}`] && (
+                                <span className="ml-2 text-[10px] uppercase text-muted-foreground" title={ib.remark}>↺ {ib.remark}</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {ib.protocol.toUpperCase()} · :{ib.port}
+                            </div>
+                          </div>
+                        </label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="size-7 shrink-0" disabled={busy}>
+                              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <MoreVertical className="size-3.5" />}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuLabel className="text-xs">Действия</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => openRename(panel, ib.id, ib.remark || `#${ib.id}`)}>
+                              <Pencil className="size-3.5 mr-2 text-primary" /> Переименовать
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => bulkAdd(panel, ib.id, ib.remark || `#${ib.id}`)}>
+                              <UserPlus className="size-3.5 mr-2 text-green-500" /> Добавить всем
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => bulkRemove(panel, ib.id, ib.remark || `#${ib.id}`)} className="text-destructive focus:text-destructive">
+                              <UserMinus className="size-3.5 mr-2" /> Убрать у всех
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    );
+                  })}
+                </div>
               );
             })}
           </div>
@@ -1497,28 +1081,6 @@ const Index = () => {
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 className="text-lg font-semibold">Подписки ({subs.length})</h2>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={exportSubs} disabled={subs.length === 0}>
-                <Download className="size-3.5 mr-1" /> Экспорт
-              </Button>
-              <Button variant="outline" size="sm" disabled={importing} asChild>
-                <label className="cursor-pointer">
-                  {importing ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <Upload className="size-3.5 mr-1" />}
-                  Импорт
-                  <input
-                    type="file"
-                    accept="application/json,.json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = "";
-                      if (f) importSubs(f);
-                    }}
-                  />
-                </label>
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => setRawImportOpen(true)}>
-                <Plus className="size-3.5 mr-1" /> Из текста
-              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -1731,11 +1293,6 @@ const Index = () => {
                             <Input type="number" min={0} placeholder="не менять" value={editGB} onChange={(e) => setEditGB(e.target.value)} />
                           </div>
                         </div>
-                        <div>
-                          <Label className="text-xs text-muted-foreground">URL подписки (slug, a-z 0-9)</Label>
-                          <Input data-slug-input="1" value={editSlug} onChange={(e) => setEditSlug(e.target.value)} maxLength={32} placeholder="например 8ic8nngcvdz7" />
-                          <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${editSlug || s.slug}`}</p>
-                        </div>
 
                         <div>
                           <Label className="text-xs text-muted-foreground mb-2 block">Подключения</Label>
@@ -1917,10 +1474,6 @@ const Index = () => {
 
           <TabsContent value="servers" className="mt-0">
             <PanelsManager onChanged={loadInbounds} />
-          </TabsContent>
-
-          <TabsContent value="external" className="mt-0">
-            <ExternalSubsPanel />
           </TabsContent>
 
           <TabsContent value="update" className="mt-0">
@@ -2107,76 +1660,6 @@ const Index = () => {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={rawImportOpen} onOpenChange={setRawImportOpen}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Создать подписку из текста</DialogTitle>
-            <DialogDescription>Вставьте готовые ссылки или base64-код подписки.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div>
-              <Label className="text-xs text-muted-foreground">Имя подписки</Label>
-              <Input value={rawImportName} onChange={(e) => setRawImportName(e.target.value)} placeholder="Olga" maxLength={64} />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Новый домен</Label>
-              <Input value={rawImportDomain} onChange={(e) => setRawImportDomain(e.target.value)} placeholder="vpn.example.com или https://vpn.example.com" />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Код/текст подписки из панели</Label>
-              <Textarea
-                value={rawImportText}
-                onChange={(e) => setRawImportText(e.target.value)}
-                className="min-h-48 font-mono text-xs"
-                placeholder="Вставь base64-код подписки или строки vless://..."
-              />
-            </div>
-            <div className="text-xs text-muted-foreground">
-              Клиенты в новой подписке не создаются на panel — будут отдаваться готовые ссылки, а host в них заменится на новый домен.
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setRawImportOpen(false)} disabled={rawImporting}>Отмена</Button>
-            <Button onClick={importRawSubscription} disabled={rawImporting || !rawImportText.trim()}
-              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
-              {rawImporting ? <Loader2 className="size-4 animate-spin" /> : "Создать"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={importLogOpen} onOpenChange={setImportLogOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>Лог импорта подписок</DialogTitle>
-            <DialogDescription>Подробный отчёт по последнему импорту.</DialogDescription>
-          </DialogHeader>
-          <Textarea
-            readOnly
-            value={importLog.join("\n")}
-            className="min-h-[60vh] font-mono text-xs"
-          />
-          <DialogFooter>
-            <Button variant="outline" onClick={() => {
-              navigator.clipboard.writeText(importLog.join("\n"));
-              toast.success("Лог скопирован");
-            }}>
-              <Copy className="size-4 mr-1" /> Скопировать
-            </Button>
-            <Button variant="outline" onClick={() => {
-              const blob = new Blob([importLog.join("\n")], { type: "text/plain" });
-              const u = URL.createObjectURL(blob);
-              const a = document.createElement("a");
-              a.href = u; a.download = `import-log-${Date.now()}.txt`;
-              document.body.appendChild(a); a.click(); a.remove();
-              URL.revokeObjectURL(u);
-            }}>
-              <Download className="size-4 mr-1" /> Скачать
-            </Button>
-            <Button onClick={() => setImportLogOpen(false)}>Закрыть</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };
