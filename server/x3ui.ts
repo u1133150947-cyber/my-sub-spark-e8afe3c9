@@ -35,6 +35,37 @@ export async function rawFetch(url: string, init?: RequestInit) {
   return await fetch(url, init);
 }
 
+export async function testPanelConnection(panelUrl: string, usernameValue: string, passwordValue: string) {
+  const url = panelUrl.replace(/\/+$/, "");
+  const username = await decryptField(usernameValue);
+  const password = await decryptField(passwordValue);
+  const loginPage = await rawFetch(`${url}/`, { headers: { Accept: "text/html" } });
+  const loginHtml = await loginPage.text();
+  const csrf = loginHtml.match(/<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i)?.[1] ?? "";
+  const preCookie = (loginPage.headers.get("set-cookie") ?? "")
+    .split(",")
+    .map((c) => c.split(";")[0].trim())
+    .filter(Boolean)
+    .join("; ");
+  const res = await rawFetch(`${url}/login`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+      ...(preCookie ? { Cookie: preCookie } : {}),
+    },
+    body: JSON.stringify({ username, password, twoFactorCode: "" }),
+  });
+  const text = await res.text();
+  if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+  let parsed: any = null; try { parsed = JSON.parse(text); } catch {}
+  if (parsed && parsed.success === false) throw new Error(parsed.msg ?? "Login refused");
+  const cookie = res.headers.get("set-cookie") || preCookie;
+  if (!cookie && !(parsed && parsed.success)) throw new Error("Панель не вернула сессию");
+  return true;
+}
+
 export async function loginPanel(slug: string): Promise<{ cookie: string; csrf: string }> {
   const cached = cookieCache.get(slug);
   if (cached && Date.now() - cached.ts < cached.ttl) return { cookie: cached.cookie, csrf: cached.csrf };

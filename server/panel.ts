@@ -2,7 +2,7 @@
 import { db, decodeRow, uid } from "./db.ts";
 import {
   addClient, bustPanelsCache, getAllPanels, getClientExpiryByEmail, getClientTrafficsByEmail,
-  getPanelBySlug, listInbounds, panelConnectionHost, panelFetch, randomSlug, updateClient, uuidv4, rawFetch, deleteClient,
+  getPanelBySlug, listInbounds, panelConnectionHost, panelFetch, randomSlug, updateClient, uuidv4, deleteClient, testPanelConnection,
 } from "./x3ui.ts";
 import { verifyAdminSession, unauthorizedResponse } from "./auth.ts";
 
@@ -144,6 +144,12 @@ function row<T = any>(sql: string, args: unknown[] = []): T | undefined {
 function rows<T = any>(sql: string, args: unknown[] = []): T[] {
   return db.queryEntries(sql, args as any) as T[];
 }
+function isEnabledSupportedInbound(ib: any) {
+  const proto = String(ib?.protocol ?? "").toLowerCase();
+  if (ib?.enable === false || ib?.enable === 0) return false;
+  if (proto === "hysteria2" || proto === "hy2" || proto === "hysteria") return false;
+  return true;
+}
 
 export async function handlePanel(req: Request, url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -156,16 +162,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const username = String(body.username ?? ""), password = String(body.password ?? "");
       if (!panelUrl || !username || !password) return json({ ok: false, error: "panel_url, username, password обязательны" }, 400);
       try {
-        const r = await rawFetch(`${panelUrl}/login`, {
-          method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams({ username, password }).toString(),
-        });
-        const text = await r.text();
-        if (r.status < 200 || r.status >= 300) return json({ ok: false, error: `HTTP ${r.status}: ${text.slice(0, 200)}` });
-        let parsed: any = null; try { parsed = JSON.parse(text); } catch {}
-        if (parsed && parsed.success === false) return json({ ok: false, error: parsed.msg ?? "Login refused" });
-        const sc = r.headers.get("set-cookie");
-        if (!sc && !(parsed && parsed.success)) return json({ ok: false, error: "Панель не вернула сессию" });
+        await testPanelConnection(panelUrl, username, password);
         return json({ ok: true });
       } catch (e: any) { return json({ ok: false, error: e?.message ?? String(e) }); }
     }
@@ -321,6 +318,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const ibs = await listInbounds(sel.panel);
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
+          if (!isEnabledSupportedInbound(ib)) throw new Error(`inbound ${sel.inboundId} disabled or unsupported`);
           let flow = ""; let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
@@ -420,6 +418,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const ibs = await listInbounds(sel.panel);
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
+          if (!isEnabledSupportedInbound(ib)) throw new Error(`inbound ${sel.inboundId} disabled or unsupported`);
           let flow = ""; let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
           const email = `${sub.client_email}_${sel.panel}${ib.id}`;
@@ -552,6 +551,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const ibs = await listInbounds(panel);
       const ib = ibs.find((x: any) => x.id === inboundId);
       if (!ib) return json({ error: "inbound not found" }, 404);
+      if (!isEnabledSupportedInbound(ib)) return json({ error: "inbound disabled or unsupported" }, 400);
       let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
       const flow = ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp" ? "xtls-rprx-vision" : "";
       const created: string[] = [], errors: any[] = [];
