@@ -245,6 +245,23 @@ export async function updateClient(slug: string, inboundId: number, c: { id: str
   return json;
 }
 
+export async function deleteClient(slug: string, inboundId: number, clientUuid: string, protocol: string = "vless") {
+  const proto = protocol.toLowerCase();
+  if (proto === "hysteria2" || proto === "hy2") {
+    const list = await listInbounds(slug);
+    const ib = list.find((x: any) => x.id === inboundId);
+    if (!ib) throw new Error("inbound not found");
+    let s: any = {}; try { s = JSON.parse(ib.settings); } catch {}
+    const clients = Array.isArray(s.clients) ? s.clients : [];
+    s.clients = clients.filter((x: any) => x.id !== clientUuid && x.password !== clientUuid);
+    return await updateInbound(slug, inboundId, { ...ib, settings: JSON.stringify(s) });
+  }
+  const r = await panelFetch(slug, `/panel/api/inbounds/${inboundId}/delClient/${clientUuid}`, { method: "POST" });
+  let j: any = {}; try { j = JSON.parse(r.body); } catch {}
+  if (!j.success) throw new Error(j.msg ?? `deleteClient [${slug}/${inboundId}] failed`);
+  return j;
+}
+
 export function uuidv4() { return crypto.randomUUID(); }
 export function randomSlug(len = 12) {
   const a = "abcdefghijklmnopqrstuvwxyz0123456789";
