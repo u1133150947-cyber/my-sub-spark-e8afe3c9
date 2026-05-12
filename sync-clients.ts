@@ -3,7 +3,7 @@ import { addClient, listInbounds } from "./server/x3ui.ts";
 
 async function main() {
   const inbounds = db.queryEntries(`
-    SELECT si.panel, si.inbound_id, s.client_email, s.client_uuid, s.expiry_ms, s.total_bytes, s.id as sub_id
+    SELECT si.panel, si.inbound_id, si.client_email, s.client_uuid, s.expiry_ms, s.total_bytes, s.slug, si.stream_settings, si.protocol
     FROM subscription_inbounds si
     JOIN subscriptions s ON si.subscription_id = s.id
   `) as any[];
@@ -29,13 +29,18 @@ async function main() {
         console.log(`Client ${ib.client_email} already exists on panel ${ib.panel} inbound ${ib.inbound_id}.`);
       } else {
         console.log(`Adding client ${ib.client_email} to panel ${ib.panel} inbound ${ib.inbound_id}...`);
+        
+        let stream: any = {}; try { stream = JSON.parse(ib.stream_settings || "{}"); } catch {}
+        let flow = ""; 
+        if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
+
         await addClient(ib.panel, ib.inbound_id, {
           id: ib.client_uuid,
           email: ib.client_email,
           expiryTime: ib.expiry_ms,
           totalGB: ib.total_bytes,
-          subId: ib.sub_id,
-          flow: targetInbound.protocol === "vless" ? "xtls-rprx-vision" : "" // Add flow if needed
+          subId: String(ib.slug).slice(0, 16),
+          flow: flow
         });
         console.log(`Successfully added ${ib.client_email}.`);
       }
