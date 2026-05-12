@@ -2,7 +2,7 @@
 import { db, decodeRow, uid } from "./db.ts";
 import {
   addClient, bustPanelsCache, getAllPanels, getClientExpiryByEmail, getClientTrafficsByEmail,
-  getPanelBySlug, listInbounds, panelConnectionHost, panelFetch, randomSlug, updateClient, uuidv4, rawFetch,
+  getPanelBySlug, listInbounds, panelConnectionHost, panelFetch, randomSlug, updateClient, uuidv4, rawFetch, deleteClient,
 } from "./x3ui.ts";
 import { verifyAdminSession, unauthorizedResponse } from "./auth.ts";
 
@@ -390,13 +390,11 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (!subId) return json({ error: "id required" }, 400);
       const sub = row<any>(`SELECT id, client_uuid FROM subscriptions WHERE id = ?`, [subId]);
       if (!sub) return json({ error: "not found" }, 404);
-      const links = rows<any>(`SELECT panel, inbound_id FROM subscription_inbounds WHERE subscription_id = ?`, [subId]);
+      const links = rows<any>(`SELECT panel, inbound_id, protocol FROM subscription_inbounds WHERE subscription_id = ?`, [subId]);
       const errors: any[] = [];
       await Promise.all(links.map(async (l) => {
         try {
-          const r = await panelFetch(l.panel, `/panel/api/inbounds/${l.inbound_id}/delClient/${sub.client_uuid}`, { method: "POST" });
-          let j: any = {}; try { j = JSON.parse(r.body); } catch {}
-          if (!j.success) errors.push({ panel: l.panel, inbound: l.inbound_id, msg: j.msg });
+          await deleteClient(l.panel, l.inbound_id, sub.client_uuid, l.protocol);
         } catch (e) { errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) }); }
       }));
       db.query(`DELETE FROM subscriptions WHERE id = ?`, [subId]);
@@ -440,11 +438,10 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       if (!subId || !panel || !inboundId) return json({ error: "id, panel, inboundId required" }, 400);
       const sub = row<any>(`SELECT id, client_uuid FROM subscriptions WHERE id = ?`, [subId]);
       if (!sub) return json({ error: "not found" }, 404);
+      const link = row<any>(`SELECT protocol FROM subscription_inbounds WHERE subscription_id = ? AND panel = ? AND inbound_id = ?`, [subId, panel, inboundId]);
       let panelErr: string | null = null;
       try {
-        const r = await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${sub.client_uuid}`, { method: "POST" });
-        let j: any = {}; try { j = JSON.parse(r.body); } catch {}
-        if (!j.success) panelErr = j.msg ?? "panel error";
+        await deleteClient(panel, inboundId, sub.client_uuid, link?.protocol ?? "vless");
       } catch (e) { panelErr = e instanceof Error ? e.message : String(e); }
       db.query(`DELETE FROM subscription_inbounds WHERE subscription_id = ? AND panel = ? AND inbound_id = ?`, [subId, panel, inboundId]);
       return json({ ok: true, panelError: panelErr });
