@@ -103,30 +103,6 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
   const [protoPanel, setProtoPanel] = useState<Panel | null>(null);
   const [installOpen, setInstallOpen] = useState(false);
   const [attachPanel, setAttachPanel] = useState<Panel | null>(null);
-  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
-
-  const bulkInstall = async (p: Panel) => {
-    if (!p.slug) return toast.error("Сначала «Проверить» — нужен slug панели");
-    if (!confirm(`Создать 25 готовых VLESS Reality инбаундов на «${p.name}»?\n\nПорты 12000-12024, разные SNI и fingerprint, общий x25519 ключ.`)) return;
-    setBulkBusy(p.slug);
-    const t = toast.loading(`Генерирую 25 инбаундов на ${p.name}…`);
-    try {
-      const { data, error } = await supabase.functions.invoke("panel?action=bulkInstallPreset", {
-        method: "POST",
-        body: { panel: p.slug, count: 25, portStart: 12000 },
-      });
-      if (error) throw error;
-      if (!data?.ok) throw new Error(data?.error ?? "Панель отклонила запрос");
-      const ok = Array.isArray(data.created) ? data.created.length : 0;
-      const bad = Array.isArray(data.errors) ? data.errors.length : 0;
-      toast.success(`Готово: создано ${ok}, ошибок ${bad}`, { id: t });
-      load(); onChanged?.();
-    } catch (e: any) {
-      toast.error("Ошибка: " + (e?.message ?? e), { id: t });
-    } finally {
-      setBulkBusy(null);
-    }
-  };
 
   const load = async () => {
     const { data, error } = await supabase
@@ -135,80 +111,6 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       .order("created_at", { ascending: true });
     if (error) return toast.error("Не удалось загрузить панели");
     setPanels((data ?? []) as Panel[]);
-  };
-
-  const exportPanels = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("panels")
-        .select("name, panel_url, username, password, country, template, readiness, public_host, ssh_user, ssh_port, ssh_auth_type, ssh_password, ssh_key_passphrase, slug")
-        .order("created_at", { ascending: true });
-      if (error) throw error;
-      const out = {
-        version: 1,
-        kind: "panels",
-        exported_at: new Date().toISOString(),
-        panels: data ?? [],
-      };
-      const blob = new Blob([JSON.stringify(out, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `panels-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success(`Экспортировано: ${out.panels.length}`);
-    } catch (e: any) {
-      toast.error("Ошибка экспорта: " + (e?.message ?? e));
-    }
-  };
-
-  const importPanels = async (file: File) => {
-    setImporting(true);
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text);
-      const list: any[] = parsed?.panels ?? (Array.isArray(parsed) ? parsed : []);
-      if (!list.length) throw new Error("Пустой файл импорта");
-      if (!confirm(`Импортировать ${list.length} панелей? Существующие с тем же URL будут пропущены.`)) {
-        setImporting(false);
-        return;
-      }
-      const { data: existing } = await supabase.from("panels").select("panel_url");
-      const existingUrls = new Set((existing ?? []).map((p: any) => (p.panel_url ?? "").trim()));
-      let ok = 0, skipped = 0, errors = 0;
-      for (const p of list) {
-        const url = (p.panel_url ?? "").trim();
-        if (!url || !p.name) { errors++; continue; }
-        if (existingUrls.has(url)) { skipped++; continue; }
-        const row: any = {
-          name: p.name,
-          panel_url: url,
-          username: p.username ?? "",
-          password: p.password ?? "",
-          country: p.country ?? "",
-        };
-        if (p.template) row.template = p.template;
-        if (p.readiness) row.readiness = p.readiness;
-        if (p.public_host !== undefined) row.public_host = p.public_host;
-        if (p.ssh_user) row.ssh_user = p.ssh_user;
-        if (p.ssh_port) row.ssh_port = p.ssh_port;
-        if (p.ssh_auth_type) row.ssh_auth_type = p.ssh_auth_type;
-        if (p.ssh_password !== undefined) row.ssh_password = p.ssh_password;
-        if (p.ssh_key_passphrase !== undefined) row.ssh_key_passphrase = p.ssh_key_passphrase;
-        const { error } = await supabase.from("panels").insert(row);
-        if (error) errors++; else ok++;
-      }
-      await load();
-      onChanged?.();
-      toast.success(`Импорт: ${ok} добавлено, ${skipped} пропущено${errors ? `, ${errors} ошибок` : ""}`);
-    } catch (e: any) {
-      toast.error("Ошибка импорта: " + (e?.message ?? e));
-    } finally {
-      setImporting(false);
-    }
   };
 
   useEffect(() => {
@@ -444,34 +346,6 @@ export const PanelsManager = ({ onChanged }: { onChanged?: () => void } = {}) =>
       <section>
         <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
           <h2 className="text-lg font-semibold">Панели ({panels.length})</h2>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={() => setInstallOpen(true)}
-              style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}
-            >
-              <Rocket className="size-3.5 mr-1" /> Авто-установка
-            </Button>
-            <Button variant="outline" size="sm" onClick={exportPanels} disabled={panels.length === 0}>
-              <Download className="size-3.5 mr-1" /> Экспорт
-            </Button>
-            <Button variant="outline" size="sm" disabled={importing} asChild>
-              <label className="cursor-pointer">
-                {importing ? <Loader2 className="size-3.5 mr-1 animate-spin" /> : <Upload className="size-3.5 mr-1" />}
-                Импорт
-                <input
-                  type="file"
-                  accept="application/json,.json"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    e.currentTarget.value = "";
-                    if (f) importPanels(f);
-                  }}
-                />
-              </label>
-            </Button>
-          </div>
         </div>
         {panels.length === 0 ? (
           <Card className="p-10 text-center text-muted-foreground border-dashed">Панелей пока нет.</Card>
