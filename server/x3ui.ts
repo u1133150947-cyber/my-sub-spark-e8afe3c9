@@ -43,10 +43,23 @@ export async function loginPanel(slug: string): Promise<string> {
   // encrypted values (when MASTER_KEY is configured in .env).
   const username = await decryptField(cfg.username);
   const password = await decryptField(cfg.password);
+  const loginPage = await rawFetch(`${cfg.url}/`, { headers: { Accept: "text/html" } });
+  const loginHtml = await loginPage.text();
+  const csrf = loginHtml.match(/<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i)?.[1];
+  const preCookie = (loginPage.headers.get("set-cookie") ?? "")
+    .split(",")
+    .map((c) => c.split(";")[0].trim())
+    .filter(Boolean)
+    .join("; ");
   const res = await rawFetch(`${cfg.url}/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ username, password }).toString(),
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+      ...(preCookie ? { Cookie: preCookie } : {}),
+    },
+    body: JSON.stringify({ username, password, twoFactorCode: "" }),
   });
   if (res.status < 200 || res.status >= 300) {
     const text = await res.text();
