@@ -272,7 +272,7 @@ function displayName(ib: any, overrides?: Map<string, string>) {
 
 function buildHysteria2(uuid: string, ib: any, overrides?: Map<string, string>): string[] {
   const proto = String(ib.protocol ?? "").toLowerCase();
-  if (proto !== "hysteria2" && proto !== "hy2") return [];
+  if (proto !== "hysteria2" && proto !== "hy2" && proto !== "hysteria") return [];
   const ss = ib.stream_settings ?? {};
   const settings = ss._inboundSettings ?? {};
   const password = firstString(ss._clientPassword) || firstString(settings.password) || uuid;
