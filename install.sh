@@ -60,18 +60,7 @@ PUBLIC_HOST=${DOMAIN:-$(curl -s https://api.ipify.org || hostname -I | awk '{pri
 SCHEME=https; [[ -z "$DOMAIN" ]] && SCHEME=http
 PUBLIC_URL="$SCHEME://$PUBLIC_HOST"
 
-# ---- 5b. Учётка для входа в панель (basic-auth через Caddy) -----------
-AUTH_USER=${AUTH_USER:-}
-AUTH_PASS=${AUTH_PASS:-}
-if [[ -z "${REBUILD:-}" ]]; then
-  [[ -z "$AUTH_USER" ]] && read -rp  "Логин для входа в панель [admin]: " AUTH_USER
-  [[ -z "$AUTH_PASS" ]] && read -rsp "Пароль для входа в панель: " AUTH_PASS && echo
-fi
-AUTH_USER=${AUTH_USER:-admin}
-if [[ -z "$AUTH_PASS" ]]; then
-  AUTH_PASS=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)
-  warn "Пароль не задан — сгенерирован случайный: $AUTH_PASS"
-fi
+warn "Telegram-авторизация включена. Логин и пароль для Caddy больше не требуются."
 
 # ---- 6. Файлы приложения ---------------------------------------------
 log "Копируем приложение в $APP_DIR"
@@ -125,17 +114,12 @@ systemctl enable --now sub-manager
 
 # ---- 9. Caddy ---------------------------------------------------------
 log "Настраиваем Caddy"
-AUTH_HASH=$(caddy hash-password --plaintext "$AUTH_PASS")
 if [[ -n "$DOMAIN" ]]; then
   cat >/etc/caddy/Caddyfile <<EOF
 $DOMAIN {
   encode gzip
   request_body {
     max_size 200MB
-  }
-  @protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*
-  basicauth @protected {
-    $AUTH_USER $AUTH_HASH
   }
   reverse_proxy 127.0.0.1:$PORT
 }
@@ -147,10 +131,6 @@ else
   request_body {
     max_size 200MB
   }
-  @protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*
-  basicauth @protected {
-    $AUTH_USER $AUTH_HASH
-  }
   reverse_proxy 127.0.0.1:$PORT
 }
 EOF
@@ -160,8 +140,6 @@ systemctl restart caddy
 log "Готово."
 echo
 echo "  Панель:        $PUBLIC_URL"
-echo "  Логин:         $AUTH_USER"
-echo "  Пароль:        $AUTH_PASS"
 echo "  Подписки:      $PUBLIC_URL/sub/<slug>"
 echo "  БД (SQLite):   $DB_DIR/app.db"
 echo "  Логи:          journalctl -u sub-manager -f"
