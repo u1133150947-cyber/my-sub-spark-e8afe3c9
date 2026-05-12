@@ -16,18 +16,31 @@ if (typeof window !== "undefined" && !(window as any).__adminFetchPatched) {
   })();
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     try {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      let urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+      const isLovable = /lovable(?:project)?\.(app|dev)$/i.test(window.location.hostname) || window.location.hostname === "localhost";
+      
+      let finalInput = input;
+      if (!isLovable && SUPABASE_HOST && urlStr.includes(SUPABASE_HOST)) {
+        urlStr = urlStr.replace(`https://${SUPABASE_HOST}`, window.location.origin);
+        if (input instanceof Request) {
+          finalInput = new Request(urlStr, input);
+        } else {
+          finalInput = urlStr;
+        }
+      }
+
       // Skip Supabase-hosted endpoints — their CORS doesn't allow x-admin-token
       // and they don't need it. Only self-hosted VDS endpoints check it.
-      const isSupabase = !!SUPABASE_HOST && url.includes(SUPABASE_HOST);
-      if (url && !isSupabase && ADMIN_PATHS.some((p) => url.includes(p))) {
+      const isSupabase = !!SUPABASE_HOST && urlStr.includes(SUPABASE_HOST);
+      if (urlStr && !isSupabase && ADMIN_PATHS.some((p) => urlStr.includes(p))) {
         const token = getAdminToken();
         if (token) {
-          const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+          const headers = new Headers(init?.headers ?? (finalInput instanceof Request ? finalInput.headers : undefined));
           if (!headers.has("x-admin-token")) headers.set("x-admin-token", token);
           init = { ...(init ?? {}), headers };
         }
       }
+      return origFetch(finalInput as any, init);
     } catch { /* noop */ }
     return origFetch(input as any, init);
   };
