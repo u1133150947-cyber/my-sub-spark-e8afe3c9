@@ -11,10 +11,12 @@ conn.on('ready', () => {
   console.log('Client :: ready');
   
   const cmd = [
+    `echo "nameserver 8.8.8.8" > /etc/resolv.conf`,
+    `echo "nameserver 1.1.1.1" >> /etc/resolv.conf`,
     `systemctl stop x-ui nginx caddy apache2 2>/dev/null || true`,
     `/root/.acme.sh/acme.sh --register-account -m admin@${domain} --server buypass`,
     `/root/.acme.sh/acme.sh --set-default-ca --server buypass`,
-    `/root/.acme.sh/acme.sh --issue -d ${domain} --standalone --httpport 80 --force --server buypass --debug`,
+    `/root/.acme.sh/acme.sh --issue -d ${domain} --standalone --httpport 80 --force --server buypass`,
     `mkdir -p /root/cert/${domain}`,
     `/root/.acme.sh/acme.sh --installcert -d ${domain} --key-file /root/cert/${domain}/privkey.pem --fullchain-file /root/cert/${domain}/fullchain.pem --server buypass`,
     `/usr/local/x-ui/x-ui cert -webCert /root/cert/${domain}/fullchain.pem -webCertKey /root/cert/${domain}/privkey.pem`,
