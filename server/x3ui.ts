@@ -122,8 +122,8 @@ export async function addClient(slug: string, inboundId: number, c: { id: string
     clients: [{ id: c.id, flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 }],
   });
   const res = await panelFetch(slug, "/panel/api/inbounds/addClient", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: inboundId, settings }),
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ id: String(inboundId), settings }).toString(),
   });
   const json = JSON.parse(res.body);
   if (!json.success) throw new Error(`addClient [${slug}/${inboundId}]: ${json.msg}`);
@@ -135,8 +135,8 @@ export async function updateClient(slug: string, inboundId: number, c: { id: str
     clients: [{ id: c.id, flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 }],
   });
   const res = await panelFetch(slug, `/panel/api/inbounds/updateClient/${c.id}`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ id: inboundId, settings }),
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ id: String(inboundId), settings }).toString(),
   });
   const json = JSON.parse(res.body);
   if (!json.success) throw new Error(`updateClient [${slug}/${inboundId}]: ${json.msg}`);
