@@ -100,6 +100,7 @@ function streamSnapshot(ib: any, clientEmail?: string, fallbackUuid?: string) {
   const client = clients.find((c: any) => c?.email === clientEmail) || clients.find((c: any) => c?.id === fallbackUuid);
   if (client) {
     stream._clientUuid = client.id;
+    stream._clientPassword = client.password;
     stream._clientFlow = client.flow ?? "";
   }
   stream._inboundListen = ib.listen ?? ib.Listen ?? "";
@@ -366,7 +367,10 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
     items.push({
       sort_order: Number(ib.sort_order ?? 0),
       created_at: String(ib.created_at ?? ""),
-      lines: buildVless(sub.client_uuid, sub.client_email, ib, overridesMap),
+      lines: [
+        ...buildVless(sub.client_uuid, sub.client_email, ib, overridesMap),
+        ...buildHysteria2(sub.client_uuid, ib, overridesMap),
+      ],
     });
   }
   try {
