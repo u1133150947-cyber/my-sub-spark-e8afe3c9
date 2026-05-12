@@ -286,7 +286,7 @@ function buildHysteria2(uuid: string, ib: any, overrides?: Map<string, string>):
     params.set("insecure", "0");
   }
   const label = displayName(ib, overrides);
-  return [`hysteria2://${encodeURIComponent(password)}@${ib.host}:${ib.port}/?${params.toString()}#${encodeURIComponent(label)}`];
+  return [`hy2://${encodeURIComponent(password)}@${ib.host}:${ib.port}/?${params.toString()}#${encodeURIComponent(label)}`];
 }
 
 function withHost(link: string, host: string) {
