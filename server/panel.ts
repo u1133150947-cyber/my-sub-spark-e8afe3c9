@@ -147,7 +147,6 @@ function rows<T = any>(sql: string, args: unknown[] = []): T[] {
 function isEnabledSupportedInbound(ib: any) {
   const proto = String(ib?.protocol ?? "").toLowerCase();
   if (ib?.enable === false || ib?.enable === 0) return false;
-  if (proto === "hysteria2" || proto === "hy2" || proto === "hysteria") return false;
   return true;
 }
 

@@ -172,7 +172,7 @@ export async function addClient(slug: string, inboundId: number, c: { id: string
   clientObj.id = c.id; // always include id to satisfy API checks
   if (isPass) clientObj.password = c.id;
 
-  if (proto === "hysteria2" || proto === "hy2") {
+  if (proto === "hysteria2" || proto === "hy2" || proto === "hysteria") {
     const list = await listInbounds(slug);
     const ib = list.find(x => x.id === inboundId);
     if (!ib) throw new Error("inbound not found");
@@ -252,7 +252,7 @@ export async function updateClient(slug: string, inboundId: number, c: { id: str
   clientObj.id = c.id;
   if (isPass) clientObj.password = c.id;
 
-  if (proto === "hysteria2" || proto === "hy2") {
+  if (proto === "hysteria2" || proto === "hy2" || proto === "hysteria") {
     const list = await listInbounds(slug);
     const ib = list.find(x => x.id === inboundId);
     if (!ib) throw new Error("inbound not found");
@@ -278,7 +278,7 @@ export async function updateClient(slug: string, inboundId: number, c: { id: str
 
 export async function deleteClient(slug: string, inboundId: number, clientUuid: string, protocol: string = "vless") {
   const proto = protocol.toLowerCase();
-  if (proto === "hysteria2" || proto === "hy2") {
+  if (proto === "hysteria2" || proto === "hy2" || proto === "hysteria") {
     const list = await listInbounds(slug);
     const ib = list.find((x: any) => x.id === inboundId);
     if (!ib) throw new Error("inbound not found");
