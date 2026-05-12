@@ -3,7 +3,7 @@ const cmd = `
 printf 'DIRS\n'; ls -d /root/sub-manager /opt/sub-manager 2>/dev/null || true
 for d in /root/sub-manager /opt/sub-manager; do if [ -d "$d" ]; then echo "== $d =="; ls "$d" | head; fi; done
 cd /root/sub-manager 2>/dev/null || cd /opt/sub-manager || exit 1
-cat > /tmp/h2_manager_audit.ts <<'TS2'
+cat > /opt/sub-manager/h2_manager_audit.ts <<'TS2'
 import { db } from './server/db.ts';
 import { listInbounds, updateClient } from './server/x3ui.ts';
 const slug='4p3y8viw1txl';
@@ -24,6 +24,6 @@ for (const panel of [...new Set(rows.map(r=>r.panel))]) {
   }
 }
 TS2
-deno run -A /tmp/h2_manager_audit.ts
+cd /opt/sub-manager && deno run -A h2_manager_audit.ts
 `;
 const c=new Client(); c.on('ready',()=>c.exec(cmd,(err,s)=>{if(err)throw err; s.on('close',()=>c.end()).on('data',(d:any)=>process.stdout.write(d.toString())).stderr.on('data',(d:any)=>process.stderr.write(d.toString()))})).connect({host:'82.202.128.147',port:22,username:'root',password:'K!E2QAGrxYFx'});
