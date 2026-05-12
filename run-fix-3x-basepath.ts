@@ -6,27 +6,18 @@ const HOST = '82.202.128.147';
 const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
-const script = `
+const commands = [
+  `cat << 'PY' > /tmp/fix_db.py
 import sqlite3
-
 db = '/etc/x-ui/x-ui.db'
 conn = sqlite3.connect(db)
 cursor = conn.cursor()
-
-# Set webBasePath to /
 cursor.execute("UPDATE settings SET value='/' WHERE key='webBasePath'")
 conn.commit()
-
-# Ensure username and password are set back to admin_3x / XUIhh5sj3! just in case
-# The admin_3x / XUIhh5sj3! might have been overridden if the prompt was skipped or misread.
-# Actually I'll just check what the username/pass are, or wait, x-ui setting works for them.
 conn.close()
 print("DB Updated")
-`;
-
-const commands = [
-  `python3 -c "${script.replace(/\n/g, '\\n').replace(/"/g, '\\"')}"`,
-  `/usr/local/x-ui/x-ui setting -username admin_3x -password XUIhh5sj3!`,
+PY`,
+  `python3 /tmp/fix_db.py`,
   `systemctl restart x-ui`,
   `sleep 2`,
   `/usr/local/x-ui/x-ui setting -show`,
