@@ -4,7 +4,7 @@ import { decryptField } from "./crypto.ts";
 
 type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string };
 
-const cookieCache = new Map<string, { cookie: string; ts: number; ttl: number }>();
+const cookieCache = new Map<string, { cookie: string; csrf: string; ts: number; ttl: number }>();
 const COOKIE_TTL_BASE_MS = 25 * 60 * 1000; // 25 min base
 const COOKIE_TTL_JITTER_MS = 5 * 60 * 1000; // ±5 min random jitter
 const panelsCache = { rows: [] as PanelRow[], ts: 0 };
@@ -35,9 +35,9 @@ export async function rawFetch(url: string, init?: RequestInit) {
   return await fetch(url, init);
 }
 
-export async function loginPanel(slug: string): Promise<string> {
+export async function loginPanel(slug: string): Promise<{ cookie: string; csrf: string }> {
   const cached = cookieCache.get(slug);
-  if (cached && Date.now() - cached.ts < cached.ttl) return cached.cookie;
+  if (cached && Date.now() - cached.ts < cached.ttl) return { cookie: cached.cookie, csrf: cached.csrf };
   const cfg = panelCfg(getPanelBySlug(slug));
   // Decrypt credentials at use-time — supports both plaintext (legacy) and
   // encrypted values (when MASTER_KEY is configured in .env).
@@ -45,7 +45,7 @@ export async function loginPanel(slug: string): Promise<string> {
   const password = await decryptField(cfg.password);
   const loginPage = await rawFetch(`${cfg.url}/`, { headers: { Accept: "text/html" } });
   const loginHtml = await loginPage.text();
-  const csrf = loginHtml.match(/<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i)?.[1];
+  const csrf = loginHtml.match(/<meta\s+name=["']csrf-token["']\s+content=["']([^"']+)["']/i)?.[1] ?? "";
   const preCookie = (loginPage.headers.get("set-cookie") ?? "")
     .split(",")
     .map((c) => c.split(";")[0].trim())
@@ -68,28 +68,32 @@ export async function loginPanel(slug: string): Promise<string> {
   await res.text();
   const sc = res.headers.get("set-cookie");
   const cookie = (sc ?? "").split(",").map((c) => c.split(";")[0].trim()).filter(Boolean).join("; ");
-  if (!cookie) throw new Error(`No cookie from panel ${slug}`);
+  if (!cookie && !preCookie) throw new Error(`No cookie from panel ${slug}`);
   const jitter = Math.floor(Math.random() * COOKIE_TTL_JITTER_MS);
-  cookieCache.set(slug, { cookie, ts: Date.now(), ttl: COOKIE_TTL_BASE_MS + jitter });
-  return cookie;
+  cookieCache.set(slug, { cookie: cookie || preCookie, csrf, ts: Date.now(), ttl: COOKIE_TTL_BASE_MS + jitter });
+  return { cookie: cookie || preCookie, csrf };
 }
 
 export async function panelFetch(slug: string, path: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) {
   const cfg = panelCfg(getPanelBySlug(slug));
-  let cookie = await loginPanel(slug);
-  const doReq = async (ck: string) => {
+  let session = await loginPanel(slug);
+  const doReq = async (sess: { cookie: string; csrf: string }) => {
+    const headers: Record<string, string> = { ...(init?.headers ?? {}), Cookie: sess.cookie, Accept: "application/json" };
+    if (init?.method && init.method !== "GET" && sess.csrf) {
+      headers["X-CSRF-Token"] = sess.csrf;
+    }
     const r = await rawFetch(`${cfg.url}${path}`, {
       method: init?.method ?? "GET",
-      headers: { ...(init?.headers ?? {}), Cookie: ck, Accept: "application/json" },
+      headers,
       body: init?.body,
     });
     return { status: r.status, body: await r.text() };
   };
-  let res = await doReq(cookie);
+  let res = await doReq(session);
   if (res.status === 401 || res.status === 403) {
     cookieCache.delete(slug);
-    cookie = await loginPanel(slug);
-    res = await doReq(cookie);
+    session = await loginPanel(slug);
+    res = await doReq(session);
   }
   return res;
 }
@@ -130,13 +134,16 @@ export async function getClientExpiryByEmail(slug: string) {
   return out;
 }
 
-export async function addClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }) {
+export async function addClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }, protocol: string = "vless") {
+  const isPass = ["trojan", "shadowsocks", "hysteria", "hysteria2", "hy2"].includes(protocol.toLowerCase());
+  const clientObj: any = { flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
+  if (isPass) clientObj.password = c.id; else clientObj.id = c.id;
   const settings = JSON.stringify({
-    clients: [{ id: c.id, flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 }],
+    clients: [clientObj],
   });
   const res = await panelFetch(slug, "/panel/api/inbounds/addClient", {
-    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ id: String(inboundId), settings }).toString(),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: inboundId, settings }),
   });
   const json = JSON.parse(res.body);
   if (!json.success) throw new Error(`addClient [${slug}/${inboundId}]: ${json.msg}`);
@@ -167,13 +174,16 @@ export async function addInbound(slug: string, payload: {
   return json;
 }
 
-export async function updateClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }) {
+export async function updateClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }, protocol: string = "vless") {
+  const isPass = ["trojan", "shadowsocks", "hysteria", "hysteria2", "hy2"].includes(protocol.toLowerCase());
+  const clientObj: any = { flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
+  if (isPass) clientObj.password = c.id; else clientObj.id = c.id;
   const settings = JSON.stringify({
-    clients: [{ id: c.id, flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 }],
+    clients: [clientObj],
   });
   const res = await panelFetch(slug, `/panel/api/inbounds/updateClient/${c.id}`, {
-    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ id: String(inboundId), settings }).toString(),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: inboundId, settings }),
   });
   const json = JSON.parse(res.body);
   if (!json.success) throw new Error(`updateClient [${slug}/${inboundId}]: ${json.msg}`);
