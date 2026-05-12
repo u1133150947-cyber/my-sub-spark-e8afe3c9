@@ -318,6 +318,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const ibs = await listInbounds(sel.panel);
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
+          if (!isEnabledSupportedInbound(ib)) throw new Error(`inbound ${sel.inboundId} disabled or unsupported`);
           let flow = ""; let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
           const email = `${baseEmail}_${sel.panel}${ib.id}`;
@@ -417,6 +418,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           const ibs = await listInbounds(sel.panel);
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
           if (!ib) throw new Error(`inbound ${sel.inboundId} not found on ${sel.panel}`);
+          if (!isEnabledSupportedInbound(ib)) throw new Error(`inbound ${sel.inboundId} disabled or unsupported`);
           let flow = ""; let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
           if (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") flow = "xtls-rprx-vision";
           const email = `${sub.client_email}_${sel.panel}${ib.id}`;
@@ -549,6 +551,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const ibs = await listInbounds(panel);
       const ib = ibs.find((x: any) => x.id === inboundId);
       if (!ib) return json({ error: "inbound not found" }, 404);
+      if (!isEnabledSupportedInbound(ib)) return json({ error: "inbound disabled or unsupported" }, 400);
       let stream: any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
       const flow = ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp" ? "xtls-rprx-vision" : "";
       const created: string[] = [], errors: any[] = [];
