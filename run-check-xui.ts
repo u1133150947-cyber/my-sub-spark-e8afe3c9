@@ -7,7 +7,7 @@ const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
 conn.on('ready', () => {
-  conn.exec(`/usr/local/x-ui/x-ui help`, (err, stream) => {
+  conn.exec(`sqlite3 /etc/x-ui/x-ui.db "SELECT * FROM settings;"`, (err, stream) => {
     if (err) throw err;
     stream.on('close', () => {
       conn.end();
