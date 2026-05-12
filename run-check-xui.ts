@@ -7,7 +7,7 @@ const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
 conn.on('ready', () => {
-  conn.exec(`sqlite3 /etc/x-ui/x-ui.db "UPDATE settings SET value='/' WHERE key='webBasePath';" && systemctl restart x-ui && /usr/local/x-ui/x-ui setting -show`, (err, stream) => {
+  conn.exec(`/usr/local/x-ui/x-ui setting -webBasePath / && systemctl restart x-ui && /usr/local/x-ui/x-ui setting -show`, (err, stream) => {
     if (err) throw err;
     stream.on('close', () => {
       conn.end();
