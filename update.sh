@@ -78,12 +78,7 @@ if [[ -n "${ADMIN_TELEGRAM_ID:-}" ]] && ! grep -q '^ADMIN_TELEGRAM_ID=' .env 2>/
   printf 'ADMIN_TELEGRAM_ID=%s\n' "$ADMIN_TELEGRAM_ID" >> .env
 fi
 
-log "bun install"
-bun install --silent
-
-log "bun run build"
-bun run build
-[[ -d dist ]] || die "Сборка не создала dist/"
+log "Обновление файлов завершено (сборка не требуется, так как используется pre-built архив)"
 
 if [[ -f /etc/systemd/system/sub-manager.service ]] && ! grep -q '^EnvironmentFile=-/opt/sub-manager/.env' /etc/systemd/system/sub-manager.service; then
   log "Подключаю .env к systemd-сервису"
