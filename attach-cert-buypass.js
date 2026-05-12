@@ -14,7 +14,7 @@ conn.on('ready', () => {
     `systemctl stop x-ui nginx caddy apache2 2>/dev/null || true`,
     `/root/.acme.sh/acme.sh --register-account -m admin@${domain} --server buypass`,
     `/root/.acme.sh/acme.sh --set-default-ca --server buypass`,
-    `/root/.acme.sh/acme.sh --issue -d ${domain} --standalone --httpport 80 --force --server buypass`,
+    `/root/.acme.sh/acme.sh --issue -d ${domain} --standalone --httpport 80 --force --server buypass --debug`,
     `mkdir -p /root/cert/${domain}`,
     `/root/.acme.sh/acme.sh --installcert -d ${domain} --key-file /root/cert/${domain}/privkey.pem --fullchain-file /root/cert/${domain}/fullchain.pem --server buypass`,
     `/usr/local/x-ui/x-ui cert -webCert /root/cert/${domain}/fullchain.pem -webCertKey /root/cert/${domain}/privkey.pem`,
