@@ -1,13 +1,12 @@
 import { Client } from 'ssh2';
 
 const conn = new Client();
-
 const HOST = '82.202.128.147';
 const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
 conn.on('ready', () => {
-  conn.exec(`curl -v http://127.0.0.1:2053/`, (err, stream) => {
+  conn.exec(`/usr/local/x-ui/bin/xray-linux-amd64 version`, (err, stream) => {
     if (err) throw err;
     stream.on('close', () => {
       conn.end();
