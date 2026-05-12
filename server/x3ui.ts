@@ -137,7 +137,8 @@ export async function getClientExpiryByEmail(slug: string) {
 export async function addClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }, protocol: string = "vless") {
   const isPass = ["trojan", "shadowsocks", "hysteria", "hysteria2", "hy2"].includes(protocol.toLowerCase());
   const clientObj: any = { flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
-  if (isPass) clientObj.password = c.id; else clientObj.id = c.id;
+  clientObj.id = c.id; // always include id to satisfy API checks
+  if (isPass) clientObj.password = c.id;
   const settings = JSON.stringify({
     clients: [clientObj],
   });
@@ -177,7 +178,8 @@ export async function addInbound(slug: string, payload: {
 export async function updateClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }, protocol: string = "vless") {
   const isPass = ["trojan", "shadowsocks", "hysteria", "hysteria2", "hy2"].includes(protocol.toLowerCase());
   const clientObj: any = { flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
-  if (isPass) clientObj.password = c.id; else clientObj.id = c.id;
+  clientObj.id = c.id;
+  if (isPass) clientObj.password = c.id;
   const settings = JSON.stringify({
     clients: [clientObj],
   });
