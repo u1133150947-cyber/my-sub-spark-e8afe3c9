@@ -92,8 +92,9 @@ sleep 1
 systemctl --no-pager --lines=0 status sub-manager || true
 
 if [[ -f /etc/caddy/Caddyfile ]]; then
-  log "Проверяю доступ к Telegram-auth endpoint в Caddy"
-  sed -i 's#@protected not path /sub/\* /functions/v1/sub\*#@protected not path /sub/* /functions/v1/sub* /functions/v1/admin-auth*#g' /etc/caddy/Caddyfile
+  log "Удаляю basicauth из Caddyfile (теперь используется Telegram-авторизация)"
+  sed -i '/@protected/d' /etc/caddy/Caddyfile
+  sed -i '/basicauth/,/}/d' /etc/caddy/Caddyfile
   caddy reload --config /etc/caddy/Caddyfile || systemctl restart caddy || true
 fi
 
