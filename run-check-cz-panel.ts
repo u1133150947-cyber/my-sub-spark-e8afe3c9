@@ -1,8 +1,8 @@
 import { Client } from 'ssh2';
 const conn = new Client();
-const HOST = '85.208.108.57';
+const HOST = '185.87.148.138';
 const USERNAME = 'root';
-const PASSWORD = '1S{s8Q$s^Vl4';
+const PASSWORD = 'hf6Ka8viMl';
 const commands = [
   `/usr/local/x-ui/x-ui setting -show`,
 ];
