@@ -1276,15 +1276,10 @@ const Index = () => {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-3 mb-4">
+          <div className="grid gap-4 md:grid-cols-2 mb-4">
             <div>
               <Label className="text-xs text-muted-foreground">Имя клиента</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Иван" maxLength={64} />
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground">Принудительный URL</Label>
-              <Input value={createSlug} onChange={(e) => setCreateSlug(e.target.value)} placeholder="например ivan2026" maxLength={32} />
-              <p className="text-[10px] text-muted-foreground mt-1 break-all">{`${getSubBase()}/${createSlug.trim().toLowerCase().replace(/[^a-z0-9]/g, "") || "авто"}`}</p>
             </div>
             <div>
               <Label className="text-xs text-muted-foreground">Срок (дней, 0 = безлимит)</Label>
@@ -1296,36 +1291,13 @@ const Index = () => {
             </div>
           </div>
 
-          <div className="flex items-center justify-between mb-2">
-            <Label className="text-xs text-muted-foreground">Серверы для подписки</Label>
-            {(() => {
-              const allKeys: string[] = [];
-              for (const { slug: p } of panelMeta) {
-                const l = inbounds?.[p];
-                if (Array.isArray(l)) l.forEach((ib) => allKeys.push(`${p}:${ib.id}`));
-              }
-              if (allKeys.length === 0) return null;
-              const allOn = allKeys.every((k) => selected.has(k));
-              return (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={allOn ? "default" : "outline"}
-                  onClick={() => {
-                    const next = new Set(selected);
-                    if (allOn) allKeys.forEach((k) => next.delete(k));
-                    else allKeys.forEach((k) => next.add(k));
-                    setSelected(next);
-                  }}
-                  style={allOn ? { background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" } : undefined}
-                >
-                  <Sparkles className="size-3.5 mr-1" />
-                  {allOn ? `Все панели подключены (${allKeys.length})` : `Подключить все (${allKeys.length})`}
-                </Button>
-              );
-            })()}
+          <div className="mb-2">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground mb-1 block">Серверы для подписки</Label>
+              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())} className="h-6 px-2 text-xs">Снять все</Button>
+            </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2 mb-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 mb-4">
             {panelMeta.map(({ slug: panel }) => {
               const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
               const isList = Array.isArray(list);
