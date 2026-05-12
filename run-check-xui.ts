@@ -7,7 +7,7 @@ const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
 conn.on('ready', () => {
-  conn.exec(`/usr/local/x-ui/x-ui setting -webBasePath / && systemctl restart x-ui && /usr/local/x-ui/x-ui setting -show`, (err, stream) => {
+  conn.exec(`python3 -c "import sqlite3; conn = sqlite3.connect('/etc/x-ui/x-ui.db'); conn.execute('UPDATE settings SET value=\\'\\' WHERE key=\\'webBasePath\\''); conn.commit();" && systemctl restart x-ui && /usr/local/x-ui/x-ui setting -show`, (err, stream) => {
     if (err) throw err;
     stream.on('close', () => {
       conn.end();
