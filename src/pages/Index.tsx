@@ -1007,9 +1007,31 @@ const Index = () => {
               const allKeys = items.map((ib) => `${panel}:${ib.id}`);
               return (
                 <div key={panel} className="space-y-2">
-                  <div className="font-semibold flex items-center gap-1.5 mb-2">
-                    <Server className="size-4 text-primary" />
-                    {panelLabel(panel)}
+                  <div className="font-semibold flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <Server className="size-4 text-primary" />
+                      {panelLabel(panel)}
+                    </div>
+                    {isList && items.length > 0 && (
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-5 px-2 text-[10px] text-muted-foreground"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          const next = new Set(selected);
+                          const allSelected = allKeys.every(k => next.has(k));
+                          if (allSelected) {
+                            allKeys.forEach(k => next.delete(k));
+                          } else {
+                            allKeys.forEach(k => next.add(k));
+                          }
+                          setSelected(next);
+                        }}
+                      >
+                        {allKeys.every(k => selected.has(k)) ? "Снять все" : "Выбрать все"}
+                      </Button>
+                    )}
                   </div>
                   {!inbounds && <div className="text-sm text-muted-foreground">Загрузка...</div>}
                   {list && "error" in (list as any) && (
@@ -1278,9 +1300,33 @@ const Index = () => {
                               const list = inbounds?.[panel] as InboundInfo[] | { error: string } | undefined;
                               return (
                                 <Card key={panel} className="p-3 bg-background border-border">
-                                  <div className="flex items-center gap-2 mb-2 text-sm font-semibold">
-                                    <Server className="size-3.5 text-primary" />
-                                    {panelLabel(panel)}
+                                  <div className="flex items-center justify-between mb-2 text-sm font-semibold">
+                                    <div className="flex items-center gap-2">
+                                      <Server className="size-3.5 text-primary" />
+                                      {panelLabel(panel)}
+                                    </div>
+                                    {Array.isArray(list) && list.length > 0 && (
+                                      <Button 
+                                        variant="ghost" 
+                                        size="sm" 
+                                        className="h-5 px-2 text-[10px] text-muted-foreground"
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          const next = new Set(editSelected);
+                                          const allKeys = list.map(ib => `${panel}:${ib.id}`);
+                                          const allSelected = allKeys.every(k => next.has(k));
+                                          if (allSelected) {
+                                            allKeys.forEach(k => next.delete(k));
+                                          } else {
+                                            allKeys.forEach(k => next.add(k));
+                                            setEditOrder(prev => Array.from(new Set([...prev, ...allKeys])));
+                                          }
+                                          setEditSelected(next);
+                                        }}
+                                      >
+                                        {list.map(ib => `${panel}:${ib.id}`).every(k => editSelected.has(k)) ? "Снять все" : "Выбрать все"}
+                                      </Button>
+                                    )}
                                   </div>
                                   {Array.isArray(list) && list.length > 0 ? (
                                     <div className="space-y-2">
