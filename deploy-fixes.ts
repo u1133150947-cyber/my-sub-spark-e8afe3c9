@@ -5,6 +5,7 @@ const conn = new Client();
 const files = [
   ['server/x3ui.ts', '/opt/sub-manager/server/x3ui.ts'],
   ['server/sub.ts', '/opt/sub-manager/server/sub.ts'],
+  ['server/panel.ts', '/opt/sub-manager/server/panel.ts'],
   ['sync-clients.ts', '/opt/sub-manager/sync-clients.ts'],
 ] as const;
 
