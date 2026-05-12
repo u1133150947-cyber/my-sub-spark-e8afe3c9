@@ -7,7 +7,7 @@ const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
 conn.on('ready', () => {
-  conn.exec('systemctl status caddy --no-pager', (err, stream) => {
+  conn.exec('cat /etc/caddy/Caddyfile', (err, stream) => {
     if (err) throw err;
     stream.on('close', () => {
       conn.end();
