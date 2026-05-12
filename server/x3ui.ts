@@ -139,6 +139,16 @@ export async function addClient(slug: string, inboundId: number, c: { id: string
   const clientObj: any = { flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
   clientObj.id = c.id; // always include id to satisfy API checks
   if (isPass) clientObj.password = c.id;
+
+  if (protocol === "hysteria2" || protocol === "hy2") {
+    const list = await listInbounds(slug);
+    const ib = list.find(x => x.id === inboundId);
+    if (!ib) throw new Error("inbound not found");
+    let s: any = {}; try { s = JSON.parse(ib.settings); } catch {}
+    s.clients = [...(s.clients || []), clientObj];
+    return await updateInbound(slug, inboundId, { ...ib, settings: JSON.stringify(s) });
+  }
+
   const settings = JSON.stringify({
     clients: [clientObj],
   });
@@ -149,6 +159,15 @@ export async function addClient(slug: string, inboundId: number, c: { id: string
   const json = JSON.parse(res.body);
   if (!json.success) throw new Error(`addClient [${slug}/${inboundId}]: ${json.msg}`);
   return json;
+}
+
+export async function updateInbound(slug: string, id: number, ib: any) {
+  const payload = new URLSearchParams(Object.entries(ib).map(([k,v]) => [k, typeof v === "object" ? JSON.stringify(v) : String(v)]));
+  const res = await panelFetch(slug, `/panel/api/inbounds/update/${id}`, {
+    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: payload.toString(),
+  });
+  return JSON.parse(res.body);
 }
 
 export async function addInbound(slug: string, payload: {
@@ -180,6 +199,19 @@ export async function updateClient(slug: string, inboundId: number, c: { id: str
   const clientObj: any = { flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
   clientObj.id = c.id;
   if (isPass) clientObj.password = c.id;
+
+  if (protocol === "hysteria2" || protocol === "hy2") {
+    const list = await listInbounds(slug);
+    const ib = list.find(x => x.id === inboundId);
+    if (!ib) throw new Error("inbound not found");
+    let s: any = {}; try { s = JSON.parse(ib.settings); } catch {}
+    const clients = s.clients || [];
+    const idx = clients.findIndex((x: any) => x.email === c.email || x.id === c.id || x.password === c.id);
+    if (idx >= 0) clients[idx] = clientObj; else clients.push(clientObj);
+    s.clients = clients;
+    return await updateInbound(slug, inboundId, { ...ib, settings: JSON.stringify(s) });
+  }
+
   const settings = JSON.stringify({
     clients: [clientObj],
   });
