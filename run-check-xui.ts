@@ -6,8 +6,15 @@ const HOST = '82.202.128.147';
 const USERNAME = 'root';
 const PASSWORD = 'K!E2QAGrxYFx';
 
+const panelUser = 'admin_3x';
+const panelPass = 'XUIhh5sj3!';
+
 conn.on('ready', () => {
-  conn.exec(`python3 -c "import sqlite3; conn = sqlite3.connect('/etc/x-ui/x-ui.db'); print(conn.execute('SELECT * FROM settings;').fetchall());"`, (err, stream) => {
+  const script = `
+  cookie=$(curl -s -c cookies.txt -d "username=${panelUser}&password=${panelPass}" http://127.0.0.1:2053/login)
+  curl -s -b cookies.txt -X POST http://127.0.0.1:2053/server/getXrayVersion
+  `;
+  conn.exec(script, (err, stream) => {
     if (err) throw err;
     stream.on('close', () => {
       conn.end();
