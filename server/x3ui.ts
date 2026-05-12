@@ -135,17 +135,21 @@ export async function getClientExpiryByEmail(slug: string) {
 }
 
 export async function addClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }, protocol: string = "vless") {
-  const isPass = ["trojan", "shadowsocks", "hysteria", "hysteria2", "hy2"].includes(protocol.toLowerCase());
+  const proto = protocol.toLowerCase();
+  const isPass = ["trojan", "shadowsocks", "hysteria", "hysteria2", "hy2"].includes(proto);
   const clientObj: any = { flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
   clientObj.id = c.id; // always include id to satisfy API checks
   if (isPass) clientObj.password = c.id;
 
-  if (protocol === "hysteria2" || protocol === "hy2") {
+  if (proto === "hysteria2" || proto === "hy2") {
     const list = await listInbounds(slug);
     const ib = list.find(x => x.id === inboundId);
     if (!ib) throw new Error("inbound not found");
     let s: any = {}; try { s = JSON.parse(ib.settings); } catch {}
-    s.clients = [...(s.clients || []), clientObj];
+    const clients = Array.isArray(s.clients) ? s.clients : [];
+    const idx = clients.findIndex((x: any) => x.email === c.email || x.id === c.id || x.password === c.id);
+    if (idx >= 0) clients[idx] = clientObj; else clients.push(clientObj);
+    s.clients = clients;
     return await updateInbound(slug, inboundId, { ...ib, settings: JSON.stringify(s) });
   }
 
@@ -162,12 +166,28 @@ export async function addClient(slug: string, inboundId: number, c: { id: string
 }
 
 export async function updateInbound(slug: string, id: number, ib: any) {
-  const payload = new URLSearchParams(Object.entries(ib).map(([k,v]) => [k, typeof v === "object" ? JSON.stringify(v) : String(v)]));
+  const cleanPayload: Record<string, string> = {
+    up: String(Number(ib.up ?? 0)),
+    down: String(Number(ib.down ?? 0)),
+    total: String(Number(ib.total ?? 0)),
+    remark: String(ib.remark ?? ""),
+    enable: String(ib.enable !== false),
+    expiryTime: String(Number(ib.expiryTime ?? 0)),
+    listen: String(ib.listen ?? ""),
+    port: String(Number(ib.port ?? 0)),
+    protocol: String(ib.protocol ?? ""),
+    settings: typeof ib.settings === "string" ? ib.settings : JSON.stringify(ib.settings ?? {}),
+    streamSettings: typeof ib.streamSettings === "string" ? ib.streamSettings : JSON.stringify(ib.streamSettings ?? {}),
+    sniffing: typeof ib.sniffing === "string" ? ib.sniffing : JSON.stringify(ib.sniffing ?? { enabled: false, destOverride: [] }),
+  };
+  const payload = new URLSearchParams(Object.entries(cleanPayload));
   const res = await panelFetch(slug, `/panel/api/inbounds/update/${id}`, {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: payload.toString(),
   });
-  return JSON.parse(res.body);
+  const json = JSON.parse(res.body);
+  if (!json.success) throw new Error(`updateInbound [${slug}/${id}]: ${json.msg}`);
+  return json;
 }
 
 export async function addInbound(slug: string, payload: {
@@ -195,12 +215,13 @@ export async function addInbound(slug: string, payload: {
 }
 
 export async function updateClient(slug: string, inboundId: number, c: { id: string; email: string; expiryTime: number; totalGB: number; subId: string; flow?: string }, protocol: string = "vless") {
-  const isPass = ["trojan", "shadowsocks", "hysteria", "hysteria2", "hy2"].includes(protocol.toLowerCase());
+  const proto = protocol.toLowerCase();
+  const isPass = ["trojan", "shadowsocks", "hysteria", "hysteria2", "hy2"].includes(proto);
   const clientObj: any = { flow: c.flow ?? "", email: c.email, limitIp: 0, totalGB: c.totalGB, expiryTime: c.expiryTime, enable: true, tgId: "", subId: c.subId, reset: 0 };
   clientObj.id = c.id;
   if (isPass) clientObj.password = c.id;
 
-  if (protocol === "hysteria2" || protocol === "hy2") {
+  if (proto === "hysteria2" || proto === "hy2") {
     const list = await listInbounds(slug);
     const ib = list.find(x => x.id === inboundId);
     if (!ib) throw new Error("inbound not found");
@@ -222,6 +243,23 @@ export async function updateClient(slug: string, inboundId: number, c: { id: str
   const json = JSON.parse(res.body);
   if (!json.success) throw new Error(`updateClient [${slug}/${inboundId}]: ${json.msg}`);
   return json;
+}
+
+export async function deleteClient(slug: string, inboundId: number, clientUuid: string, protocol: string = "vless") {
+  const proto = protocol.toLowerCase();
+  if (proto === "hysteria2" || proto === "hy2") {
+    const list = await listInbounds(slug);
+    const ib = list.find((x: any) => x.id === inboundId);
+    if (!ib) throw new Error("inbound not found");
+    let s: any = {}; try { s = JSON.parse(ib.settings); } catch {}
+    const clients = Array.isArray(s.clients) ? s.clients : [];
+    s.clients = clients.filter((x: any) => x.id !== clientUuid && x.password !== clientUuid);
+    return await updateInbound(slug, inboundId, { ...ib, settings: JSON.stringify(s) });
+  }
+  const r = await panelFetch(slug, `/panel/api/inbounds/${inboundId}/delClient/${clientUuid}`, { method: "POST" });
+  let j: any = {}; try { j = JSON.parse(r.body); } catch {}
+  if (!j.success) throw new Error(j.msg ?? `deleteClient [${slug}/${inboundId}] failed`);
+  return j;
 }
 
 export function uuidv4() { return crypto.randomUUID(); }
