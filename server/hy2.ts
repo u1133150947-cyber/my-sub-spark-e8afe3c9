@@ -21,7 +21,7 @@ export async function handleHy2Auth(req: Request): Promise<Response> {
     const sub = db.queryEntries(`
       SELECT id, client_uuid, expiry_ms, total_bytes
       FROM subscriptions
-      WHERE client_uuid = ? OR id::text = ?
+      WHERE client_uuid = ? OR id = ?
     `, [auth, auth])[0] as any;
 
     if (!sub) {
