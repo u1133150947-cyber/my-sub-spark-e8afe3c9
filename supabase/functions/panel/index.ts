@@ -485,6 +485,14 @@ Deno.serve(async (req) => {
       const all = await getAllPanels();
       const result: Record<string, any> = {};
       const meta = all.map((p) => ({ slug: p.slug, name: p.name }));
+      const { data: standaloneRows } = await supabase
+        .from("standalone_servers")
+        .select("id, name, host, port")
+        .order("created_at", { ascending: true });
+      if ((standaloneRows ?? []).length) {
+        meta.push({ slug: "standalone", name: "Hysteria 2 (Standalone)" });
+        result.standalone = ((standaloneRows ?? []) as StandaloneServer[]).map(standaloneInboundFromServer);
+      }
       await Promise.all(all.map(async (p) => {
         // Skip panels known to be unreachable to avoid blocking the UI for 30+ s
         if (p.status && p.status !== "ok" && p.status !== "unknown") {
