@@ -20,7 +20,7 @@ const commands = [
   'listen: :443',
   '',
   'tls:',
-  '  cert: /root/.acme.sh/reality.panelsu.ru_ecc/reality.panelsu.ru.cer',
+  '  cert: /root/.acme.sh/reality.panelsu.ru_ecc/fullchain.cer',
   '  key: /root/.acme.sh/reality.panelsu.ru_ecc/reality.panelsu.ru.key',
   '',
   'auth:',
