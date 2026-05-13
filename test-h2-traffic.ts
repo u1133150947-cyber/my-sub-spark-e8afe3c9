@@ -1,6 +1,6 @@
 import { Client } from 'ssh2';
 
-async function updateHysteria(ip: string, domain: string, pwd: string) {
+async function updateHysteria(ip: string, domain: string, pwd: string, port: string = ":8081") {
   return new Promise((resolve, reject) => {
     const conn = new Client();
     conn.on('ready', () => {
@@ -19,9 +19,12 @@ masquerade:
     url: https://bing.com
     rewriteHost: true
 trafficApi:
-  listen: :8080
+  listen: ${port}
 `;
-      const cmd = `cat << 'YAMLEOF' > /etc/hysteria/config.yaml\n${config.trim()}\nYAMLEOF\nsystemctl restart hysteria-server && sleep 2 && curl -s http://127.0.0.1:8080/traffic`;
+      const cmd = \`cat << 'YAMLEOF' > /etc/hysteria/config.yaml
+\${config.trim()}
+YAMLEOF
+systemctl restart hysteria-server && sleep 2 && curl -s http://127.0.0.1${port}/traffic\`;
       conn.exec(cmd, (err, stream) => {
         if (err) return reject(err);
         let out = '';
@@ -33,15 +36,14 @@ trafficApi:
 }
 
 async function main() {
-  const pwd = 'K!E2QAGrxYFx';
   try {
     console.log('RU...');
-    console.log(await updateHysteria('82.202.128.147', 'realityru.panelsu.ru', pwd));
+    console.log(await updateHysteria('82.202.128.147', 'realityru.panelsu.ru', 'K!E2QAGrxYFx', ':8081'));
   } catch (e: any) { console.error('RU fail:', e.message); }
   
   try {
     console.log('CZ...');
-    console.log(await updateHysteria('185.87.148.138', 'reality.panelsu.ru', pwd));
+    console.log(await updateHysteria('185.87.148.138', 'reality.panelsu.ru', 'hf6Ka8viMl', ':8081'));
   } catch (e: any) { console.error('CZ fail:', e.message); }
 }
 main();
