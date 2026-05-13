@@ -1,6 +1,6 @@
 import { Client } from "ssh2";
 
-const password = Deno.env.get("PANEL_CZ_PASSWORD") || Deno.env.get("PANEL_RU_PASSWORD"); // Usually the same K!E2QAGrxYFx
+const password = process.env("PANEL_CZ_PASSWORD") || process.env("PANEL_RU_PASSWORD"); // Usually the same K!E2QAGrxYFx
 
 async function setupNode(ip: string, domain: string) {
   return new Promise((resolve, reject) => {
