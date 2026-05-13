@@ -7,7 +7,7 @@ const cmd = `set +e
 which hysteria || curl -fsSL https://github.com/apernet/hysteria/releases/download/app/v2.6.0/hysteria-linux-amd64 -o /usr/local/bin/hysteria && chmod +x /usr/local/bin/hysteria
 cat > /tmp/h2c.yaml <<YAML
 server: reality.panelsu.ru:443
-auth: ${VERN_UUID}
+auth: 80c4aa5b607f41439dd1aa8b12ec4195
 tls:
   sni: reality.panelsu.ru
   insecure: false
