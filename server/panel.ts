@@ -150,6 +150,18 @@ function isEnabledSupportedInbound(ib: any) {
   return true;
 }
 
+
+function getStandaloneNumId(id: string) {
+  if (id === 'cz') return 1001;
+  if (id === 'ru') return 1002;
+  return parseInt(id, 36) % 10000 || 1000;
+}
+function getStandaloneStrId(num: number) {
+  if (num === 1001) return 'cz';
+  if (num === 1002) return 'ru';
+  return String(num);
+}
+
 export async function handlePanel(req: Request, url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (!verifyAdminSession(req)) return unauthorizedResponse(cors);
@@ -171,6 +183,34 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const all = getAllPanels(true);
       const result: Record<string, any> = {};
       const meta = all.map((p) => ({ slug: p.slug, name: p.name }));
+      try {
+        const stRows = rows<any>("SELECT id, name, host, port FROM standalone_servers ORDER BY created_at ASC");
+        if (stRows.length > 0) {
+          meta.push({ slug: "standalone", name: "Hysteria 2 (Standalone)" });
+          result["standalone"] = stRows.map(s => ({
+            id: getStandaloneNumId(s.id),
+            remark: s.name,
+            protocol: "hysteria2",
+            port: s.port,
+            enable: true,
+            clients: []
+          }));
+        }
+      } catch(e) {}
+      try {
+        const stRows = db.queryEntries("SELECT id, name, host, port FROM standalone_servers ORDER BY created_at ASC");
+        if (stRows.length > 0) {
+          meta.push({ slug: "standalone", name: "Hysteria 2 (Premium)" });
+          result["standalone"] = stRows.map((s: any) => ({
+            id: getStandaloneNumId(s.id),
+            remark: s.name,
+            protocol: "hysteria2",
+            port: s.port,
+            enable: true,
+            clients: []
+          }));
+        }
+      } catch(e) {}
       await Promise.all(all.map(async (p) => {
         try {
           const list = await listInbounds(p.slug);
@@ -313,6 +353,17 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const created: any[] = [], errors: any[] = [];
       for (const sel of validSelections) {
         try {
+          if (sel.panel === "standalone") {
+            const strId = getStandaloneStrId(sel.inboundId);
+            const srv = db.queryEntries(`SELECT name, host, port FROM standalone_servers WHERE id = ?`, [strId])[0] as any;
+            if (!srv) throw new Error("Standalone server not found");
+            const stream = { security: "tls", tlsSettings: { serverName: srv.host } };
+            const email = `${baseEmail}_standalone${sel.inboundId}`;
+            db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [uid(), sub!.id, "standalone", sel.inboundId, srv.name, "hysteria2", srv.port, srv.host, JSON.stringify(stream), email]);
+            created.push({ panel: "standalone", inboundId: sel.inboundId, remark: srv.name });
+            continue;
+          }
           const panelRow = getPanelBySlug(sel.panel);
           const ibs = await listInbounds(sel.panel);
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
@@ -391,7 +442,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const errors: any[] = [];
       await Promise.all(links.map(async (l) => {
         try {
-          await deleteClient(l.panel, l.inbound_id, sub.client_uuid, l.protocol);
+          if (l.panel !== "standalone") { if (l.panel !== "standalone") { await deleteClient(l.panel, l.inbound_id, sub.client_uuid, l.protocol); } }
         } catch (e) { errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) }); }
       }));
       db.query(`DELETE FROM subscriptions WHERE id = ?`, [subId]);
@@ -413,6 +464,17 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existing.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
         try {
+          if (sel.panel === "standalone") {
+            const strId = getStandaloneStrId(sel.inboundId);
+            const srv = db.queryEntries(`SELECT name, host, port FROM standalone_servers WHERE id = ?`, [strId])[0] as any;
+            if (!srv) throw new Error("Standalone server not found");
+            const stream = { security: "tls", tlsSettings: { serverName: srv.host } };
+            const email = `${baseEmail}_standalone${sel.inboundId}`;
+            db.query(`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              [uid(), sub!.id, "standalone", sel.inboundId, srv.name, "hysteria2", srv.port, srv.host, JSON.stringify(stream), email]);
+            created.push({ panel: "standalone", inboundId: sel.inboundId, remark: srv.name });
+            continue;
+          }
           const panelRow = getPanelBySlug(sel.panel);
           const ibs = await listInbounds(sel.panel);
           const ib = ibs.find((x: any) => x.id === sel.inboundId);
@@ -439,7 +501,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const link = row<any>(`SELECT protocol FROM subscription_inbounds WHERE subscription_id = ? AND panel = ? AND inbound_id = ?`, [subId, panel, inboundId]);
       let panelErr: string | null = null;
       try {
-        await deleteClient(panel, inboundId, sub.client_uuid, link?.protocol ?? "vless");
+        if (panel !== "standalone") { if (panel !== "standalone") { await deleteClient(panel, inboundId, sub.client_uuid, link?.protocol ?? "vless"); } }
       } catch (e) { panelErr = e instanceof Error ? e.message : String(e); }
       db.query(`DELETE FROM subscription_inbounds WHERE subscription_id = ? AND panel = ? AND inbound_id = ?`, [subId, panel, inboundId]);
       return json({ ok: true, panelError: panelErr });
