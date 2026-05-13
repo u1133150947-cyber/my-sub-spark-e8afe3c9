@@ -1077,9 +1077,11 @@ Deno.serve(async (req) => {
 
       let panelErr: string | null = null;
       try {
-        const res = await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${sub.client_uuid}`, { method: "POST" });
-        let j: any = {}; try { j = JSON.parse(res.body); } catch {}
-        if (!j.success) panelErr = j.msg ?? "panel error";
+        if (panel !== "standalone") {
+          const res = await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${sub.client_uuid}`, { method: "POST" });
+          let j: any = {}; try { j = JSON.parse(res.body); } catch {}
+          if (!j.success) panelErr = j.msg ?? "panel error";
+        }
       } catch (e) {
         panelErr = e instanceof Error ? e.message : String(e);
       }
