@@ -1,4 +1,4 @@
-import { Client } from "npm:ssh2";
+import { Client } from "ssh2";
 
 const password = Deno.env.get("PANEL_CZ_PASSWORD") || Deno.env.get("PANEL_RU_PASSWORD"); // Usually the same K!E2QAGrxYFx
 
