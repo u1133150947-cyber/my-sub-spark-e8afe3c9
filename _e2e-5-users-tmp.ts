@@ -1,60 +1,62 @@
 import { Client } from 'ssh2';
 function ssh(cmd:string){return new Promise<string>(r=>{const c=new Client();let o='';c.on('ready',()=>c.exec(cmd,(e,s)=>{if(e){r(String(e));return;}s.on('close',()=>{c.end();r(o);}).on('data',d=>o+=d.toString()).stderr.on('data',d=>o+=d.toString());})).on('error',e=>r('SSH:'+e.message)).connect({host:'82.202.128.147',port:22,username:'root',password:'K!E2QAGrxYFx',readyTimeout:15000});});}
 
-const remote = `cat > /tmp/fix5.ts << 'TS'
+const remote = String.raw`cat > /tmp/e2e5.ts << 'TS'
 import { db } from "/opt/sub-manager/server/db.ts";
-import { listInbounds, addClient } from "/opt/sub-manager/server/x3ui.ts";
+import { listInbounds } from "/opt/sub-manager/server/x3ui.ts";
 
+const FIXED = ["Dmitry","alina","Andrey","Test_z7didjgr05po","anton"];
 const PANEL = "pee9e3676f7";
 const INBOUND = 1;
 
-// Find broken users: DB row exists, but client missing on panel
 const ibs = await listInbounds(PANEL);
 const ib = ibs.find((i:any)=>i.id===INBOUND);
 const settings = JSON.parse(ib.settings);
-const panelEmails = new Set(settings.clients.map((c:any)=>c.email));
-const panelUuids = new Set(settings.clients.map((c:any)=>c.id));
+const panelClients = new Map(settings.clients.map((c:any)=>[c.id,c]));
 
-const links = db.queryEntries(\`
-  SELECT si.client_email, si.stream_settings, s.client_uuid, s.name, s.slug, s.client_email as sub_email, s.expiry_ms, s.total_bytes
-  FROM subscription_inbounds si
-  JOIN subscriptions s ON s.id=si.subscription_id
-  WHERE si.panel=? AND si.inbound_id=?
-\`, [PANEL, INBOUND]) as any[];
+console.log("=== E2E test for 5 fixed users ===\n");
 
-const broken = links.filter(l => !panelEmails.has(l.client_email) && !panelUuids.has(l.client_uuid));
-console.log("Will fix " + broken.length + " users:");
-for (const b of broken) console.log("  - " + b.name + " uuid=" + b.client_uuid.slice(0,8) + " email=" + b.client_email);
+const placeholders = FIXED.map(()=>'?').join(',');
+const subs = db.queryEntries("SELECT id, name, slug, client_uuid, client_email, expiry_ms FROM subscriptions WHERE name IN (" + placeholders + ")", FIXED) as any[];
 
-let stream:any = {}; try { stream = JSON.parse(ib.streamSettings); } catch {}
-const flow = (ib.protocol === "vless" && stream.security === "reality" && stream.network === "tcp") ? "xtls-rprx-vision" : "";
-console.log("Protocol=" + ib.protocol + " flow=" + flow);
+let pass = 0, fail = 0;
+for (const s of subs) {
+  const tag = (s.name as string).padEnd(22);
+  const checks: string[] = [];
 
-console.log("\\n=== Adding ===");
-for (const b of broken) {
-  const subId = String(b.slug).slice(0, 16);
+  const pc:any = panelClients.get(s.client_uuid);
+  checks.push(pc ? "panel:OK" : "panel:MISS");
+  if (pc) checks.push("enable:" + pc.enable);
+
+  let txt = "", status = 0;
   try {
-    await addClient(PANEL, INBOUND, {
-      id: b.client_uuid,
-      email: b.client_email,
-      expiryTime: b.expiry_ms ?? 0,
-      totalGB: b.total_bytes ?? 0,
-      subId,
-      flow,
-    }, ib.protocol);
-    console.log("  ✓ " + b.name);
-  } catch (e) {
-    console.log("  ✗ " + b.name + " :: " + (e instanceof Error ? e.message : String(e)));
+    const r = await fetch("http://127.0.0.1:8000/sub/" + s.slug, { headers: { "User-Agent": "v2rayN/6.0" }});
+    status = r.status;
+    txt = await r.text();
+    checks.push("http:" + status);
+  } catch { checks.push("http:ERR"); }
+
+  let body = txt;
+  try { body = atob(txt.replace(/\s/g,'')); } catch {}
+
+  const hasUuid = body.includes(s.client_uuid);
+  checks.push(hasUuid ? "uuid:OK" : "uuid:MISS");
+
+  const lines = body.split(/\n/).filter(Boolean);
+  const vlessRu = lines.find(l => l.startsWith("vless://" + s.client_uuid) && /security=reality/.test(l) && /flow=xtls-rprx-vision/.test(l));
+  checks.push(vlessRu ? "vlessRU:OK" : "vlessRU:MISS");
+
+  const ok = pc && pc.enable && hasUuid && !!vlessRu;
+  if (ok) pass++; else fail++;
+  console.log((ok?"OK":"FAIL") + " " + tag + " " + checks.join(" "));
+  if (vlessRu) {
+    const port = vlessRu.match(/@[^:]+:(\d+)\?/)?.[1];
+    const sni = vlessRu.match(/sni=([^&]+)/)?.[1];
+    console.log("    -> port=" + port + " sni=" + sni + " links=" + lines.length);
   }
 }
-
-console.log("\\n=== Verify ===");
-const ibs2 = await listInbounds(PANEL);
-const ib2 = ibs2.find((i:any)=>i.id===INBOUND);
-const s2 = JSON.parse(ib2.settings);
-console.log("Panel now has " + s2.clients.length + " clients on inbound #" + INBOUND + ":");
-for (const c of s2.clients) console.log("  • " + (c.email||"").padEnd(40) + " uuid=" + (c.id||"").slice(0,8));
+console.log("\n=== " + pass + " passed, " + fail + " failed ===");
 TS
-cd /opt/sub-manager && deno run -A /tmp/fix5.ts 2>&1`;
+cd /opt/sub-manager && deno run -A /tmp/e2e5.ts 2>&1`;
 
 console.log(await ssh(remote));
