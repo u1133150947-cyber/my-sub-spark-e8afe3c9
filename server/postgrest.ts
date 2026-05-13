@@ -41,7 +41,7 @@ async function decryptRow(table: string, row: Record<string, unknown>): Promise<
 const ALLOWED = new Set([
   "panels", "subscriptions", "subscription_inbounds",
   "inbound_overrides", "client_mappings", "traffic_snapshots", "audit_log",
-  "external_subs", "subscription_external_subs",
+  "external_subs", "subscription_external_subs", "standalone_servers",
 ]);
 
 // Tables that are read-only via the REST API — writes go through dedicated handlers.
