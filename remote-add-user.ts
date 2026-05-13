@@ -69,7 +69,7 @@ main().catch(console.error);
 
 const conn = new Client();
 conn.on('ready', () => {
-  conn.exec(`cat << 'EOF2' > /root/3x-ui-sub-manager-update/add-specific-user.ts\n${script}\nEOF2\ncd /root/3x-ui-sub-manager-update && /root/.deno/bin/deno run -A --unstable-kv add-specific-user.ts`, (err, stream) => {
+  conn.exec(`cat << 'EOF2' > /root/3x-ui-sub-manager-update/add-specific-user.ts\n${script}\nEOF2\ncd /root/3x-ui-sub-manager-update && deno run -A --unstable-kv add-specific-user.ts`, (err, stream) => {
     if (err) throw err;
     stream.on('close', () => conn.end())
       .on('data', (d: any) => console.log('STDOUT:', d.toString()))
