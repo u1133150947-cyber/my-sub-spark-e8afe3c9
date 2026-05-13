@@ -19,14 +19,9 @@ masquerade:
     url: https://bing.com
     rewriteHost: true
 trafficApi:
-  listen: 127.0.0.1:8080
+  listen: :8080
 `;
-      const cmd = \`cat << 'YAMLEOF' > /etc/hysteria/config.yaml
-\${config.trim()}
-YAMLEOF
-systemctl restart hysteria-server && systemctl status hysteria-server --no-pager
-curl -s http://127.0.0.1:8080/traffic
-\`;
+      const cmd = `cat << 'YAMLEOF' > /etc/hysteria/config.yaml\n${config.trim()}\nYAMLEOF\nsystemctl restart hysteria-server && sleep 2 && curl -s http://127.0.0.1:8080/traffic`;
       conn.exec(cmd, (err, stream) => {
         if (err) return reject(err);
         let out = '';
