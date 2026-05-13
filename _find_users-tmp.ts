@@ -1,17 +1,20 @@
 import { Client } from 'ssh2';
 const c = new Client();
 const cmd = `
-echo '=== RU x-ui inbounds ==='
-sqlite3 /etc/x-ui/x-ui.db "SELECT id,port,protocol,remark FROM inbounds;"
+echo '=== sub-manager dir ==='
+ls -la /opt/sub-manager
 echo
-echo '=== clients per inbound (count) ==='
-sqlite3 /etc/x-ui/x-ui.db "SELECT id,protocol,remark,json_array_length(json_extract(settings,'\\$.clients')) FROM inbounds;"
+echo '=== data dir ==='
+ls -la /root/data
 echo
-echo '=== nginx hy2 auth backend ==='
-grep -rn 'hy2/auth\\|hy2_auth\\|/api/hy2' /etc/nginx/ 2>/dev/null | head
+echo '=== look for sqlite/db files ==='
+find /opt/sub-manager /root/data -maxdepth 3 -type f \\( -name '*.db' -o -name '*.json' -o -name '*.sqlite*' \\) 2>/dev/null | head
 echo
-echo '=== panelsu app dir ==='
-ls /opt /root 2>/dev/null
-ps auxf | grep -iE 'node|python|deno|hy2' | grep -v grep | head -20
+echo '=== environment & config ==='
+cat /opt/sub-manager/.env 2>/dev/null | head
+ls /opt/sub-manager/server 2>/dev/null
+echo
+echo '=== test hy2 auth with random uuid ==='
+curl -sk -X POST https://web.panelsu.ru/api/hy2/auth -H 'Content-Type: application/json' -d '{"addr":"1.2.3.4:443","auth":"deadbeef-dead-beef-dead-beefdeadbeef","tx":0}' -w '\\nHTTP %{http_code}\\n'
 `;
 c.on('ready',()=>c.exec(cmd,(_e,s)=>{s.on('close',()=>c.end()).on('data',d=>process.stdout.write(d.toString())).stderr.on('data',d=>process.stderr.write(d.toString()));})).connect({host:'82.202.128.147',port:22,username:'root',password:'K!E2QAGrxYFx'});
