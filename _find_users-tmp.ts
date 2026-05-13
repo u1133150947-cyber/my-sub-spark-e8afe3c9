@@ -1,20 +1,17 @@
 import { Client } from 'ssh2';
 const c = new Client();
 const cmd = `
-echo '=== what runs on 3xru.panelsu.ru :443 ==='
-ss -lntp | grep -E ':(443|80) ' | head
-echo
-echo '=== nginx hy2 auth ==='
-grep -rn 'hy2/auth\\|hy2_auth' /etc/nginx/ 2>/dev/null | head
-echo
-echo '=== xray clients in RU panel (cz-related inbounds) ==='
+echo '=== RU x-ui inbounds ==='
 sqlite3 /etc/x-ui/x-ui.db "SELECT id,port,protocol,remark FROM inbounds;"
 echo
-echo '=== RU x-ui clients count per inbound ==='
-sqlite3 /etc/x-ui/x-ui.db "SELECT id,protocol,remark,json_array_length(json_extract(settings,'$.clients')) as clients FROM inbounds;"
+echo '=== clients per inbound (count) ==='
+sqlite3 /etc/x-ui/x-ui.db "SELECT id,protocol,remark,json_array_length(json_extract(settings,'\\$.clients')) FROM inbounds;"
 echo
-echo '=== look for hy2 auth backend ==='
-ls /opt /root 2>/dev/null | head -20
-ps auxf | grep -iE 'hy2|hysteria' | grep -v grep | head
+echo '=== nginx hy2 auth backend ==='
+grep -rn 'hy2/auth\\|hy2_auth\\|/api/hy2' /etc/nginx/ 2>/dev/null | head
+echo
+echo '=== panelsu app dir ==='
+ls /opt /root 2>/dev/null
+ps auxf | grep -iE 'node|python|deno|hy2' | grep -v grep | head -20
 `;
-c.on('ready',()=>c.exec(cmd,(_e,s)=>{s.on('close',()=>c.end()).on('data',d=>process.stdout.write(d.toString())).stderr.on('data',d=>process.stderr.write(d.toString()));})).connect({host:'3xru.panelsu.ru',port:22,username:'root',password:'hf6Ka8viMl'});
+c.on('ready',()=>c.exec(cmd,(_e,s)=>{s.on('close',()=>c.end()).on('data',d=>process.stdout.write(d.toString())).stderr.on('data',d=>process.stderr.write(d.toString()));})).connect({host:'82.202.128.147',port:22,username:'root',password:'K!E2QAGrxYFx'});
