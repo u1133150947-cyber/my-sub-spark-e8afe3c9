@@ -184,6 +184,20 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const result: Record<string, any> = {};
       const meta = all.map((p) => ({ slug: p.slug, name: p.name }));
       try {
+        const stRows = rows<any>("SELECT id, name, host, port FROM standalone_servers ORDER BY created_at ASC");
+        if (stRows.length > 0) {
+          meta.push({ slug: "standalone", name: "Hysteria 2 (Standalone)" });
+          result["standalone"] = stRows.map(s => ({
+            id: getStandaloneNumId(s.id),
+            remark: s.name,
+            protocol: "hysteria2",
+            port: s.port,
+            enable: true,
+            clients: []
+          }));
+        }
+      } catch(e) {}
+      try {
         const stRows = db.queryEntries("SELECT id, name, host, port FROM standalone_servers ORDER BY created_at ASC");
         if (stRows.length > 0) {
           meta.push({ slug: "standalone", name: "Hysteria 2 (Premium)" });
@@ -428,7 +442,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const errors: any[] = [];
       await Promise.all(links.map(async (l) => {
         try {
-          if (l.panel !== "standalone") { await deleteClient(l.panel, l.inbound_id, sub.client_uuid, l.protocol); }
+          if (l.panel !== "standalone") { if (l.panel !== "standalone") { await deleteClient(l.panel, l.inbound_id, sub.client_uuid, l.protocol); } }
         } catch (e) { errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) }); }
       }));
       db.query(`DELETE FROM subscriptions WHERE id = ?`, [subId]);
@@ -487,7 +501,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const link = row<any>(`SELECT protocol FROM subscription_inbounds WHERE subscription_id = ? AND panel = ? AND inbound_id = ?`, [subId, panel, inboundId]);
       let panelErr: string | null = null;
       try {
-        if (panel !== "standalone") { await deleteClient(panel, inboundId, sub.client_uuid, link?.protocol ?? "vless"); }
+        if (panel !== "standalone") { if (panel !== "standalone") { await deleteClient(panel, inboundId, sub.client_uuid, link?.protocol ?? "vless"); } }
       } catch (e) { panelErr = e instanceof Error ? e.message : String(e); }
       db.query(`DELETE FROM subscription_inbounds WHERE subscription_id = ? AND panel = ? AND inbound_id = ?`, [subId, panel, inboundId]);
       return json({ ok: true, panelError: panelErr });
