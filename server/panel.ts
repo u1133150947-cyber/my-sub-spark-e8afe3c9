@@ -197,20 +197,6 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           }));
         }
       } catch(e) {}
-      try {
-        const stRows = db.queryEntries("SELECT id, name, host, port FROM standalone_servers ORDER BY created_at ASC");
-        if (stRows.length > 0) {
-          meta.push({ slug: "standalone", name: "Hysteria 2 (Premium)" });
-          result["standalone"] = stRows.map((s: any) => ({
-            id: getStandaloneNumId(s.id),
-            remark: s.name,
-            protocol: "hysteria2",
-            port: s.port,
-            enable: true,
-            clients: []
-          }));
-        }
-      } catch(e) {}
       await Promise.all(all.map(async (p) => {
         try {
           const list = await listInbounds(p.slug);
