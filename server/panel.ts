@@ -487,6 +487,7 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
       const existing = new Set(rows<any>(`SELECT panel, inbound_id FROM subscription_inbounds WHERE subscription_id = ?`, [subId]).map((l) => `${l.panel}:${l.inbound_id}`));
       const created: any[] = [], errors: any[] = [];
       const subIdShort = String(sub.slug).slice(0, 16);
+      const baseEmail = String(sub.client_email ?? "").trim() || subIdShort;
       for (const sel of selections) {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existing.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
