@@ -77,6 +77,15 @@ CREATE TABLE IF NOT EXISTS inbound_overrides (
   UNIQUE(panel, inbound_id)
 );
 
+CREATE TABLE IF NOT EXISTS standalone_servers (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  host TEXT NOT NULL,
+  port INTEGER NOT NULL DEFAULT 443,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS client_mappings (
   id TEXT PRIMARY KEY,
   panel TEXT NOT NULL,
