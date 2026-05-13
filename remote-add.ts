@@ -23,7 +23,7 @@ async function main() {
 
   console.log("Adding subscription:", targetSlug);
   
-  db.query(\`INSERT INTO subscriptions (id, slug, name, client_email, client_uuid, expiry_ms, total_bytes) VALUES (?, ?, ?, ?, ?, ?, ?)\`,
+  db.query("INSERT INTO subscriptions (id, slug, name, client_email, client_uuid, expiry_ms, total_bytes) VALUES (?, ?, ?, ?, ?, ?, ?)",
     [subId, targetSlug, name, email, clientUuid, expiryMs, totalBytes]);
 
   const panels = db.queryEntries("SELECT slug, id FROM panels") as any[];
