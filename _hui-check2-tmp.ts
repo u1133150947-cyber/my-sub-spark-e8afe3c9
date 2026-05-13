@@ -1,0 +1,3 @@
+import {Client} from 'ssh2';
+function ssh(h:string,p:string,c:string){return new Promise<string>(r=>{const x=new Client();let o='';x.on('ready',()=>x.exec(c,(e,s)=>{if(e){r(String(e));return}s.on('close',()=>{x.end();r(o)}).on('data',d=>o+=d.toString()).stderr.on('data',d=>o+=d.toString())})).on('error',e=>r('SSH:'+e.message)).connect({host:h,port:22,username:'root',password:p,readyTimeout:15000})})}
+console.log(await ssh('185.87.148.138','wbWxRu7B@','sqlite3 /usr/local/h-ui/data/h_ui.db "SELECT key,value FROM config WHERE key LIKE \\"HYSTERIA%\\" OR key LIKE \\"H_UI%\\";" 2>&1; echo ---; systemctl status h-ui --no-pager | head -5; echo ---PORT---; ss -lntp | grep -E ":443|:8081"; echo ---H2---; ps aux | grep -E "hysteria" | grep -v grep'))
