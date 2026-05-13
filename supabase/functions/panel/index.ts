@@ -1006,12 +1006,32 @@ Deno.serve(async (req) => {
       const errors: any[] = [];
       const subIdShort = sub.slug.slice(0, 16);
       const panelsSeen = new Set<string>(existingPanels);
+      const baseEmail = String(sub.client_email ?? "").trim() || subIdShort;
       for (const sel of selections) {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existingSet.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
         if (panelsSeen.has(sel.panel)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "panel already has an inbound (one-per-panel policy)" }); continue; }
         panelsSeen.add(sel.panel);
         try {
+          if (sel.panel === "standalone") {
+            const standaloneId = getStandaloneStrId(Number(sel.inboundId));
+            const { data: srv } = await supabase
+              .from("standalone_servers")
+              .select("id, name, host, port")
+              .eq("id", standaloneId)
+              .maybeSingle();
+            if (!srv) throw new Error("Standalone server not found");
+            const streamPlus = { security: "tls", tlsSettings: { serverName: srv.host } };
+            const email = `${baseEmail}_standalone${sel.inboundId}`;
+            const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
+              subscription_id: sub.id, panel: "standalone", inbound_id: Number(sel.inboundId),
+              remark: srv.name, protocol: "hysteria2", port: Number(srv.port ?? 443),
+              host: srv.host, stream_settings: streamPlus, client_email: email,
+            });
+            if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
+            created.push({ panel: "standalone", inboundId: Number(sel.inboundId), remark: srv.name });
+            continue;
+          }
           const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
           const ib = inbounds.find((x) => x.id === sel.inboundId);
