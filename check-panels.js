@@ -1,4 +1,4 @@
-const { Client } = require('ssh2');
+import { Client } from 'ssh2';
 const conn = new Client();
 conn.on('ready', () => {
   conn.exec(`sqlite3 /root/data/app.db "SELECT slug, name, host FROM panels"`, (err, stream) => {
