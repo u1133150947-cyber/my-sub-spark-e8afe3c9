@@ -1,6 +1,10 @@
 import {Client} from 'ssh2';
 function ssh(c:string){return new Promise<string>(r=>{const x=new Client();let o='';x.on('ready',()=>x.exec(c,(e,s)=>{if(e){r(String(e));return}s.on('close',()=>{x.end();r(o)}).on('data',d=>o+=d.toString()).stderr.on('data',d=>o+=d.toString())})).on('error',e=>r('SSH:'+e.message)).connect({host:'185.87.148.138',port:22,username:'root',password:'hf6Ka8viMl'})})}
-console.log(await ssh(`sqlite3 /usr/local/h-ui/data/h_ui.db "SELECT key,substr(value,1,400) FROM config WHERE key IN ('HYSTERIA2_CONFIG','H_UI_CRT_PATH','H_UI_KEY_PATH','H_UI_PORT');"
+console.log(await ssh(`sqlite3 -header -column /usr/local/h-ui/data/h_ui.db "SELECT id,username,con_pass,quota,download,upload,expire_time,kick_util_time,device_no,deleted FROM account;"
+echo ---SCHEMA---
+sqlite3 /usr/local/h-ui/data/h_ui.db ".schema account"
+echo ---HUI-cfg---
+sqlite3 /usr/local/h-ui/data/h_ui.db "SELECT key,substr(value,1,200) FROM config WHERE key IN ('HYSTERIA2_CONFIG','H_UI_CRT_PATH','H_UI_KEY_PATH','H_UI_PORT');"
 echo ---PORT---
 ss -lntp | grep -E ':443|:8081'
 ss -lunp | grep ':443'
