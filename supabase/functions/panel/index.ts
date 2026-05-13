@@ -858,6 +858,25 @@ Deno.serve(async (req) => {
       const errors: any[] = [];
       for (const sel of validSelections) {
         try {
+          if (sel.panel === "standalone") {
+            const standaloneId = getStandaloneStrId(Number(sel.inboundId));
+            const { data: srv } = await supabase
+              .from("standalone_servers")
+              .select("id, name, host, port")
+              .eq("id", standaloneId)
+              .maybeSingle();
+            if (!srv) throw new Error("Standalone server not found");
+            const streamPlus = { security: "tls", tlsSettings: { serverName: srv.host } };
+            const email = `${baseEmail}_standalone${sel.inboundId}`;
+            const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
+              subscription_id: sub.id, panel: "standalone", inbound_id: Number(sel.inboundId),
+              remark: srv.name, protocol: "hysteria2", port: Number(srv.port ?? 443),
+              host: srv.host, stream_settings: streamPlus, client_email: email,
+            });
+            if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
+            created.push({ panel: "standalone", inboundId: Number(sel.inboundId), remark: srv.name });
+            continue;
+          }
           const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
           const ib = inbounds.find((x) => x.id === sel.inboundId);
