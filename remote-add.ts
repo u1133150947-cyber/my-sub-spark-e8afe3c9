@@ -46,17 +46,17 @@ async function main() {
         
         await addClient(panelSlug, ib.id, {
           id: clientUuid,
-          email: \\\`\\\${email}_\\\${panelSlug}\\\${ib.id}\\\`,
+          email: email + "_" + panelSlug + ib.id,
           expiryTime: expiryMs,
           totalGB: totalBytes,
           subId: subIdShort,
           flow
         }, protocol);
 
-        db.query(\`INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\`,
-          [uuidv4(), subId, panelSlug, ib.id, ib.remark, protocol, ib.port, "web.panelsu.ru", ib.streamSettings || "{}", \\\`\\\${email}_\\\${panelSlug}\\\${ib.id}\\\`]);
+        db.query("INSERT INTO subscription_inbounds (id, subscription_id, panel, inbound_id, remark, protocol, port, host, stream_settings, client_email) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          [uuidv4(), subId, panelSlug, ib.id, ib.remark, protocol, ib.port, "web.panelsu.ru", ib.streamSettings || "{}", email + "_" + panelSlug + ib.id]);
 
-        console.log(\`[+] Added to \${panelSlug} inbound \${ib.id}\`);
+        console.log("[+] Added to " + panelSlug + " inbound " + ib.id);
       }
     } catch (e: any) {
       console.error(\`[-] Error on panel \${p.slug}: \${e.message}\`);
