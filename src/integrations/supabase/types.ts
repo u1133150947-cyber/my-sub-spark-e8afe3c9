@@ -295,6 +295,33 @@ export type Database = {
         }
         Relationships: []
       }
+      standalone_servers: {
+        Row: {
+          created_at: string
+          host: string
+          id: string
+          name: string
+          port: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          host: string
+          id?: string
+          name: string
+          port?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          host?: string
+          id?: string
+          name?: string
+          port?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       subscription_external_subs: {
         Row: {
           created_at: string

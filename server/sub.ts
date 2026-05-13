@@ -375,6 +375,26 @@ export async function handleSub(req: Request, url: URL): Promise<Response> {
       ],
     });
   }
+
+  // Add standalone Hysteria 2 servers
+  try {
+    const standalone = db.queryEntries(`SELECT name, host, port FROM standalone_servers ORDER BY created_at ASC`);
+    for (const s of standalone) {
+      const name = String(s.name ?? "Hysteria 2");
+      const host = String(s.host ?? "");
+      const port = Number(s.port ?? 443);
+      if (!host) continue;
+      const link = `hy2://${encodeURIComponent(sub.client_uuid)}@${host}:${port}/?sni=${encodeURIComponent(host)}&alpn=h3&insecure=0#${encodeURIComponent(name)}`;
+      items.push({
+        sort_order: 100, // Put them after primary inbound usually (or before external)
+        created_at: "",
+        lines: [link],
+      });
+    }
+  } catch (e) {
+    console.warn("[sub] Failed to fetch standalone_servers:", e instanceof Error ? e.message : e);
+  }
+
   try {
     const linked = db.queryEntries(
       `SELECT e.raw_links,

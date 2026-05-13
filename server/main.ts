@@ -8,6 +8,7 @@ import { handleUpdate, handleVersion, handleUpdateFromGithub } from "./update.ts
 import { handleAdminAuth } from "./adminAuth.ts";
 import { handleTestAccounts } from "./testAccounts.ts";
 import { handleTestInbounds } from "./testInbounds.ts";
+import { handleHy2Auth } from "./hy2.ts";
 import { handleInstall, handleAttachDomain, handleDetectPanel } from "./install.ts";
 import { contentType } from "https://deno.land/std@0.224.0/media_types/mod.ts";
 import { extname, join, normalize } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -108,6 +109,7 @@ Deno.serve({ port: PORT }, async (req) => {
     const strict = url.pathname.startsWith("/rest/v1/") ||
                    url.pathname.startsWith("/functions/v1/admin-auth") ||
                    url.pathname.startsWith("/functions/v1/panel") ||
+                   url.pathname.startsWith("/api/hy2/auth") ||
                    url.pathname.startsWith("/api/update") ||
                    url.pathname.startsWith("/api/test-accounts") ||
                    url.pathname.startsWith("/api/test-inbounds");
@@ -156,6 +158,9 @@ Deno.serve({ port: PORT }, async (req) => {
   }
   if (url.pathname === "/api/test-inbounds" || url.pathname === "/api/test-inbounds/") {
     return withStrictCors(req, await handleTestInbounds(req));
+  }
+  if (url.pathname === "/api/hy2/auth" || url.pathname === "/api/hy2/auth/") {
+    return withCors(await handleHy2Auth(req));
   }
   // Stub auth endpoints so supabase-js doesn't error if it tries to refresh tokens.
   if (url.pathname.startsWith("/auth/v1/")) {
