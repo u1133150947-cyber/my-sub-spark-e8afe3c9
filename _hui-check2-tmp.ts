@@ -9,5 +9,9 @@ ps aux | grep -E 'hysteria|h-ui' | grep -v grep
 echo ---AUTH---
 curl -sS -o /dev/null -w 'panel_http=%{http_code}\n' http://127.0.0.1:8081/
 curl -sS -o /dev/null -w 'panel_https=%{http_code}\n' -k https://127.0.0.1:8081/
-curl -sS -X POST http://127.0.0.1:8081/hui/hysteria2/auth -H 'Content-Type: application/json' -d '{"auth":"80c4aa5b-607f-4143-9dd1-aa8b12ec4195","addr":"1.2.3.4:1234","tx":0}' -w '\nHTTP=%{http_code}\n'
+curl -sS -X POST http://127.0.0.1:8081/hui/hysteria2/auth -H 'Content-Type: application/json' -A 'Hysteria/2.6.0' -d '{"auth":"80c4aa5b-607f-4143-9dd1-aa8b12ec4195","addr":"1.2.3.4:1234","tx":0}' -w '\nHTTP1=%{http_code}\n'
+echo --VVV--
+curl -sSv -X POST http://127.0.0.1:8081/hui/hysteria2/auth -A 'Hysteria/2.6.0' -H 'Content-Type: application/json' -d '{"auth":"80c4aa5b-607f-4143-9dd1-aa8b12ec4195","addr":"1.2.3.4:1234","tx":0}' 2>&1 | head -40
+echo --LOG--
+tail -30 /usr/local/h-ui/logs/*.log 2>/dev/null || journalctl -u h-ui -n 30 --no-pager
 `))
