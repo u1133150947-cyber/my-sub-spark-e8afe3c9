@@ -1,5 +1,5 @@
 import { Client } from "ssh2";
-import { createClient } from "npm:@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 
 async function main() {
   const supabase = createClient(
