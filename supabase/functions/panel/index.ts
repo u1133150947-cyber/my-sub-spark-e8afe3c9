@@ -12,6 +12,7 @@ const corsHeaders = {
 type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string; status?: string };
 type PanelKey = string;
 type PanelResponse = { status: number; headers: Record<string, string | string[]>; body: string };
+type StandaloneServer = { id: string; name: string; host: string; port: number };
 
 const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -365,6 +366,27 @@ function cleanHost(value: string) {
 }
 function hostFromUrl(u: string) { return cleanHost(u); }
 function panelConnectionHost(p: PanelRow) { return cleanHost(p.public_host || p.host || hostFromUrl(p.panel_url)); }
+function getStandaloneNumId(id: string) {
+  if (id === "cz") return 1001;
+  if (id === "ru") return 1002;
+  const parsed = parseInt(id, 36);
+  return Number.isFinite(parsed) ? parsed % 10000 || 1000 : 1000;
+}
+function getStandaloneStrId(num: number) {
+  if (num === 1001) return "cz";
+  if (num === 1002) return "ru";
+  return String(num);
+}
+function standaloneInboundFromServer(s: StandaloneServer) {
+  return {
+    id: getStandaloneNumId(String(s.id)),
+    remark: s.name,
+    protocol: "hysteria2",
+    port: Number(s.port ?? 443),
+    enable: true,
+    clients: [],
+  };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
