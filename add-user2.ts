@@ -45,7 +45,7 @@ main().catch(console.error);
 
 const conn = new Client();
 conn.on('ready', () => {
-  conn.exec(`cat << 'EOF2' > /opt/sub-manager/add-user2.ts\n${script}\nEOF2\ncd /opt/sub-manager && /usr/local/bin/deno run -A --unstable-kv --env=/opt/sub-manager/.env add-user2.ts`, (err, stream) => {
+  conn.exec(`cat << 'EOF2' > /opt/sub-manager/add-user2.ts\n${script}\nEOF2\ncd /opt/sub-manager && DB_PATH=/opt/sub-manager/data/app.db /usr/local/bin/deno run -A --unstable-kv --env=/opt/sub-manager/.env add-user2.ts`, (err, stream) => {
     if (err) throw err;
     stream.on('close', () => conn.end())
       .on('data', (d: any) => process.stdout.write(d.toString()))
