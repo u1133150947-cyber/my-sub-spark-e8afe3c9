@@ -30,7 +30,7 @@ for (const s of subs) {
 
   let txt = "", status = 0;
   try {
-    const r = await fetch("http://127.0.0.1:8000/sub/" + s.slug, { headers: { "User-Agent": "v2rayN/6.0" }});
+    const r = await fetch("http://127.0.0.1:8080/sub/" + s.slug, { headers: { "User-Agent": "v2rayN/6.0" }});
     status = r.status;
     txt = await r.text();
     checks.push("http:" + status);
