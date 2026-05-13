@@ -251,12 +251,31 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           }
         } catch (e) { errors[p.slug] = e instanceof Error ? e.message : String(e); }
       }));
+
+      try {
+        const stRows = rows<any>("SELECT id, name, host FROM standalone_servers");
+        await Promise.all(stRows.map(async (s) => {
+          try {
+            const target = s.host === "realityru.panelsu.ru" ? "127.0.0.1" : s.host;
+            const res = await fetch(`http://${target}:8081/online`, { headers: { "Authorization": "H2Stats_xYFx!" }});
+            if (!res.ok) throw new Error(`H2 online HTTP ${res.status}`);
+            const j = await res.json();
+            for (const [clientId, count] of Object.entries(j)) {
+              if (Number(count) > 0) {
+                const sub = rows<any>(`SELECT id, name, client_email FROM subscriptions WHERE client_uuid = ? OR id = ?`, [clientId, clientId])[0];
+                result.push({ panel: "standalone", email: sub ? sub.client_email : `[H2] ${clientId.slice(0,8)}`, subscription_id: sub?.id ?? null, sub_name: sub?.name ?? null, remark: s.name });
+              }
+            }
+          } catch (e) { errors["standalone_" + s.id] = e instanceof Error ? e.message : String(e); }
+        }));
+      } catch(e) {}
+
       return json({ onlines: result, errors });
     }
 
     if (action === "stats") {
       const all = getAllPanels();
-      const subs = rows<any>(`SELECT id, name, client_email, created_at FROM subscriptions`);
+      const subs = rows<any>(`SELECT id, name, client_uuid, client_email, created_at FROM subscriptions`);
       const links = rows<any>(`SELECT subscription_id, client_email FROM subscription_inbounds`);
       const usage = new Map<string, { up: number; down: number; total: number }>();
       const panelErrors: Record<string, string> = {};
@@ -274,6 +293,28 @@ export async function handlePanel(req: Request, url: URL): Promise<Response> {
           }
         } catch (e) { panelErrors[p.slug] = e instanceof Error ? e.message : String(e); }
       }));
+
+      try {
+        const stRows = rows<any>("SELECT id, name, host FROM standalone_servers");
+        await Promise.all(stRows.map(async (s) => {
+          try {
+            const target = s.host === "realityru.panelsu.ru" ? "127.0.0.1" : s.host;
+            const res = await fetch(`http://${target}:8081/traffic`, { headers: { "Authorization": "H2Stats_xYFx!" }});
+            if (!res.ok) throw new Error(`H2 traffic HTTP ${res.status}`);
+            const j = await res.json();
+            for (const [clientId, tr] of Object.entries(j)) {
+              const sub = subs.find(x => x.client_uuid === clientId || x.id === clientId);
+              if (!sub) continue;
+              const cur = usage.get(sub.id) ?? { up: 0, down: 0, total: 0 };
+              const up = Number((tr as any).tx ?? 0);
+              const down = Number((tr as any).rx ?? 0);
+              cur.up += up; cur.down += down; cur.total += up + down;
+              usage.set(sub.id, cur);
+            }
+          } catch (e) { panelErrors["standalone_" + s.id] = e instanceof Error ? e.message : String(e); }
+        }));
+      } catch(e) {}
+
       for (const [sid, v] of usage.entries()) {
         db.query(`INSERT INTO traffic_snapshots (id, subscription_id, used_bytes) VALUES (?, ?, ?)`, [uid(), sid, v.total]);
       }
