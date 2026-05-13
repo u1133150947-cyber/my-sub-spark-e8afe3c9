@@ -24,9 +24,11 @@ conn.on('ready', () => {
     'sleep 2',
     'echo "=== PORTS ==="',
     'ss -lunpt | grep 443 || echo "No UDP 443"',
+    'systemctl stop caddy',
     'echo "=== ISSUING CERTIFICATE ==="',
     'curl -fsSL https://get.acme.sh | sh || true',
-    '/root/.acme.sh/acme.sh --issue -d realityru.panelsu.ru --standalone -k ec-256 --force || true'
+    '/root/.acme.sh/acme.sh --issue -d realityru.panelsu.ru --standalone -k ec-256 --force || true',
+    'systemctl start caddy'
   ];
   conn.exec(commands.join('\n'), (err, stream) => {
     stream.on('close', () => conn.end())
