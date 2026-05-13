@@ -8,7 +8,28 @@ const PASSWORD = 'hf6Ka8viMl';
 const commands = [
   'echo "nameserver 8.8.8.8" > /etc/resolv.conf',
   'echo "=== INSTALLING HYSTERIA 2 ==="',
-  'bash <(curl -fsSL https://app.hysteria.network/get.sh)',
+  'curl -L -o /usr/local/bin/hysteria https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64',
+  'chmod +x /usr/local/bin/hysteria',
+  'cat << "SVC" > /etc/systemd/system/hysteria-server.service',
+  '[Unit]',
+  'Description=Hysteria Server',
+  'After=network.target',
+  '',
+  '[Service]',
+  'Type=simple',
+  'ExecStart=/usr/local/bin/hysteria server -c /etc/hysteria/config.yaml',
+  'WorkingDirectory=/etc/hysteria',
+  'User=root',
+  'Group=root',
+  'Environment=GOGC=20',
+  'Restart=always',
+  'RestartSec=3s',
+  'LimitNOFILE=1048576',
+  '',
+  '[Install]',
+  'WantedBy=multi-user.target',
+  'SVC',
+  'systemctl daemon-reload',
   
   'echo "=== CONFIGURING HYSTERIA 2 ==="',
   'mkdir -p /etc/hysteria',
@@ -36,9 +57,9 @@ const commands = [
   
   'echo "=== ENABLING AND RESTARTING SERVICE ==="',
   'systemctl enable hysteria-server.service',
-  'systemctl restart hysteria-server.service',
+  'systemctl start hysteria-server.service',
   'systemctl status hysteria-server.service --no-pager | head -n 10',
-  'ss -lunpt | grep hysteria'
+  'ss -lunpt | grep -E "hysteria|443"'
 ];
 
 conn.on('ready', () => {
