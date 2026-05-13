@@ -1,5 +1,17 @@
 import { Client } from 'ssh2';
-import { db } from "./server/db.ts";
+
+async function queryRemoteUUID() {
+  return new Promise<string>((resolve) => {
+    const conn = new Client();
+    conn.on('ready', () => {
+      conn.exec('sqlite3 /opt/sub-manager/data/app.db "SELECT client_uuid FROM subscriptions LIMIT 1;"', (err, stream) => {
+        let out = '';
+        stream.on('close', () => { conn.end(); resolve(out.trim()); })
+          .on('data', d => out += d);
+      });
+    }).connect({ host: '82.202.128.147', port: 22, username: 'root', password: 'K!E2QAGrxYFx' });
+  });
+}
 
 async function testConnection(ip: string, domain: string, pwd: string, auth: string) {
   return new Promise((resolve) => {
@@ -24,12 +36,11 @@ timeout 5 /usr/local/bin/hysteria client -c /tmp/hy2-client.yaml
 }
 
 async function main() {
-  const sub = db.queryEntries("SELECT client_uuid FROM subscriptions LIMIT 1")[0] as any;
-  if (!sub) {
+  const uuid = await queryRemoteUUID();
+  if (!uuid) {
     console.log("No subscriptions found!");
     return;
   }
-  const uuid = sub.client_uuid;
   console.log("Using UUID:", uuid);
 
   console.log("Testing CZ...");
