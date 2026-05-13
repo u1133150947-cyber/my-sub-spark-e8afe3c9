@@ -12,6 +12,7 @@ const corsHeaders = {
 type PanelRow = { id: string; slug: string; name: string; host?: string; public_host?: string; panel_url: string; username: string; password: string; status?: string };
 type PanelKey = string;
 type PanelResponse = { status: number; headers: Record<string, string | string[]>; body: string };
+type StandaloneServer = { id: string; name: string; host: string; port: number };
 
 const supabaseAdmin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -365,6 +366,27 @@ function cleanHost(value: string) {
 }
 function hostFromUrl(u: string) { return cleanHost(u); }
 function panelConnectionHost(p: PanelRow) { return cleanHost(p.public_host || p.host || hostFromUrl(p.panel_url)); }
+function getStandaloneNumId(id: string) {
+  if (id === "cz") return 1001;
+  if (id === "ru") return 1002;
+  const parsed = parseInt(id, 36);
+  return Number.isFinite(parsed) ? parsed % 10000 || 1000 : 1000;
+}
+function getStandaloneStrId(num: number) {
+  if (num === 1001) return "cz";
+  if (num === 1002) return "ru";
+  return String(num);
+}
+function standaloneInboundFromServer(s: StandaloneServer) {
+  return {
+    id: getStandaloneNumId(String(s.id)),
+    remark: s.name,
+    protocol: "hysteria2",
+    port: Number(s.port ?? 443),
+    enable: true,
+    clients: [],
+  };
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
@@ -463,6 +485,14 @@ Deno.serve(async (req) => {
       const all = await getAllPanels();
       const result: Record<string, any> = {};
       const meta = all.map((p) => ({ slug: p.slug, name: p.name }));
+      const { data: standaloneRows } = await supabase
+        .from("standalone_servers")
+        .select("id, name, host, port")
+        .order("created_at", { ascending: true });
+      if ((standaloneRows ?? []).length) {
+        meta.push({ slug: "standalone", name: "Hysteria 2 (Standalone)" });
+        result.standalone = ((standaloneRows ?? []) as StandaloneServer[]).map(standaloneInboundFromServer);
+      }
       await Promise.all(all.map(async (p) => {
         // Skip panels known to be unreachable to avoid blocking the UI for 30+ s
         if (p.status && p.status !== "ok" && p.status !== "unknown") {
@@ -828,6 +858,25 @@ Deno.serve(async (req) => {
       const errors: any[] = [];
       for (const sel of validSelections) {
         try {
+          if (sel.panel === "standalone") {
+            const standaloneId = getStandaloneStrId(Number(sel.inboundId));
+            const { data: srv } = await supabase
+              .from("standalone_servers")
+              .select("id, name, host, port")
+              .eq("id", standaloneId)
+              .maybeSingle();
+            if (!srv) throw new Error("Standalone server not found");
+            const streamPlus = { security: "tls", tlsSettings: { serverName: srv.host } };
+            const email = `${baseEmail}_standalone${sel.inboundId}`;
+            const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
+              subscription_id: sub.id, panel: "standalone", inbound_id: Number(sel.inboundId),
+              remark: srv.name, protocol: "hysteria2", port: Number(srv.port ?? 443),
+              host: srv.host, stream_settings: streamPlus, client_email: email,
+            });
+            if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
+            created.push({ panel: "standalone", inboundId: Number(sel.inboundId), remark: srv.name });
+            continue;
+          }
           const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
           const ib = inbounds.find((x) => x.id === sel.inboundId);
@@ -957,12 +1006,32 @@ Deno.serve(async (req) => {
       const errors: any[] = [];
       const subIdShort = sub.slug.slice(0, 16);
       const panelsSeen = new Set<string>(existingPanels);
+      const baseEmail = String(sub.client_email ?? "").trim() || subIdShort;
       for (const sel of selections) {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existingSet.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
         if (panelsSeen.has(sel.panel)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "panel already has an inbound (one-per-panel policy)" }); continue; }
         panelsSeen.add(sel.panel);
         try {
+          if (sel.panel === "standalone") {
+            const standaloneId = getStandaloneStrId(Number(sel.inboundId));
+            const { data: srv } = await supabase
+              .from("standalone_servers")
+              .select("id, name, host, port")
+              .eq("id", standaloneId)
+              .maybeSingle();
+            if (!srv) throw new Error("Standalone server not found");
+            const streamPlus = { security: "tls", tlsSettings: { serverName: srv.host } };
+            const email = `${baseEmail}_standalone${sel.inboundId}`;
+            const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
+              subscription_id: sub.id, panel: "standalone", inbound_id: Number(sel.inboundId),
+              remark: srv.name, protocol: "hysteria2", port: Number(srv.port ?? 443),
+              host: srv.host, stream_settings: streamPlus, client_email: email,
+            });
+            if (ibErr) throw new Error(`db insert inbound: ${ibErr.message}`);
+            created.push({ panel: "standalone", inboundId: Number(sel.inboundId), remark: srv.name });
+            continue;
+          }
           const panelRow = await getPanelBySlug(sel.panel);
           const inbounds = await listInbounds(sel.panel);
           const ib = inbounds.find((x) => x.id === sel.inboundId);
@@ -1008,9 +1077,11 @@ Deno.serve(async (req) => {
 
       let panelErr: string | null = null;
       try {
-        const res = await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${sub.client_uuid}`, { method: "POST" });
-        let j: any = {}; try { j = JSON.parse(res.body); } catch {}
-        if (!j.success) panelErr = j.msg ?? "panel error";
+        if (panel !== "standalone") {
+          const res = await panelFetch(panel, `/panel/api/inbounds/${inboundId}/delClient/${sub.client_uuid}`, { method: "POST" });
+          let j: any = {}; try { j = JSON.parse(res.body); } catch {}
+          if (!j.success) panelErr = j.msg ?? "panel error";
+        }
       } catch (e) {
         panelErr = e instanceof Error ? e.message : String(e);
       }
