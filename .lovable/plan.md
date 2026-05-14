@@ -1,42 +1,87 @@
-## План
+## План: каскад RU → CZ (3x-ui Reality)
 
-### Шаг 1. Сменить креды панели CZ на сложные
-Через SSH на 185.87.148.138 (с ретраями, т.к. канал нестабилен) выполнить:
-- `x-ui setting -username 'cz_admin_x9K' -password 'Tz7$mQv2Lp8Wn4Rg!Hd' -port 2053 -webBasePath 'czpanel_a7f3k9'`
-- `systemctl restart x-ui`
-- Проверить `https://185.87.148.138:2053/czpanel_a7f3k9/` (HTTP 200) и логин через API.
-- Обновить секреты Lovable Cloud: `PANEL_CZ_URL`, `PANEL_CZ_USERNAME`, `PANEL_CZ_PASSWORD`, плюс запись в таблице `panels` (slug `pd4e485d3c9`).
+Идея гайда: клиент подключается к RU-серверу, RU-сервер через outbound шлёт весь трафик на CZ-сервер. Для пользователя это выглядит как «российский IP в подписке», но реально выходим в интернет с CZ.
 
-### Шаг 2. Создать Reality-инбаунд в новой панели
-Через 3x-ui API (`/panel/api/inbounds/add`) создать VLESS Reality инбаунд:
-- порт `2080` (как в текущем `display_remark` "🇨🇿 Европа | Стандартный")
-- protocol: `vless`, flow: `xtls-rprx-vision`
-- security: `reality`, dest: `www.google.com:443`, sni `www.google.com`, сгенерить новый x25519 keypair и shortIds
-- remark в панели: `cz-europe-2080`
-- одного «болванчика» клиента создать сразу для проверки работоспособности
+### Шаг 1. CZ-панель: новый Reality-инбаунд под каскад
 
-### Шаг 3. Перезалить клиентов и пересобрать `subscription_inbounds`
-Для каждой из 10 подписок:
-1. Достать `client_email`, `client_uuid` из таблицы `subscriptions`.
-2. Через API `/panel/api/inbounds/addClient` добавить клиента в новый CZ инбаунд (тот же UUID, email, без лимита трафика/срока — как в старой схеме).
-3. Обновить запись в `subscription_inbounds` для `panel='pd4e485d3c9'`:
-   - новый `inbound_id` (id, который вернёт API при создании инбаунда)
-   - новый `port`, `host`, `stream_settings` (Reality public key, shortId, sni)
-4. `inbound_overrides` для (`pd4e485d3c9`, новый id) уже хранит `🇨🇿 Европа | Стандартный` — обновить ссылку на новый `inbound_id`.
+`https://185.87.148.138:2053/czpanel_a7f3k9/`
 
-### Шаг 4. Верификация
-- Прогнать одну подписку через edge-функцию агрегатора и убедиться, что в выдаче 2 ноды (CZ + RU) и оба ключа парсятся.
-- Проверить, что vless://… от CZ имеет валидный pbk/sid и подключается (тест на «болванчике»).
+Через 3x-ui API создать VLESS Reality inbound:
+- port `8443`
+- protocol `vless`, flow `xtls-rprx-vision`
+- security `reality`, dest `ya.ru:443`, serverNames `["ya.ru"]`
+- сгенерить отдельный x25519 keypair и shortId через `/server/getNewX25519Cert`
+- один клиент `cascade-ru` с фиксированным UUID (этот UUID будет вшит в RU outbound)
+- remark в панели: `cz-cascade-8443`
+- sniffing: enabled (http, tls, quic)
 
-### Шаг 5. Доступы пользователю
-В чат прислать:
-- URL панели + логин/пароль
-- Где смотреть Reality-параметры (panel → inbound)
-- Напоминание обновить подписку в клиенте (Hiddify / v2rayNG / Streisand) — UUID не меняется, но host/pbk/sid новые.
+Сохранить `pbk`, `sid`, `uuid`, `sni=ya.ru` — это пойдёт в RU outbound.
 
-### Технические детали
-- SSH к CZ: root@185.87.148.138, пароль уже сохранён в скриптах; делаем 15 ретраев по 90 c из-за нестабильности.
-- API панели: cookie-сессия, логин `POST /czpanel_a7f3k9/login`, далее `POST /czpanel_a7f3k9/panel/api/inbounds/...`.
-- Все DML по `subscription_inbounds`, `inbound_overrides`, `panels` пройдут через `supabase--insert` (UPDATE).
-- Секреты — через `secrets--update_secret` для `PANEL_CZ_PASSWORD` (и при необходимости `PANEL_CZ_URL`, `PANEL_CZ_USERNAME`).
-- Никаких изменений во фронте/edge-функциях не требуется — структура `stream_settings` в `subscription_inbounds` остаётся той же.
+### Шаг 2. RU-панель: симметричный inbound :8443
+
+`https://ru.panelsu.ru/` (логин из секретов `PANEL_RU_*`)
+
+Создать такой же VLESS Reality inbound:
+- port `8443`
+- protocol `vless`, flow `xtls-rprx-vision`
+- security `reality`, dest `ya.ru:443`, serverNames `["ya.ru"]`
+- свой keypair / shortId (НЕ совпадают с CZ — это inbound-сторона для клиента)
+- один тестовый клиент с UUID для самой подписки
+- remark `ru-cascade-in-8443`
+- tag inbound — запомнить (3x-ui автоматически даёт `inbound-8443`)
+
+### Шаг 3. RU-панель: outbound на CZ
+
+3x-ui v2.6.7 хранит outbound'ы в Xray-конфиге. Способ:
+1. Через API `/panel/xray/` достать текущий xray template (json).
+2. В массив `outbounds` добавить блок:
+   ```json
+   {
+     "tag":"cascade-cz",
+     "protocol":"vless",
+     "settings":{"vnext":[{
+       "address":"185.87.148.138","port":8443,
+       "users":[{"id":"<UUID из CZ:8443 клиента cascade-ru>",
+                 "encryption":"none","flow":"xtls-rprx-vision"}]
+     }]},
+     "streamSettings":{
+       "network":"tcp","security":"reality",
+       "realitySettings":{
+         "serverName":"ya.ru","fingerprint":"chrome",
+         "publicKey":"<pbk из CZ>","shortId":"<sid из CZ>",
+         "spiderX":"/"
+       }
+     }
+   }
+   ```
+3. Поставить `cascade-cz` ПЕРВЫМ в массиве outbounds.
+4. Сохранить через `/panel/xray/update`.
+
+### Шаг 4. RU-панель: routing rule inbound-8443 → cascade-cz
+
+В тот же xray-конфиге, в `routing.rules`, добавить:
+```json
+{ "type":"field", "inboundTag":["inbound-8443"], "outboundTag":"cascade-cz" }
+```
+И поставить ПЕРЕД дефолтными правилами. Сохранить, рестартнуть xray (3x-ui делает это автоматом при update).
+
+### Шаг 5. Verify
+
+1. SSH на RU: `xray -test -c /usr/local/x-ui/bin/config.json` чтобы убедиться, что конфиг валидный.
+2. Сгенерировать клиентский vless:// для RU:8443 (UUID клиентского inbound, pbk/sid из RU inbound).
+3. Локально парсить ссылку. Полная проверка коннекта через Hiddify будет на стороне пользователя.
+4. Через RU-сервер прогнать `curl ifconfig.me` после поднятия Xray — проверить, что выходной IP = CZ (185.87.148.138).
+
+### Шаг 6. Где может сломаться
+
+- 3x-ui template в RU может уже содержать кастомные outbound'ы — не затереть, только добавить.
+- `mldsa65 Verify` из гайда — это пост-квант ключ Reality, появился в Xray 25.x. В 3x-ui v2.6.7 + соответствующем Xray поля может не быть — оставляю пустым, обычный x25519 работает.
+- Если RU за NAT/фаерволом — открыть :8443.
+- Если на RU-панели уже висит inbound на :8443 — выбрать другой порт (например, 8843) и так же зеркально на CZ.
+
+### Что НЕ трогаем
+
+- БД (`subscriptions`/`subscription_inbounds` пустые — пересинхронизировать нечего).
+- Старый CZ inbound id=1 на :2080 (его оставляем как «прямой» вариант для прямого VLESS-CZ).
+
+После одобрения переключаюсь в build, делаю всё через 3x-ui API без ручного SSH к Xray-конфигам где возможно.
