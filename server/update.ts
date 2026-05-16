@@ -15,6 +15,16 @@ const APP_DIR = Deno.env.get("APP_DIR") ?? "/opt/sub-manager";
 const UPDATE_TOKEN = Deno.env.get("UPDATE_TOKEN") ?? ""; // optional extra check
 const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "u1133150947-cyber/my-sub-spark-df6a54d2";
 const GITHUB_BRANCH = Deno.env.get("GITHUB_BRANCH") ?? "main";
+const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? ""; // нужен для приватных репозиториев
+
+function ghHeaders(extra: Record<string, string> = {}): HeadersInit {
+  const h: Record<string, string> = {
+    "User-Agent": "sub-manager",
+    ...extra,
+  };
+  if (GITHUB_TOKEN) h["Authorization"] = `Bearer ${GITHUB_TOKEN}`;
+  return h;
+}
 
 
 async function backupData(push: (s: string) => void): Promise<void> {
@@ -87,10 +97,15 @@ async function fetchLatestCommit(): Promise<
   const url = `https://api.github.com/repos/${GITHUB_REPO}/commits/${GITHUB_BRANCH}`;
   try {
     const r = await fetch(url, {
-      headers: { "Accept": "application/vnd.github+json", "User-Agent": "sub-manager" },
+      headers: ghHeaders({ "Accept": "application/vnd.github+json" }),
     });
     const text = await r.text();
-    if (!r.ok) return { ok: false, error: `GitHub ${r.status}: ${text.slice(0, 200)}` };
+    if (!r.ok) {
+      const hint = r.status === 404 && !GITHUB_TOKEN
+        ? " — репозиторий приватный? Задай GITHUB_TOKEN в /etc/sub-manager.env (Personal Access Token с правом repo:read) и перезапусти sub-manager."
+        : "";
+      return { ok: false, error: `GitHub ${r.status}: ${text.slice(0, 200)}${hint}` };
+    }
     const j = JSON.parse(text);
     return { ok: true, sha: String(j.sha ?? ""), date: String(j.commit?.author?.date ?? ""), message: String(j.commit?.message ?? "") };
   } catch (e) {
@@ -133,9 +148,13 @@ export async function handleUpdateFromGithub(req: Request, url: URL): Promise<Re
 
     const tmpRoot = await Deno.makeTempDir({ prefix: "sub-mgr-gh-" });
     const archivePath = join(tmpRoot, "src.tar.gz");
-    const tarUrl = `https://codeload.github.com/${GITHUB_REPO}/tar.gz/${remote.sha}`;
+    // Для приватных репо codeload.github.com отдаёт 404 даже с токеном —
+    // используем REST endpoint tarball, который понимает Authorization.
+    const tarUrl = GITHUB_TOKEN
+      ? `https://api.github.com/repos/${GITHUB_REPO}/tarball/${remote.sha}`
+      : `https://codeload.github.com/${GITHUB_REPO}/tar.gz/${remote.sha}`;
     push(`downloading: ${tarUrl}`);
-    const dl = await fetch(tarUrl);
+    const dl = await fetch(tarUrl, { headers: ghHeaders({ "Accept": "application/vnd.github+json" }), redirect: "follow" });
     if (!dl.ok || !dl.body) throw new Error(`скачивание не удалось: HTTP ${dl.status}`);
     await Deno.writeFile(archivePath, new Uint8Array(await dl.arrayBuffer()));
 
