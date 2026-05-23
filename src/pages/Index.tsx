@@ -914,6 +914,28 @@ const Index = () => {
             <Zap className="size-4 text-primary-foreground" />
           </div>
           <span className="font-semibold">3X-UI Sub Manager</span>
+          <div className="ml-auto">
+            <Sheet>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-2">
+                  <span className="relative flex size-2">
+                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+                    <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                  </span>
+                  <Wifi className="size-4" />
+                  <span className="hidden sm:inline">Онлайн</span>
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+                <SheetHeader>
+                  <SheetTitle>Клиенты онлайн</SheetTitle>
+                </SheetHeader>
+                <div className="mt-4">
+                  <OnlineClients />
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
       </header>
 
@@ -923,9 +945,8 @@ const Index = () => {
           if (v === "create") { loadInbounds(); loadEmailMap(); }
           if (v === "logs") loadServerLogs();
         }}>
-          <TabsList className="grid w-full max-w-5xl grid-cols-7">
+          <TabsList className="grid w-full max-w-5xl grid-cols-6">
             <TabsTrigger value="stats">📊 Статистика</TabsTrigger>
-            <TabsTrigger value="online">🟢 Онлайн</TabsTrigger>
             <TabsTrigger value="create">➕ Новый</TabsTrigger>
             <TabsTrigger value="subs">🔑 Подписки</TabsTrigger>
             <TabsTrigger value="servers">🖥️ Панели</TabsTrigger>
@@ -940,10 +961,6 @@ const Index = () => {
 
           <TabsContent value="stats" className="mt-0">
             <StatsDashboard />
-          </TabsContent>
-
-          <TabsContent value="online" className="mt-0">
-            <OnlineClients />
           </TabsContent>
 
           <TabsContent value="create" className="mt-0">
