@@ -3,6 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Content Security Policy: блокирует XSS, ограничивает источники скриптов/стилей/изображений/подключений -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.gpteng.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.lovable.app https://api.telegram.org; frame-ancestors 'self' https://*.lovable.app https://*.lovable.dev; base-uri 'self'; form-action 'self'; object-src 'none'" />
     <!-- TODO: Set the document title to the name of your application -->
     <title>Sub Generator — подписки для Happ</title>
     <meta name="description" content="Генерируйте уникальные ссылки-обёртки над вашей VPN-подпиской и добавляйте в Happ одним тапом.">
