@@ -101,10 +101,14 @@ async function applyUpdate(srcDir: string, sha?: string) {
     sourceHasDist = false;
   }
 
-  const sync = await run([
+  const rsyncArgs = [
     "rsync", "-a", "--delete",
     "--exclude", "data", "--exclude", "node_modules",
     "--exclude", ".git", "--exclude", ".env",
+  ];
+  if (!sourceHasDist) rsyncArgs.push("--exclude", "dist");
+  const sync = await run([
+    ...rsyncArgs,
     `${srcDir.replace(/\/?$/, "/")}`,
     `${APP_DIR.replace(/\/?$/, "/")}`,
   ]);
