@@ -1,87 +1,60 @@
-## План: каскад RU → CZ (3x-ui Reality)
+## Что не так
 
-Идея гайда: клиент подключается к RU-серверу, RU-сервер через outbound шлёт весь трафик на CZ-сервер. Для пользователя это выглядит как «российский IP в подписке», но реально выходим в интернет с CZ.
+1. **Обновление из GitHub не работает** — в `server/update.ts` зашит дефолт `GITHUB_REPO = u1133150947-cyber/my-sub-spark-df6a54d2`, а реальный публичный репозиторий — `u1133150947-cyber/my-sub-spark-9db9c9f2`. На сервере переменная окружения `GITHUB_REPO` не выставлена, поэтому `/api/version` стучится в несуществующий репо и кнопка «Обновить» либо не появляется, либо падает с 404.
 
-### Шаг 1. CZ-панель: новый Reality-инбаунд под каскад
+2. **Кнопки «Создать 10 тестовых аккаунтов» / «Создать 25 inbounds»** в самой Lovable-кодовой базе уже не отрисовываются (в `src/` их нет), но в проекте остались серверные хендлеры `server/testAccounts.ts`, `server/testInbounds.ts` и роуты в `server/main.ts` (`/api/test-accounts`, `/api/test-inbounds`). На сервере крутится старый собранный фронт, где кнопки ещё есть — после рассинхрона свежим кодом из GitHub они исчезнут вместе со старым `dist/`.
 
-`https://185.87.148.138:2053/czpanel_a7f3k9/`
+## План
 
-Через 3x-ui API создать VLESS Reality inbound:
-- port `8443`
-- protocol `vless`, flow `xtls-rprx-vision`
-- security `reality`, dest `ya.ru:443`, serverNames `["ya.ru"]`
-- сгенерить отдельный x25519 keypair и shortId через `/server/getNewX25519Cert`
-- один клиент `cascade-ru` с фиксированным UUID (этот UUID будет вшит в RU outbound)
-- remark в панели: `cz-cascade-8443`
-- sniffing: enabled (http, tls, quic)
+### 1. Правка кода в Lovable (auto-push в GitHub)
 
-Сохранить `pbk`, `sid`, `uuid`, `sni=ya.ru` — это пойдёт в RU outbound.
+- `server/update.ts`: заменить дефолт `GITHUB_REPO` на `u1133150947-cyber/my-sub-spark-9db9c9f2`.
+- `server/main.ts`: убрать импорты `handleTestAccounts`, `handleTestInbounds` и оба роута (`/api/test-accounts`, `/api/test-inbounds`), включая упоминания в allowlist.
+- Удалить файлы `server/testAccounts.ts` и `server/testInbounds.ts`.
+- Поднять `src/version.ts` → `APP_VERSION = "v95"`, дату — на сегодня.
 
-### Шаг 2. RU-панель: симметричный inbound :8443
+### 2. Накат на сервер `web.panelsu.ru` (по SSH, как в прошлый раз)
 
-`https://ru.panelsu.ru/` (логин из секретов `PANEL_RU_*`)
-
-Создать такой же VLESS Reality inbound:
-- port `8443`
-- protocol `vless`, flow `xtls-rprx-vision`
-- security `reality`, dest `ya.ru:443`, serverNames `["ya.ru"]`
-- свой keypair / shortId (НЕ совпадают с CZ — это inbound-сторона для клиента)
-- один тестовый клиент с UUID для самой подписки
-- remark `ru-cascade-in-8443`
-- tag inbound — запомнить (3x-ui автоматически даёт `inbound-8443`)
-
-### Шаг 3. RU-панель: outbound на CZ
-
-3x-ui v2.6.7 хранит outbound'ы в Xray-конфиге. Способ:
-1. Через API `/panel/xray/` достать текущий xray template (json).
-2. В массив `outbounds` добавить блок:
-   ```json
-   {
-     "tag":"cascade-cz",
-     "protocol":"vless",
-     "settings":{"vnext":[{
-       "address":"185.87.148.138","port":8443,
-       "users":[{"id":"<UUID из CZ:8443 клиента cascade-ru>",
-                 "encryption":"none","flow":"xtls-rprx-vision"}]
-     }]},
-     "streamSettings":{
-       "network":"tcp","security":"reality",
-       "realitySettings":{
-         "serverName":"ya.ru","fingerprint":"chrome",
-         "publicKey":"<pbk из CZ>","shortId":"<sid из CZ>",
-         "spiderX":"/"
-       }
-     }
-   }
-   ```
-3. Поставить `cascade-cz` ПЕРВЫМ в массиве outbounds.
-4. Сохранить через `/panel/xray/update`.
-
-### Шаг 4. RU-панель: routing rule inbound-8443 → cascade-cz
-
-В тот же xray-конфиге, в `routing.rules`, добавить:
-```json
-{ "type":"field", "inboundTag":["inbound-8443"], "outboundTag":"cascade-cz" }
 ```
-И поставить ПЕРЕД дефолтными правилами. Сохранить, рестартнуть xray (3x-ui делает это автоматом при update).
+# 0. бэкап data + текущий код
+tar -czf /root/sub-manager-backup-$(date +%Y%m%d-%H%M%S).tar.gz \
+        -C /opt/sub-manager data .env
+tar -czf /root/sub-manager-fullsnap-$(date +%Y%m%d-%H%M%S).tar.gz \
+        -C /opt sub-manager
 
-### Шаг 5. Verify
+# 1. зафиксировать правильный repo на будущее
+grep -q '^GITHUB_REPO=' /opt/sub-manager/.env \
+  && sed -i 's|^GITHUB_REPO=.*|GITHUB_REPO=u1133150947-cyber/my-sub-spark-9db9c9f2|' /opt/sub-manager/.env \
+  || echo 'GITHUB_REPO=u1133150947-cyber/my-sub-spark-9db9c9f2' >> /opt/sub-manager/.env
 
-1. SSH на RU: `xray -test -c /usr/local/x-ui/bin/config.json` чтобы убедиться, что конфиг валидный.
-2. Сгенерировать клиентский vless:// для RU:8443 (UUID клиентского inbound, pbk/sid из RU inbound).
-3. Локально парсить ссылку. Полная проверка коннекта через Hiddify будет на стороне пользователя.
-4. Через RU-сервер прогнать `curl ifconfig.me` после поднятия Xray — проверить, что выходной IP = CZ (185.87.148.138).
+# 2. накатить свежий код (rsync из /dev-server, как в прошлый раз)
+#    (исключая node_modules/.git/dist/data/.env)
+#    и записать VERSION = последний sha
+bash /tmp/sub-manager-new/update.sh
 
-### Шаг 6. Где может сломаться
+# 3. рестарт + проверка
+systemctl restart sub-manager
+systemctl is-active sub-manager
+curl -sS https://web.panelsu.ru/api/version | jq
+```
 
-- 3x-ui template в RU может уже содержать кастомные outbound'ы — не затереть, только добавить.
-- `mldsa65 Verify` из гайда — это пост-квант ключ Reality, появился в Xray 25.x. В 3x-ui v2.6.7 + соответствующем Xray поля может не быть — оставляю пустым, обычный x25519 работает.
-- Если RU за NAT/фаерволом — открыть :8443.
-- Если на RU-панели уже висит inbound на :8443 — выбрать другой порт (например, 8843) и так же зеркально на CZ.
+### 3. Проверка
 
-### Что НЕ трогаем
+- `GET /api/version` возвращает `update_available: false` и правильный `repo`.
+- В UI «Обновление панели» показывает зелёный «У вас последняя версия».
+- Кнопки «Создать 10 тестовых аккаунтов» / «Создать 25 inbounds» исчезли из панели.
+- `https://web.panelsu.ru/sub/bpmt55pfr9db` отвечает 200.
 
-- БД (`subscriptions`/`subscription_inbounds` пустые — пересинхронизировать нечего).
-- Старый CZ inbound id=1 на :2080 (его оставляем как «прямой» вариант для прямого VLESS-CZ).
+### Откат
 
-После одобрения переключаюсь в build, делаю всё через 3x-ui API без ручного SSH к Xray-конфигам где возможно.
+```
+systemctl stop sub-manager
+rm -rf /opt/sub-manager
+tar -xzf /root/sub-manager-fullsnap-*.tar.gz -C /opt
+systemctl start sub-manager
+```
+
+## Что НЕ трогаю в этой итерации
+
+- CDN-vless генерация (это отдельный баг, уйдёт следующей задачей).
+- Логика самого update.sh / Caddy / nginx — оставляем как есть.

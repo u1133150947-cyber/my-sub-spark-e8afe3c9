@@ -13,7 +13,7 @@ const json = (b: unknown, status = 200) =>
 
 const APP_DIR = Deno.env.get("APP_DIR") ?? "/opt/sub-manager";
 const UPDATE_TOKEN = Deno.env.get("UPDATE_TOKEN") ?? ""; // optional extra check
-const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "u1133150947-cyber/my-sub-spark-df6a54d2";
+const GITHUB_REPO = Deno.env.get("GITHUB_REPO") ?? "u1133150947-cyber/my-sub-spark-9db9c9f2";
 const GITHUB_BRANCH = Deno.env.get("GITHUB_BRANCH") ?? "main";
 const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? ""; // нужен для приватных репозиториев
 
