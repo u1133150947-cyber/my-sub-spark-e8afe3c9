@@ -96,7 +96,7 @@ async function applyUpdate(srcDir: string, sha?: string) {
   const sync = await run([
     "rsync", "-a", "--delete",
     "--exclude", "data", "--exclude", "node_modules",
-    "--exclude", ".git", "--exclude", ".env",
+    "--exclude", ".git", "--exclude", ".env", "--exclude", "dist",
     `${srcDir.replace(/\/?$/, "/")}`,
     `${APP_DIR.replace(/\/?$/, "/")}`,
   ]);
