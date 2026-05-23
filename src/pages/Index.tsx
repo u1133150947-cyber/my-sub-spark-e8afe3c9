@@ -1,74 +1,36 @@
 import { useEffect, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
-import { Copy, Plus, Trash2, Link2, Smartphone, Zap, Loader2, Server, RefreshCw, Pencil, X, Check, Share2, ChevronDown, MoreVertical, UserPlus, UserMinus, ArrowUp, ArrowDown, Eye, Download, Upload, FileText, Trash, Search, ArrowUpDown, Settings2, Sparkles, RotateCcw, Wifi } from "lucide-react";
+import { Zap, Wifi } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
 import { OnlineClients } from "@/components/OnlineClients";
 import { UpdatePanel } from "@/components/UpdatePanel";
-import { ExternalSubsPanel } from "@/components/ExternalSubsPanel";
 import { LogsTab } from "@/modules/logs/LogsTab";
+import { CreateTab } from "@/modules/subs/CreateTab";
+import { SubsTab } from "@/modules/subs/SubsTab";
+import { RenameDialog } from "@/modules/subs/RenameDialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
 import type {
   AppLog,
   Subscription,
-  InboundClient,
   InboundInfo,
   PanelKey,
   PanelMeta,
   InboundsResp,
-  SubInbound,
 } from "@/modules/shared/types";
 import {
-  LS_KEY,
-  COUNTRIES,
-  countryByCode,
   findCountryByPrefix,
   buildDisplay,
-  PRESETS,
-  CLIENT_LINKS,
   DEFAULT_EXTERNAL_SORT,
-  PINNED_SORT,
-  isPinnedSort,
   effectiveExternalSort,
-  getSubBase,
-  subUrl,
-  happUrl,
 } from "@/modules/shared/constants";
 import {
   APP_LOGS,
   APP_LOG_LISTENERS,
   pushLog,
-  fmtExpire,
-  fmtGB,
-  decodeMaybeBase64,
-  extractConfigLinks,
 } from "@/modules/shared/utils";
 
 const Index = () => {
