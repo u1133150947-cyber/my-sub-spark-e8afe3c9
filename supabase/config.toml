@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.admin-auth]
 verify_jwt = false
+
+[functions.ssh-cz-uuid]
+verify_jwt = false
