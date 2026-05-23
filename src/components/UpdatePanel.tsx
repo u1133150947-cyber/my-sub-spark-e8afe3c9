@@ -17,11 +17,19 @@ type VersionInfo = {
   update_available: boolean;
 };
 
+type UpdateJob = {
+  job_id: string;
+  state: "queued" | "running" | "done" | "error";
+  phase?: string;
+  log?: string;
+};
+
 export function UpdatePanel() {
   const [log, setLog] = useState<string>("");
   const [info, setInfo] = useState<VersionInfo | null>(null);
   const [checking, setChecking] = useState(false);
   const [ghBusy, setGhBusy] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
   const checkUpdates = async () => {
     setChecking(true);
     try {
@@ -61,8 +69,8 @@ export function UpdatePanel() {
       if (!r.ok || !d?.ok) {
         toast.error("Ошибка обновления из GitHub");
       } else {
-        toast.success("Обновлено до " + (d.commit?.slice(0, 7) ?? "latest") + "! Перезапуск…");
-        setTimeout(() => window.location.reload(), 4000);
+        setJobId(d.job_id ?? null);
+        toast.success("Обновление запущено в фоне");
       }
     } catch (e: any) {
       toast.error("Сеть: " + (e?.message ?? e));
@@ -70,6 +78,38 @@ export function UpdatePanel() {
       setGhBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (!jobId) return;
+    const adminToken = getAdminToken();
+    let stopped = false;
+    const poll = async () => {
+      if (!adminToken || stopped) return;
+      try {
+        const r = await fetch(`/api/update/status?job=${encodeURIComponent(jobId)}`, {
+          headers: { "x-admin-token": adminToken },
+        });
+        const d = await r.json().catch(() => null) as UpdateJob | null;
+        if (!d) return;
+        setLog(d.log ?? "");
+        if (d.state === "done") {
+          toast.success("Обновление завершено, перезагружаю страницу…");
+          stopped = true;
+          setGhBusy(false);
+          setTimeout(() => window.location.reload(), 2500);
+        } else if (d.state === "error") {
+          toast.error("Ошибка обновления");
+          stopped = true;
+          setGhBusy(false);
+        }
+      } catch {
+        // Во время restart сервис может на пару секунд пропасть — продолжаем ждать.
+      }
+    };
+    poll();
+    const t = setInterval(poll, 2500);
+    return () => { stopped = true; clearInterval(t); };
+  }, [jobId]);
 
   return (
     <Card className="p-6 border-border" style={{ background: "var(--gradient-card)" }}>
@@ -121,7 +161,7 @@ export function UpdatePanel() {
             <Button size="sm" onClick={updateFromGithub} disabled={ghBusy}
               style={{ background: "var(--gradient-hero)", color: "hsl(var(--primary-foreground))" }}>
               {ghBusy ? <Loader2 className="size-3 animate-spin mr-1" /> : <Download className="size-3 mr-1" />}
-              Обновить сейчас
+              {jobId ? "Обновляется…" : "Обновить сейчас"}
             </Button>
           </div>
         ) : info && info.local_commit && info.remote_commit ? (
