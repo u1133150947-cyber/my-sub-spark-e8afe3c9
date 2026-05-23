@@ -93,19 +93,32 @@ async function downloadGithubArchive(sha: string): Promise<string> {
 async function applyUpdate(srcDir: string, sha?: string) {
   await backupData();
 
-  const sync = await run([
+  let sourceHasDist = false;
+  try {
+    await Deno.stat(join(srcDir, "dist", "index.html"));
+    sourceHasDist = true;
+  } catch {
+    sourceHasDist = false;
+  }
+
+  const rsyncArgs = [
     "rsync", "-a", "--delete",
     "--exclude", "data", "--exclude", "node_modules",
-    "--exclude", ".git", "--exclude", ".env", "--exclude", "dist",
+    "--exclude", ".git", "--exclude", ".env",
+  ];
+  if (!sourceHasDist) rsyncArgs.push("--exclude", "dist");
+  const sync = await run([
+    ...rsyncArgs,
     `${srcDir.replace(/\/?$/, "/")}`,
     `${APP_DIR.replace(/\/?$/, "/")}`,
   ]);
   await push(`rsync: ${sync.ok ? "ok" : "FAIL"}\n${sync.out}`, "sync");
   if (!sync.ok) throw new Error("rsync failed");
 
-  try { await Deno.stat(join(APP_DIR, "dist", "index.html")); }
-  catch {
-    await push("dist/ не найден — запускаю лёгкую фоновую сборку", "build");
+  if (sourceHasDist) {
+    await push("pre-built dist/ найден в архиве — сборка не требуется", "build");
+  } else {
+    await push("pre-built dist/ не найден — пересобираю фронт в фоне", "build");
     const inst = await run(["bun", "install", "--silent"], APP_DIR);
     await push(`bun install: ${inst.ok ? "ok" : "FAIL"}\n${inst.out}`, "build");
     if (!inst.ok) throw new Error("bun install failed");

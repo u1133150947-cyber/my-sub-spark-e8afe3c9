@@ -57,6 +57,7 @@ export function UpdatePanel() {
     if (!confirm("Установить последнюю версию из GitHub? Сервис перезапустится.")) return;
     const adminToken = getAdminToken();
     if (!adminToken) { toast.error("Нужно войти в админку"); return; }
+    let startedJob = false;
     setGhBusy(true);
     setLog("⏳ Скачиваю последнюю версию из GitHub…\n");
     try {
@@ -69,14 +70,15 @@ export function UpdatePanel() {
       if (!r.ok || !d?.ok) {
         toast.error("Ошибка обновления из GitHub");
       } else {
+        startedJob = true;
         setJobId(d.job_id ?? null);
         toast.success("Обновление запущено в фоне");
       }
     } catch (e: any) {
       toast.error("Сеть: " + (e?.message ?? e));
-    } finally {
-      setGhBusy(false);
-    }
+      } finally {
+        if (!startedJob) setGhBusy(false);
+      }
   };
 
   useEffect(() => {
