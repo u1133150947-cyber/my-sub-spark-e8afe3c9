@@ -74,9 +74,9 @@ export function UpdatePanel() {
       }
     } catch (e: any) {
       toast.error("Сеть: " + (e?.message ?? e));
-    } finally {
-      setGhBusy(false);
-    }
+      } finally {
+        if (!jobId) setGhBusy(false);
+      }
   };
 
   useEffect(() => {
