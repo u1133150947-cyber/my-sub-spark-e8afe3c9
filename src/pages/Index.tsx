@@ -728,32 +728,6 @@ const Index = () => {
     toast.success("Скопировано");
   };
 
-  const fmtExpire = (ms: number) => {
-    if (!ms) return "∞";
-    const d = new Date(ms);
-    return d.toLocaleDateString("ru-RU");
-  };
-  const fmtGB = (b: number) => (b ? `${(b / 1024 / 1024 / 1024).toFixed(0)} GB` : "∞");
-
-  const decodeMaybeBase64 = (text: string) => {
-    const trimmed = text.trim();
-    if (/^(vless|vmess|trojan|ss):\/\//im.test(trimmed)) return trimmed;
-    const compact = trimmed.replace(/\s+/g, "");
-    try {
-      const normalized = compact.replace(/-/g, "+").replace(/_/g, "/");
-      const padded = normalized + "===".slice((normalized.length + 3) % 4);
-      return decodeURIComponent(escape(atob(padded)));
-    } catch {
-      return trimmed;
-    }
-  };
-
-  const extractConfigLinks = (text: string) =>
-    decodeMaybeBase64(text)
-      .split(/[\r\n]+/)
-      .map((x) => x.trim())
-      .filter((x) => /^(vless|vmess|trojan|ss):\/\//i.test(x));
-
   const applyPreset = (p: { days: number; gb: number }) => {
     setDays(p.days);
     setTotalGB(p.gb);
