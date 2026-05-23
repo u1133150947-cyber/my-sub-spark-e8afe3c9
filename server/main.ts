@@ -42,7 +42,7 @@ function pickOrigin(req: Request): string {
 function corsFor(req: Request, strict = false): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": strict ? pickOrigin(req) : "*",
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version, x-admin-token",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version, x-admin-token, x-update-token",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
     "Access-Control-Expose-Headers": "content-range, content-profile",
     "Vary": "Origin",
@@ -52,7 +52,7 @@ function corsFor(req: Request, strict = false): Record<string, string> {
 // Loose CORS for static / public sub endpoints.
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version, x-admin-token",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, prefer, range, x-supabase-api-version, x-admin-token, x-update-token",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS, HEAD",
   "Access-Control-Expose-Headers": "content-range, content-profile",
 };
