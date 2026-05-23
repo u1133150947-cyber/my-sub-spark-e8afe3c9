@@ -129,92 +129,83 @@ export async function handleVersion(_req: Request): Promise<Response> {
   });
 }
 
-export async function handleUpdateFromGithub(req: Request, url: URL): Promise<Response> {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
-  if (req.method !== "POST") return json({ error: "POST only" }, 405);
-  if (!verifyAdminSession(req)) return json({ error: "unauthorized — admin login required" }, 401);
-  if (UPDATE_TOKEN) {
-    const t = req.headers.get("x-update-token") ?? "";
-    if (t !== UPDATE_TOKEN) return json({ error: "bad token" }, 401);
-  }
+async function updateDir(): Promise<string> {
+  const dir = join(APP_DIR, ".updates");
+  await Deno.mkdir(dir, { recursive: true });
+  return dir;
+}
 
-  const log: string[] = [];
-  const push = (s: string) => { log.push(s); console.log("[gh-update]", s); };
+function jobStatusPath(jobId: string): string | null {
+  if (!/^[a-f0-9-]{36}$/i.test(jobId)) return null;
+  return join(APP_DIR, ".updates", `${jobId}.json`);
+}
+
+async function writeJobStatus(jobId: string, data: Record<string, unknown>) {
+  const dir = await updateDir();
+  await Deno.writeTextFile(join(dir, `${jobId}.json`), JSON.stringify({
+    job_id: jobId,
+    state: "queued",
+    phase: "queued",
+    log: "⏳ Обновление поставлено в очередь…\n",
+    started_at: new Date().toISOString(),
+    ...data,
+  }, null, 2));
+}
+
+async function startWorker(args: string[], jobId: string): Promise<Response> {
+  await writeJobStatus(jobId, {});
+  const child = new Deno.Command(Deno.execPath(), {
+    args: ["run", "-A", join(APP_DIR, "server/update-worker.ts"), ...args],
+    cwd: APP_DIR,
+    stdin: "null",
+    stdout: "null",
+    stderr: "null",
+  }).spawn();
+  (child as { unref?: () => void }).unref?.();
+  return json({
+    ok: true,
+    accepted: true,
+    job_id: jobId,
+    status_url: `/api/update/status?job=${jobId}`,
+    log: "Обновление запущено в фоне. Панель не будет ждать сборку в HTTP-запросе.",
+  }, 202);
+}
+
+export async function handleUpdateStatus(req: Request, url: URL): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (!verifyAdminSession(req)) return json({ error: "unauthorized — admin login required" }, 401);
+
+  const job = url.searchParams.get("job") ?? "";
+  if (!job) return json({ error: "job required" }, 400);
+  const statusPath = jobStatusPath(job);
+  if (!statusPath) return json({ error: "bad job" }, 400);
 
   try {
-    const remote = await fetchLatestCommit();
-    if (!remote.ok) throw new Error(`GitHub: ${remote.error}`);
-    push(`latest commit: ${remote.sha.slice(0, 7)} — ${remote.message.split("\n")[0]}`);
-
-    const tmpRoot = await Deno.makeTempDir({ prefix: "sub-mgr-gh-" });
-    const archivePath = join(tmpRoot, "src.tar.gz");
-    // Для приватных репо codeload.github.com отдаёт 404 даже с токеном —
-    // используем REST endpoint tarball, который понимает Authorization.
-    const tarUrl = GITHUB_TOKEN
-      ? `https://api.github.com/repos/${GITHUB_REPO}/tarball/${remote.sha}`
-      : `https://codeload.github.com/${GITHUB_REPO}/tar.gz/${remote.sha}`;
-    push(`downloading: ${tarUrl}`);
-    const dl = await fetch(tarUrl, { headers: ghHeaders({ "Accept": "application/vnd.github+json" }), redirect: "follow" });
-    if (!dl.ok || !dl.body) throw new Error(`скачивание не удалось: HTTP ${dl.status}`);
-    await Deno.writeFile(archivePath, new Uint8Array(await dl.arrayBuffer()));
-
-    const extractDir = join(tmpRoot, "src");
-    await Deno.mkdir(extractDir);
-    const ext = await run(["tar", "-xzf", archivePath, "-C", extractDir]);
-    push(`extract: ${ext.ok ? "ok" : "FAIL"}\n${ext.out}`);
-    if (!ext.ok) throw new Error("extract failed");
-
-    let srcDir = extractDir;
-    const entries: Deno.DirEntry[] = [];
-    for await (const e of Deno.readDir(extractDir)) entries.push(e);
-    if (entries.length === 1 && entries[0].isDirectory) srcDir = join(extractDir, entries[0].name);
-    push(`src dir: ${srcDir}`);
-
-    try { await Deno.stat(join(srcDir, "package.json")); }
-    catch { throw new Error("в архиве GitHub нет package.json"); }
-
-    await backupData(push);
-
-    const sync = await run([
-      "rsync", "-a", "--delete",
-      "--exclude", "data", "--exclude", "node_modules",
-      "--exclude", ".git", "--exclude", "dist", "--exclude", ".env",
-      `${srcDir.replace(/\/?$/, "/")}`,
-      `${APP_DIR.replace(/\/?$/, "/")}`,
-    ]);
-    push(`rsync: ${sync.ok ? "ok" : "FAIL"}\n${sync.out}`);
-    if (!sync.ok) throw new Error("rsync failed");
-
-    const envCreated = await ensureEnv(req, url);
-    push(envCreated ? ".env recreated" : ".env preserved");
-
-    const inst = await run(["bun", "install", "--silent"], APP_DIR);
-    push(`bun install: ${inst.ok ? "ok" : "FAIL"}\n${inst.out}`);
-    if (!inst.ok) throw new Error("bun install failed");
-
-    const build = await run(["bun", "run", "build"], APP_DIR);
-    push(`bun run build: ${build.ok ? "ok" : "FAIL"}\n${build.out.slice(-2000)}`);
-    if (!build.ok) throw new Error("build failed");
-
-    await Deno.writeTextFile(join(APP_DIR, "VERSION"), remote.sha);
-    push(`VERSION = ${remote.sha}`);
-
-    try { await Deno.remove(tmpRoot, { recursive: true }); } catch {}
-
-    push("restarting service…");
-    queueMicrotask(async () => {
-      await new Promise((r) => setTimeout(r, 500));
-      await run(["systemctl", "restart", "sub-manager"]);
+    return new Response(await Deno.readTextFile(statusPath), {
+      headers: { ...cors, "Content-Type": "application/json" },
     });
-
-    return json({ ok: true, commit: remote.sha, log: log.join("\n") });
-  } catch (e) {
-    push("ERROR: " + (e instanceof Error ? e.message : String(e)));
-    return json({ ok: false, log: log.join("\n") }, 500);
+  } catch {
+    return json({ error: "job not found" }, 404);
   }
 }
 
-export async function handleUpdate(req: Request, url: URL): Promise<Response> {
+export async function handleUpdateFromGithub(req: Request, _url: URL): Promise<Response> {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+  if (!verifyAdminSession(req)) return json({ error: "unauthorized — admin login required" }, 401);
+  if (UPDATE_TOKEN) {
+    const t = req.headers.get("x-update-token") ?? "";
+    if (t !== UPDATE_TOKEN) return json({ error: "bad token" }, 401);
+  }
+
+  const remote = await fetchLatestCommit();
+  if (!remote.ok) return json({ ok: false, log: `GitHub: ${remote.error}` }, 500);
+
+  const jobId = crypto.randomUUID();
+  return await startWorker(["github", jobId, remote.sha], jobId);
+}
+
+export async function handleUpdate(req: Request, _url: URL): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
 
@@ -223,9 +214,6 @@ export async function handleUpdate(req: Request, url: URL): Promise<Response> {
     const t = req.headers.get("x-update-token") ?? "";
     if (t !== UPDATE_TOKEN) return json({ error: "bad token" }, 401);
   }
-
-  const log: string[] = [];
-  const push = (s: string) => { log.push(s); console.log("[update]", s); };
 
   try {
     const form = await req.formData();
@@ -237,74 +225,12 @@ export async function handleUpdate(req: Request, url: URL): Promise<Response> {
     const isTgz = lower.endsWith(".tar.gz") || lower.endsWith(".tgz");
     if (!isZip && !isTgz) return json({ error: "только .zip или .tar.gz" }, 400);
 
-    const tmpRoot = await Deno.makeTempDir({ prefix: "sub-mgr-upd-" });
-    push(`temp dir: ${tmpRoot}`);
-
-    const archivePath = join(tmpRoot, isZip ? "u.zip" : "u.tar.gz");
+    const jobId = crypto.randomUUID();
+    const dir = await updateDir();
+    const archivePath = join(dir, `${jobId}${isZip ? ".zip" : ".tar.gz"}`);
     await Deno.writeFile(archivePath, new Uint8Array(await file.arrayBuffer()));
-    push(`saved archive (${file.size} bytes)`);
-
-    const extractDir = join(tmpRoot, "src");
-    await Deno.mkdir(extractDir);
-    const ext = isZip
-      ? await run(["unzip", "-q", archivePath, "-d", extractDir])
-      : await run(["tar", "-xzf", archivePath, "-C", extractDir]);
-    push(`extract: ${ext.ok ? "ok" : "FAIL"}\n${ext.out}`);
-    if (!ext.ok) throw new Error("extract failed");
-
-    // If archive contains a single top-level dir, descend into it.
-    let srcDir = extractDir;
-    const entries: Deno.DirEntry[] = [];
-    for await (const e of Deno.readDir(extractDir)) entries.push(e);
-    if (entries.length === 1 && entries[0].isDirectory) {
-      srcDir = join(extractDir, entries[0].name);
-    }
-    push(`src dir: ${srcDir}`);
-
-    // Sanity check — must look like our project.
-    try { await Deno.stat(join(srcDir, "package.json")); }
-    catch { throw new Error("в архиве нет package.json — это не похоже на проект"); }
-
-    await backupData(push);
-
-    // Sync into APP_DIR, preserving data/ and node_modules/.
-    const sync = await run([
-      "rsync", "-a", "--delete",
-      "--exclude", "data",
-      "--exclude", "node_modules",
-      "--exclude", ".git",
-      "--exclude", "dist",
-      "--exclude", ".env",
-      `${srcDir.replace(/\/?$/, "/")}`,
-      `${APP_DIR.replace(/\/?$/, "/")}`,
-    ]);
-    push(`rsync: ${sync.ok ? "ok" : "FAIL"}\n${sync.out}`);
-    if (!sync.ok) throw new Error("rsync failed");
-
-    const envCreated = await ensureEnv(req, url);
-    push(envCreated ? ".env was missing/broken — recreated" : ".env preserved");
-
-    const inst = await run(["bun", "install", "--silent"], APP_DIR);
-    push(`bun install: ${inst.ok ? "ok" : "FAIL"}\n${inst.out}`);
-    if (!inst.ok) throw new Error("bun install failed");
-
-    const build = await run(["bun", "run", "build"], APP_DIR);
-    push(`bun run build: ${build.ok ? "ok" : "FAIL"}\n${build.out.slice(-2000)}`);
-    if (!build.ok) throw new Error("build failed");
-
-    // Cleanup temp.
-    try { await Deno.remove(tmpRoot, { recursive: true }); } catch {}
-
-    // Schedule restart in background so the response can return first.
-    push("restarting service…");
-    queueMicrotask(async () => {
-      await new Promise((r) => setTimeout(r, 500));
-      await run(["systemctl", "restart", "sub-manager"]);
-    });
-
-    return json({ ok: true, log: log.join("\n") });
+    return await startWorker(["archive", jobId, archivePath], jobId);
   } catch (e) {
-    push("ERROR: " + (e instanceof Error ? e.message : String(e)));
-    return json({ ok: false, log: log.join("\n") }, 500);
+    return json({ ok: false, log: "ERROR: " + (e instanceof Error ? e.message : String(e)) }, 500);
   }
 }
