@@ -1,0 +1,689 @@
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import type {
+  Subscription,
+  InboundsResp,
+  PanelKey,
+  PanelMeta,
+} from "@/modules/shared/types";
+import {
+  findCountryByPrefix,
+  buildDisplay,
+  DEFAULT_EXTERNAL_SORT,
+  effectiveExternalSort,
+} from "@/modules/shared/constants";
+import { pushLog } from "@/modules/shared/utils";
+
+interface Options {
+  onNavigateToSubs?: () => void;
+}
+
+export function useSubsManager(opts: Options = {}) {
+  const [subs, setSubs] = useState<Subscription[]>([]);
+  const [inbounds, setInbounds] = useState<InboundsResp | null>(null);
+  const [loadingInbounds, setLoadingInbounds] = useState(false);
+  const [name, setName] = useState("");
+  const [days, setDays] = useState(30);
+  const [totalGB, setTotalGB] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [creating, setCreating] = useState(false);
+  const [activeQr, setActiveQr] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editDays, setEditDays] = useState<string>("");
+  const [editGB, setEditGB] = useState<string>("");
+  const [editSelected, setEditSelected] = useState<Set<string>>(new Set());
+  const [editExisting, setEditExisting] = useState<Set<string>>(new Set());
+  const [editOrder, setEditOrder] = useState<string[]>([]);
+  const [editSniText, setEditSniText] = useState<string>("");
+  const [editExternals, setEditExternals] = useState<Record<string, { name: string; emoji: string; raw_links: string[]; sort_order: number }>>({});
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>("subs");
+  const [subsSelected, setSubsSelected] = useState<Set<string>>(new Set());
+  const [subsSearch, setSubsSearch] = useState<string>("");
+  const [subsSort, setSubsSort] = useState<string>("created_desc");
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const [emailToSubId, setEmailToSubId] = useState<Record<string, string>>({});
+  const [overrides, setOverrides] = useState<Record<string, string>>({});
+  const [renameTarget, setRenameTarget] = useState<{ panel: string; inboundId: number; original: string } | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [renameCountry, setRenameCountry] = useState("");
+  const [renameLabel, setRenameLabel] = useState("");
+  const [renameSaving, setRenameSaving] = useState(false);
+  const [appLogs, setAppLogs] = useState<AppLog[]>(APP_LOGS.slice());
+  useEffect(() => {
+    const fn = () => setAppLogs(APP_LOGS.slice());
+    APP_LOG_LISTENERS.add(fn);
+    return () => { APP_LOG_LISTENERS.delete(fn); };
+  }, []);
+
+  // ===== Logs: только badge непрочитанных и тайминг последнего просмотра =====
+  const [lastSeenLogTs, setLastSeenLogTs] = useState<number>(() => {
+    try { return Number(localStorage.getItem("logs_last_seen") || "0"); } catch { return 0; }
+  });
+
+  const panelMeta: PanelMeta[] = (((inbounds?._panels as PanelMeta[]) ?? [])
+    .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
+  const panelLabel = (slug: string) => panelMeta.find((p) => p.slug === slug)?.name ?? slug;
+  const inboundLabel = (panel: string, id: number, fallback: string) =>
+    overrides[`${panel}:${id}`] || fallback || `inbound #${id}`;
+
+  const loadOverrides = async () => {
+    const { data } = await supabase
+      .from("inbound_overrides")
+      .select("panel, inbound_id, display_remark");
+    const m: Record<string, string> = {};
+    (data ?? []).forEach((r: any) => { m[`${r.panel}:${r.inbound_id}`] = r.display_remark; });
+    setOverrides(m);
+  };
+
+  const openRename = (panel: string, inboundId: number, original: string) => {
+    setRenameTarget({ panel, inboundId, original });
+    const existing = overrides[`${panel}:${inboundId}`] || "";
+    const matched = existing ? findCountryByPrefix(existing) : undefined;
+    if (matched) {
+      setRenameCountry(matched.code);
+      let rest = existing.trim();
+      if (rest.startsWith(`${matched.flag} ${matched.name}`)) rest = rest.slice(`${matched.flag} ${matched.name}`.length);
+      else if (rest.startsWith(matched.flag)) rest = rest.slice(matched.flag.length);
+      rest = rest.replace(/^\s*[—\-–]\s*/, "").trim();
+      setRenameLabel(rest);
+    } else {
+      setRenameCountry("");
+      setRenameLabel(existing);
+    }
+    setRenameValue(existing);
+  };
+
+  const saveRename = async () => {
+    if (!renameTarget) return;
+    const { panel, inboundId } = renameTarget;
+    const val = buildDisplay(renameCountry, renameLabel);
+    setRenameSaving(true);
+    try {
+      if (!val || val === renameTarget.original) {
+        await supabase.from("inbound_overrides").delete().eq("panel", panel).eq("inbound_id", inboundId);
+        toast.success("Название сброшено");
+      } else {
+        const { error } = await supabase
+          .from("inbound_overrides")
+          .upsert({ panel, inbound_id: inboundId, display_remark: val }, { onConflict: "panel,inbound_id" });
+        if (error) throw error;
+        toast.success("Название обновлено — применится при следующем обновлении подписки");
+      }
+      await loadOverrides();
+      setRenameTarget(null);
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setRenameSaving(false);
+    }
+  };
+
+  const loadEmailMap = async () => {
+    const { data } = await supabase
+      .from("subscription_inbounds")
+      .select("client_email, subscription_id");
+    const map: Record<string, string> = {};
+    (data ?? []).forEach((r: any) => { if (r.client_email && r.subscription_id) map[r.client_email] = r.subscription_id; });
+    setEmailToSubId(map);
+  };
+
+  const openClientEdit = async (email: string) => {
+    const subId = emailToSubId[email];
+    if (!subId) return toast.error("Клиент не привязан к подписке в базе");
+    const sub = subs.find((s) => s.id === subId);
+    if (!sub) return toast.error("Подписка не найдена");
+    opts.onNavigateToSubs?.();
+    await openEdit(sub);
+    setTimeout(() => {
+      document.getElementById(`sub-${sub.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 100);
+  };
+
+  const bulkAdd = async (panel: PanelKey, inboundId: number, remark: string) => {
+    if (!confirm(`Добавить «${remark}» ВСЕМ существующим клиентам?`)) return;
+    const key = `add:${panel}:${inboundId}`;
+    setBulkBusy(key);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=bulkAddInbound", {
+        method: "POST",
+        body: { panel, inboundId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Добавлено клиентам: ${data.created}${data.errors?.length ? `, ошибок: ${data.errors.length}` : ""}`);
+      pushLog("info", "bulkAdd", `panel=${panel} inbound=${inboundId} created=${data.created} errors=${data.errors?.length ?? 0}`);
+      if (data?.errors?.length) {
+        for (const er of data.errors) {
+          pushLog("error", "bulkAdd", `sub=${er.sub ?? "?"}: ${er.error ?? JSON.stringify(er)}`);
+        }
+      }
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const bulkRemove = async (panel: PanelKey, inboundId: number, remark: string) => {
+    if (!confirm(`Убрать «${remark}» у ВСЕХ клиентов? Они потеряют доступ к этому серверу.`)) return;
+    const key = `rm:${panel}:${inboundId}`;
+    setBulkBusy(key);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=bulkRemoveInbound", {
+        method: "POST",
+        body: { panel, inboundId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success(`Убрано у клиентов: ${data.removed}${data.errors?.length ? `, ошибок: ${data.errors.length}` : ""}`);
+      pushLog("info", "bulkRemove", `panel=${panel} inbound=${inboundId} removed=${data.removed} errors=${data.errors?.length ?? 0}`);
+      if (data?.errors?.length) {
+        for (const er of data.errors) {
+          pushLog("error", "bulkRemove", `sub=${er.sub ?? "?"}: ${er.error ?? JSON.stringify(er)}`);
+        }
+      }
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const loadSubs = async () => {
+    const { data, error } = await supabase
+      .from("subscriptions")
+      .select("id, slug, name, client_email, expiry_ms, total_bytes, hits, created_at, raw_links")
+      .order("created_at", { ascending: false });
+    if (error) return toast.error("Не удалось загрузить подписки");
+    setSubs(((data ?? []) as any[]).map((s) => ({
+      ...s,
+      raw_links: Array.isArray(s.raw_links) ? s.raw_links : [],
+    })));
+  };
+
+  const loadInbounds = async () => {
+    setLoadingInbounds(true);
+    try {
+      const __dbg = (() => { try { return localStorage.getItem("debug") === "1"; } catch { return false; } })();
+      // Прямой fetch — обход возможных проблем supabase.functions.invoke с query-string
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token ?? (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string);
+      const apikey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string);
+      const fnBase = `${(import.meta.env.VITE_SUPABASE_URL as string).replace(/\/+$/, "")}/functions/v1`;
+      const url = `${fnBase}/panel?action=inbounds`;
+      if (__dbg) pushLog("info", "loadInbounds", `GET ${url}`);
+      const r = await fetch(url, { method: "GET", headers: { Authorization: `Bearer ${token}`, apikey } });
+      const text = await r.text();
+      if (__dbg) pushLog("info", "loadInbounds", `HTTP ${r.status}, body len=${text.length}, head="${text.slice(0,200)}"`);
+      let data: any = null;
+      try { data = JSON.parse(text); } catch (e: any) {
+        pushLog("error", "loadInbounds", `JSON parse error: ${e?.message ?? e}`);
+        throw new Error(`HTTP ${r.status}: ${text.slice(0, 200)}`);
+      }
+      if (!r.ok) { pushLog("error", "loadInbounds", `HTTP ${r.status}`); throw new Error(`HTTP ${r.status}: ${text.slice(0, 200)}`); }
+      if (data && typeof data === "object") {
+        for (const k of Object.keys(data)) {
+          const v: any = (data as any)[k];
+          if (v && typeof v === "object" && !Array.isArray(v) && k !== "_panels" && v.error) {
+            pushLog("error", "panel:" + k, `inbounds: ${v.error}`);
+          }
+        }
+      }
+      const keys = Object.keys(data ?? {}).filter((k) => k !== "_panels" && Array.isArray((data as any)[k]) && k && k !== "null" && k !== "undefined");
+      const meta = Array.isArray((data as any)?._panels)
+        ? (data as any)._panels.filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined")
+        : [];
+      if (__dbg) pushLog("info", "loadInbounds", `raw _panels=${JSON.stringify(((data as any)?._panels) ?? null)}, keys=${JSON.stringify(keys)}`);
+      setInbounds({ ...(data ?? {}), _panels: meta.length ? meta : keys.map((slug) => ({ slug, name: slug })) });
+      const totalIb = keys.reduce((n, k) => n + (Array.isArray((data as any)[k]) ? (data as any)[k].length : 0), 0);
+      if (__dbg) pushLog("info", "loadInbounds", `панелей=${meta.length || keys.length}, inbound'ов=${totalIb}`);
+    } catch (e: any) {
+      toast.error("Ошибка загрузки inbound'ов: " + (e?.message ?? e));
+    } finally {
+      setLoadingInbounds(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSubs();
+    loadOverrides();
+  }, []);
+
+  const toggle = (key: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
+  const create = async () => {
+    if (!name.trim()) return toast.error("Введите имя клиента");
+    if (selected.size === 0) return toast.error("Выберите хотя бы один inbound");
+
+    const selections = Array.from(selected).map((s) => {
+      const [panel, id] = s.split(":");
+      return { panel: panel as PanelKey, inboundId: Number(id) };
+    });
+
+    setCreating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=create", {
+        method: "POST",
+        body: { name: name.trim(), days, totalGB, selections },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast.success(`Создано на ${data.created.length} серверах`);
+      if (data.errors?.length) {
+        toast.warning(`Ошибки: ${data.errors.length}`, {
+          description: data.errors.map((e: any) => `${e.panel}#${e.inboundId}: ${e.error}`).join("\n"),
+        });
+      }
+      setName("");
+      setSelected(new Set());
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const remove = async (id: string) => {
+    if (!confirm("Удалить подписку и клиента из всех панелей?")) return;
+    try {
+      const { data, error } = await supabase.functions.invoke("panel?action=delete", {
+        method: "POST",
+        body: { id },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      toast.success("Удалено");
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка удаления: " + (e?.message ?? e));
+    }
+  };
+
+  const bulkDeleteSubs = async () => {
+    const ids = Array.from(subsSelected);
+    if (!ids.length) return;
+    if (!confirm(`Удалить ${ids.length} подписок и всех клиентов в панелях?`)) return;
+    setBulkDeleting(true);
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try {
+        const { data, error } = await supabase.functions.invoke("panel?action=delete", {
+          method: "POST",
+          body: { id },
+        });
+        if (error || data?.error) throw new Error(error?.message || data?.error);
+        ok++;
+      } catch (e: any) {
+        fail++;
+        pushLog("error", "bulkDelete", `${id}: ${e?.message ?? e}`);
+      }
+    }
+    setBulkDeleting(false);
+    setSubsSelected(new Set());
+    if (fail) toast.error(`Удалено ${ok}, ошибок ${fail}`);
+    else toast.success(`Удалено: ${ok}`);
+    loadSubs();
+  };
+
+  const openEdit = async (s: Subscription) => {
+    setEditingId(s.id);
+    setEditName(s.name);
+    setEditDays("");
+    setEditGB("");
+    if (!inbounds) loadInbounds();
+    // load current whitelist
+    const { data: subRow } = await supabase
+      .from("subscriptions")
+      .select("sni_whitelist")
+      .eq("id", s.id)
+      .maybeSingle();
+    const wl = (subRow as any)?.sni_whitelist as string[] | null;
+    setEditSniText(Array.isArray(wl) ? wl.join("\n") : "");
+    const { data } = await supabase
+      .from("subscription_inbounds")
+      .select("panel, inbound_id, remark, sort_order, created_at")
+      .eq("subscription_id", s.id)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    const inboundItems = (data ?? []).map((l: any) => ({
+      key: `${l.panel}:${l.inbound_id}`,
+      sort_order: Number(l.sort_order ?? 0),
+    }));
+
+    // Load attached external subs (3rd-party) so they can be ordered together
+    const { data: extLinks } = await supabase
+      .from("subscription_external_subs")
+      .select("external_sub_id, sort_order, created_at")
+      .eq("subscription_id", s.id)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+    const extIds = (extLinks ?? []).map((r: any) => r.external_sub_id);
+    const extMap: Record<string, { name: string; emoji: string; raw_links: string[]; sort_order: number }> = {};
+    const extMeta: Record<string, number> = {};
+    if (extIds.length) {
+      const { data: exts } = await supabase
+        .from("external_subs")
+        .select("id, name, emoji, raw_links, sort_order")
+        .in("id", extIds);
+      for (const e of exts ?? []) {
+        extMap[(e as any).id] = {
+          name: (e as any).name ?? "",
+          emoji: (e as any).emoji ?? "🌐",
+          raw_links: Array.isArray((e as any).raw_links) ? (e as any).raw_links : [],
+          sort_order: Number((e as any).sort_order ?? DEFAULT_EXTERNAL_SORT),
+        };
+        extMeta[(e as any).id] = Number((e as any).sort_order ?? DEFAULT_EXTERNAL_SORT);
+      }
+    }
+    setEditExternals(extMap);
+    const extItems = (extLinks ?? []).map((r: any) => {
+      const sesSort = Number(r.sort_order ?? DEFAULT_EXTERNAL_SORT);
+      const effective = effectiveExternalSort(sesSort, extMeta[r.external_sub_id] ?? DEFAULT_EXTERNAL_SORT);
+      return {
+        key: `ext:${r.external_sub_id}`,
+        sort_order: effective,
+        _ses_sort: sesSort,
+        _global_sort: extMeta[r.external_sub_id] ?? DEFAULT_EXTERNAL_SORT,
+      };
+    });
+
+    const allItems = [...inboundItems, ...extItems].sort((a, b) => a.sort_order - b.sort_order);
+    const orderedKeys = allItems.map((it) => it.key);
+    const keys = new Set(orderedKeys);
+    setEditExisting(keys);
+    setEditSelected(new Set(keys));
+    setEditOrder(orderedKeys);
+
+    // === DEBUG: подробный лог открытия редактора порядка ===
+    console.group(`[ORDER-EDITOR OPEN] sub=${s.slug} (${s.id})`);
+    console.log("inbounds (raw из БД):", data);
+    console.log("inboundItems:", inboundItems);
+    console.log("subscription_external_subs (raw из БД):", extLinks);
+    console.log("external_subs.sort_order (глобальные):", extMeta);
+    console.log("extItems (с применённым fallback):", extItems);
+    console.log("итоговый orderedKeys (что увидит пользователь):", orderedKeys);
+    console.groupEnd();
+    try {
+      await supabase.from("audit_log").insert({
+        action: "order_editor_open",
+        subscription_id: s.id,
+        level: "debug",
+        meta: {
+          slug: s.slug,
+          inboundItems,
+          extLinks,
+          extMeta,
+          extItems,
+          orderedKeys,
+        } as any,
+      } as any);
+    } catch (e) { console.warn("audit_log insert failed", e); }
+  };
+
+  const closeEdit = () => {
+    setEditingId(null);
+    setEditSelected(new Set());
+    setEditExisting(new Set());
+    setEditOrder([]);
+    setEditSniText("");
+    setEditExternals({});
+  };
+
+  const toggleEdit = (key: string) => {
+    setEditSelected((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+    setEditOrder((prev) => {
+      if (prev.includes(key)) return prev.filter((k) => k !== key);
+      return [...prev, key];
+    });
+  };
+
+  const moveOrder = (key: string, dir: -1 | 1) => {
+    setEditOrder((prev) => {
+      const idx = prev.indexOf(key);
+      if (idx < 0) return prev;
+      const j = idx + dir;
+      if (j < 0 || j >= prev.length) return prev;
+      const next = prev.slice();
+      [next[idx], next[j]] = [next[j], next[idx]];
+      console.group(`[ORDER-EDITOR MOVE] key=${key} dir=${dir}`);
+      console.log("before:", prev);
+      console.log("after :", next);
+      console.log(`swap indexes: ${idx} <-> ${j}`);
+      console.groupEnd();
+      return next;
+    });
+  };
+
+  const persistEditOrder = async (subscriptionId: string) => {
+    const orderedSelected = editOrder.filter((k) => editSelected.has(k));
+    if (!orderedSelected.length) return;
+    const writes: Array<{ key: string; table: string; sort_order: number; ok: boolean; error?: string }> = [];
+    console.group(`[ORDER-EDITOR SAVE] sub=${subscriptionId} count=${orderedSelected.length}`);
+    console.log("orderedSelected:", orderedSelected);
+    for (let i = 0; i < orderedSelected.length; i++) {
+      const k = orderedSelected[i];
+      // Use spaced values (10,20,30...) so persisted positions are unambiguous
+      // and never collide with the default 1000 or with the legacy 0 default
+      // on subscription_inbounds. This guarantees the merge sort in the
+      // subscription renderer respects the editor order exactly.
+      const pos = (i + 1) * 10;
+      if (k.startsWith("ext:")) {
+        const extId = k.slice(4);
+        const { error, data: upd } = await supabase
+          .from("subscription_external_subs")
+          .update({ sort_order: pos } as any)
+          .eq("subscription_id", subscriptionId)
+          .eq("external_sub_id", extId)
+          .select();
+        writes.push({ key: k, table: "subscription_external_subs", sort_order: pos, ok: !error, error: error?.message });
+        console.log(`  [${i}] UPDATE ses ext=${extId} -> sort_order=${pos}`, { error, updated: upd });
+        if (error) throw error;
+      } else {
+        const [panel, idStr] = k.split(":");
+        const { error, data: upd } = await supabase
+          .from("subscription_inbounds")
+          .update({ sort_order: pos } as any)
+          .eq("subscription_id", subscriptionId)
+          .eq("panel", panel)
+          .eq("inbound_id", Number(idStr))
+          .select();
+        writes.push({ key: k, table: "subscription_inbounds", sort_order: pos, ok: !error, error: error?.message });
+        console.log(`  [${i}] UPDATE sub_inb ${panel}:${idStr} -> sort_order=${pos}`, { error, updated: upd });
+        if (error) throw error;
+      }
+    }
+    // Verify: re-read after save
+    const { data: verSes } = await supabase
+      .from("subscription_external_subs")
+      .select("external_sub_id, sort_order")
+      .eq("subscription_id", subscriptionId)
+      .order("sort_order", { ascending: true });
+    const { data: verInb } = await supabase
+      .from("subscription_inbounds")
+      .select("panel, inbound_id, sort_order")
+      .eq("subscription_id", subscriptionId)
+      .order("sort_order", { ascending: true });
+    console.log("VERIFY subscription_external_subs:", verSes);
+    console.log("VERIFY subscription_inbounds:", verInb);
+    console.groupEnd();
+    try {
+      await supabase.from("audit_log").insert({
+        action: "order_editor_save",
+        subscription_id: subscriptionId,
+        level: "debug",
+        meta: { orderedSelected, writes, verifySes: verSes, verifyInb: verInb } as any,
+      } as any);
+    } catch (e) { console.warn("audit_log insert failed", e); }
+  };
+
+  const saveEdit = async (s: Subscription) => {
+    setSavingEdit(true);
+    try {
+      // Compute additions and removals
+      const toAdd: { panel: PanelKey; inboundId: number }[] = [];
+      const toRemove: { panel: PanelKey; inboundId: number }[] = [];
+      const extToRemove: string[] = [];
+      editSelected.forEach((k) => {
+        if (!editExisting.has(k)) {
+          if (k.startsWith("ext:")) return; // can't add new ext from this UI
+          const [p, id] = k.split(":");
+          toAdd.push({ panel: p as PanelKey, inboundId: Number(id) });
+        }
+      });
+      editExisting.forEach((k) => {
+        if (!editSelected.has(k)) {
+          if (k.startsWith("ext:")) {
+            extToRemove.push(k.slice(4));
+            return;
+          }
+          const [p, id] = k.split(":");
+          toRemove.push({ panel: p as PanelKey, inboundId: Number(id) });
+        }
+      });
+
+      // Update name/days/GB
+      const updateBody: any = { id: s.id };
+      if (editName.trim() && editName.trim() !== s.name) updateBody.name = editName.trim();
+      if (editDays !== "") updateBody.days = Number(editDays);
+      if (editGB !== "") updateBody.totalGB = Number(editGB);
+      if (Object.keys(updateBody).length > 1) {
+        const { data, error } = await supabase.functions.invoke("panel?action=update", {
+          method: "POST",
+          body: updateBody,
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        if (data?.errors?.length) {
+          toast.warning(`Обновление: ошибки на ${data.errors.length} серверах`);
+        }
+      }
+
+      // Remove inbounds
+      for (const r of toRemove) {
+        const { data, error } = await supabase.functions.invoke("panel?action=removeInbound", {
+          method: "POST",
+          body: { id: s.id, panel: r.panel, inboundId: r.inboundId },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+      }
+
+      // Detach external subs
+      for (const extId of extToRemove) {
+        const { error } = await supabase
+          .from("subscription_external_subs")
+          .delete()
+          .eq("subscription_id", s.id)
+          .eq("external_sub_id", extId);
+        if (error) throw error;
+      }
+
+      // Add inbounds
+      if (toAdd.length) {
+        const { data, error } = await supabase.functions.invoke("panel?action=addInbounds", {
+          method: "POST",
+          body: { id: s.id, selections: toAdd },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        if (data?.errors?.length) {
+          toast.warning(`Добавление: ошибки на ${data.errors.length} серверах`, {
+            description: data.errors.map((e: any) => `${e.panel}#${e.inboundId}: ${e.error}`).join("\n"),
+          });
+        }
+      }
+
+      await persistEditOrder(s.id);
+
+      toast.success("Подписка обновлена");
+      closeEdit();
+      loadSubs();
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const saveOrder = async (s: Subscription) => {
+    try {
+      await persistEditOrder(s.id);
+      toast.success("Порядок сохранён");
+    } catch (e: any) {
+      toast.error("Ошибка: " + (e?.message ?? e));
+    }
+  };
+
+  const saveSniWhitelist = async (s: Subscription) => {
+    const list = editSniText
+      .split(/[\s,]+/)
+      .map((x) => x.trim().toLowerCase())
+      .filter((x) => x.length > 0 && /^[a-z0-9.\-]+\.[a-z]{2,}$/.test(x));
+    const { error } = await supabase
+      .from("subscriptions")
+      .update({ sni_whitelist: list } as any)
+      .eq("id", s.id);
+    if (error) {
+      toast.error("Ошибка: " + error.message);
+      return;
+    }
+    toast.success(list.length ? `SNI whitelist: ${list.length} доменов` : "SNI whitelist очищен");
+  };
+
+  const copy = async (text: string) => {
+    await navigator.clipboard.writeText(text);
+    toast.success("Скопировано");
+  };
+
+  const applyPreset = (p: { days: number; gb: number }) => {
+    setDays(p.days);
+    setTotalGB(p.gb);
+  };
+
+  const expiryStatus = (s: Subscription) => {
+    if (!s.expiry_ms) return { label: "∞", tone: "muted" as const };
+    const left = s.expiry_ms - Date.now();
+    const days = Math.ceil(left / 86400000);
+    if (left < 0) return { label: "истекла", tone: "danger" as const };
+    if (days <= 3) return { label: `${days} дн.`, tone: "warn" as const };
+    return { label: `${days} дн.`, tone: "muted" as const };
+  };
+  return {
+    // state
+    subs, inbounds, loadingInbounds, name, days, totalGB, selected, creating,
+    activeQr, editingId, editName, editDays, editGB, editSelected, editExisting,
+    editOrder, editSniText, editExternals, savingEdit, bulkBusy,
+    subsSelected, subsSearch, subsSort, bulkDeleting, emailToSubId, overrides,
+    renameTarget, renameValue, renameCountry, renameLabel, renameSaving,
+    // setters
+    setName, setDays, setTotalGB, setSelected, setActiveQr,
+    setEditName, setEditDays, setEditGB, setEditSelected, setEditOrder,
+    setEditSniText, setSubsSelected, setSubsSearch, setSubsSort,
+    setRenameTarget, setRenameCountry, setRenameLabel,
+    // derived
+    panelMeta, panelLabel, inboundLabel,
+    // handlers
+    loadOverrides, openRename, saveRename, loadEmailMap, openClientEdit,
+    bulkAdd, bulkRemove, loadSubs, loadInbounds, toggle, create, remove,
+    bulkDeleteSubs, openEdit, closeEdit, toggleEdit, moveOrder, saveEdit,
+    saveOrder, saveSniWhitelist, copy, applyPreset, expiryStatus,
+  };
+}
