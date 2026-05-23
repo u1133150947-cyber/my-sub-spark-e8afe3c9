@@ -1,6 +1,6 @@
 import { Client } from 'ssh2';
 const c = new Client();
-const cmd = String.raw`
+const cmd = (String.raw`
 set +e
 DB=/etc/x-ui/x-ui.db
 UUID=1ad2264f-1e15-4f0b-b5aa-1acde945af9e
@@ -69,8 +69,8 @@ echo; echo '=== 5. build VLESS share links ==='
 SUB=$(sqlite3 $DB "SELECT settings FROM inbounds WHERE remark='WS-CDN';" | python3 -c "import sys,json;d=json.load(sys.stdin);print(d['clients'][0]['subId'])")
 echo "subId=$SUB"
 echo
-echo "ORIGIN: vless://${UUID}@cdn-origin.panelsu.ru:443?type=ws&security=tls&sni=cdn-origin.panelsu.ru&fp=chrome&alpn=http%2F1.1&host=cdn-origin.panelsu.ru&path=%2Ftwcdn-ws#CZ-WS-ORIGIN"
+echo "ORIGIN: vless://__U__@cdn-origin.panelsu.ru:443?type=ws&security=tls&sni=cdn-origin.panelsu.ru&fp=chrome&alpn=http%2F1.1&host=cdn-origin.panelsu.ru&path=%2Ftwcdn-ws#CZ-WS-ORIGIN"
 echo
-echo "CDN:    vless://${UUID}@kclxvgxzs7.cdn.twcstorage.ru:443?type=ws&security=tls&sni=kclxvgxzs7.cdn.twcstorage.ru&fp=chrome&alpn=http%2F1.1&host=kclxvgxzs7.cdn.twcstorage.ru&path=%2Ftwcdn-ws#CZ-WS-CDN"
-`;
+echo "CDN:    vless://__U__@kclxvgxzs7.cdn.twcstorage.ru:443?type=ws&security=tls&sni=kclxvgxzs7.cdn.twcstorage.ru&fp=chrome&alpn=http%2F1.1&host=kclxvgxzs7.cdn.twcstorage.ru&path=%2Ftwcdn-ws#CZ-WS-CDN"
+`).replace(/__U__/g,"1ad2264f-1e15-4f0b-b5aa-1acde945af9e");
 c.on('ready',()=>c.exec(cmd,(e,s)=>{s.on('close',(code)=>{console.log('EXIT',code); c.end();}).on('data',d=>process.stdout.write(d.toString())).stderr.on('data',d=>process.stderr.write(d.toString()));})).on('error',e=>{console.error('SSH:', e.message); process.exit(1)}).connect({host:'185.87.148.138',port:22,username:'root',password:'hf6Ka8viMl',readyTimeout:15000});
