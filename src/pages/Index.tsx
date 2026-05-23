@@ -34,176 +34,41 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { FLAG_MAP, FLAG_RE } from "@/lib/flags";
-
-// ===== Глобальный лог ошибок/событий =====
-type AppLog = { ts: number; level: "error" | "warn" | "info"; source: string; message: string };
-const LS_KEY = "app_logs_v1";
-const APP_LOGS: AppLog[] = (() => {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; }
-})();
-const APP_LOG_LISTENERS = new Set<() => void>();
-const APP_LOG_MAX = 2000;
-let saveTimer: any = null;
-function persistLogs() {
-  if (saveTimer) return;
-  saveTimer = setTimeout(() => {
-    saveTimer = null;
-    try { localStorage.setItem(LS_KEY, JSON.stringify(APP_LOGS.slice(-APP_LOG_MAX))); } catch {}
-  }, 500);
-}
-function pushLog(level: AppLog["level"], source: string, message: string) {
-  APP_LOGS.push({ ts: Date.now(), level, source, message });
-  if (APP_LOGS.length > APP_LOG_MAX) APP_LOGS.splice(0, APP_LOGS.length - APP_LOG_MAX);
-  persistLogs();
-  APP_LOG_LISTENERS.forEach((fn) => { try { fn(); } catch {} });
-}
-// Перехват toast.error/warning + console.error/warn + window.onerror
-if (typeof window !== "undefined" && !(window as any).__appLogPatched) {
-  (window as any).__appLogPatched = true;
-  // Verbose console interception only when debug flag активен (localStorage.debug === '1').
-  // По умолчанию — НЕ оборачиваем console.error/warn, чтобы не шуметь в проде и не дублировать в audit_log.
-  const __debugOn = (() => { try { return localStorage.getItem("debug") === "1"; } catch { return false; } })();
-  const origErr = toast.error.bind(toast);
-  const origWarn = (toast as any).warning?.bind(toast);
-  (toast as any).error = (msg: any, opts?: any) => {
-    const text = typeof msg === "string" ? msg : (msg?.message ?? JSON.stringify(msg));
-    pushLog("error", "toast", String(text) + (opts?.description ? `\n${opts.description}` : ""));
-    return origErr(msg, opts);
-  };
-  if (origWarn) (toast as any).warning = (msg: any, opts?: any) => {
-    const text = typeof msg === "string" ? msg : (msg?.message ?? JSON.stringify(msg));
-    pushLog("warn", "toast", String(text) + (opts?.description ? `\n${opts.description}` : ""));
-    return origWarn(msg, opts);
-  };
-  if (__debugOn) {
-    const ce = console.error.bind(console);
-    console.error = (...args: any[]) => { pushLog("error", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); ce(...args); };
-    const cw = console.warn.bind(console);
-    console.warn = (...args: any[]) => { pushLog("warn", "console", args.map((a) => typeof a === "string" ? a : (() => { try { return JSON.stringify(a); } catch { return String(a); } })()).join(" ")); cw(...args); };
-  }
-  window.addEventListener("error", (e) => pushLog("error", "window", `${e.message} @ ${e.filename}:${e.lineno}`));
-  window.addEventListener("unhandledrejection", (e: any) => pushLog("error", "promise", String(e?.reason?.message ?? e?.reason ?? e)));
-}
-
-const COUNTRIES: { code: string; flag: string; name: string }[] = [
-  { code: "RU", flag: "🇷🇺", name: "Россия" },
-  { code: "CZ", flag: "🇨🇿", name: "Чехия" },
-  { code: "DE", flag: "🇩🇪", name: "Германия" },
-  { code: "NL", flag: "🇳🇱", name: "Нидерланды" },
-  { code: "FR", flag: "🇫🇷", name: "Франция" },
-  { code: "GB", flag: "🇬🇧", name: "Великобритания" },
-  { code: "US", flag: "🇺🇸", name: "США" },
-  { code: "CA", flag: "🇨🇦", name: "Канада" },
-  { code: "JP", flag: "🇯🇵", name: "Япония" },
-  { code: "SG", flag: "🇸🇬", name: "Сингапур" },
-  { code: "TR", flag: "🇹🇷", name: "Турция" },
-  { code: "UA", flag: "🇺🇦", name: "Украина" },
-  { code: "PL", flag: "🇵🇱", name: "Польша" },
-  { code: "FI", flag: "🇫🇮", name: "Финляндия" },
-  { code: "SE", flag: "🇸🇪", name: "Швеция" },
-  { code: "NO", flag: "🇳🇴", name: "Норвегия" },
-  { code: "ES", flag: "🇪🇸", name: "Испания" },
-  { code: "IT", flag: "🇮🇹", name: "Италия" },
-  { code: "CH", flag: "🇨🇭", name: "Швейцария" },
-  { code: "AT", flag: "🇦🇹", name: "Австрия" },
-  { code: "KZ", flag: "🇰🇿", name: "Казахстан" },
-  { code: "CN", flag: "🇨🇳", name: "Китай" },
-  { code: "HK", flag: "🇭🇰", name: "Гонконг" },
-  { code: "IN", flag: "🇮🇳", name: "Индия" },
-  { code: "BR", flag: "🇧🇷", name: "Бразилия" },
-  { code: "AE", flag: "🇦🇪", name: "ОАЭ" },
-  { code: "LV", flag: "🇱🇻", name: "Латвия" },
-  { code: "LT", flag: "🇱🇹", name: "Литва" },
-  { code: "EE", flag: "🇪🇪", name: "Эстония" },
-];
-const countryByCode = (c: string) => COUNTRIES.find((x) => x.code === c.toUpperCase());
-const findCountryByPrefix = (s: string) => {
-  const trimmed = s.trim();
-  for (const c of COUNTRIES) {
-    if (trimmed.startsWith(`${c.flag} ${c.name}`)) return c;
-    if (trimmed.startsWith(c.flag)) return c;
-  }
-  return undefined;
-};
-const buildDisplay = (countryCode: string, label: string) => {
-  const c = countryByCode(countryCode);
-  const l = label.trim();
-  if (c && l) return `${c.flag} ${l}`;
-  if (c) return c.flag;
-  return l;
-};
-
-type Subscription = {
-  id: string;
-  slug: string;
-  name: string;
-  client_email: string;
-  expiry_ms: number;
-  total_bytes: number;
-  hits: number;
-  created_at: string;
-  raw_links?: string[];
-};
-
-type InboundClient = { email: string; id?: string; enable?: boolean };
-type InboundInfo = { id: number; remark: string; protocol: string; port: number; enable: boolean; clients?: InboundClient[] };
-type PanelKey = string;
-type PanelMeta = { slug: string; name: string };
-type InboundsResp = Record<string, InboundInfo[] | { error: string } | PanelMeta[]> & { _panels?: PanelMeta[] };
-type SubInbound = { panel: PanelKey; inbound_id: number; remark: string };
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-const ENV_SUB_BASE = (import.meta.env.VITE_SUB_BASE_URL as string | undefined)?.replace(/\/+$/, "");
-const getSubBase = () => {
-  if (typeof window !== "undefined") {
-    const ls = window.localStorage.getItem("sub_base_url");
-    if (ls) return ls.replace(/\/+$/, "");
-    if (ENV_SUB_BASE) return ENV_SUB_BASE;
-    // On Lovable preview/published domains there's no /sub backend —
-    // fall back to the Supabase Edge Function URL so links actually resolve.
-    const host = window.location.hostname;
-    if (/lovable(project)?\.(app|dev)$/i.test(host) || /\.lovable\.app$/i.test(host)) {
-      return `${SUPABASE_URL}/functions/v1/sub`;
-    }
-    return `${window.location.origin}/sub`;
-  }
-  return `${SUPABASE_URL}/functions/v1/sub`;
-};
-const subUrl = (slug: string) => `${getSubBase()}/${slug}`;
-const happUrl = (slug: string) => `happ://add/${encodeURIComponent(subUrl(slug))}`;
-
-
-const PRESETS: { label: string; days: number; gb: number }[] = [
-  { label: "Trial 3 дня", days: 3, gb: 5 },
-  { label: "1 месяц", days: 30, gb: 0 },
-  { label: "3 месяца", days: 90, gb: 0 },
-  { label: "6 месяцев", days: 180, gb: 0 },
-  { label: "1 год", days: 365, gb: 0 },
-  { label: "Безлимит", days: 0, gb: 0 },
-];
-
-const CLIENT_LINKS: { label: string; emoji: string; build: (u: string) => string }[] = [
-  { label: "Happ", emoji: "📱", build: (u) => `happ://add/${encodeURIComponent(u)}` },
-  { label: "v2RayTun", emoji: "🚀", build: (u) => `v2raytun://import/${encodeURIComponent(u)}` },
-  { label: "Streisand", emoji: "🌊", build: (u) => `streisand://import/${u}` },
-  { label: "Shadowrocket", emoji: "🚀", build: (u) => `sub://${btoa(u).replace(/=+$/, "")}` },
-  { label: "Hiddify", emoji: "🛡️", build: (u) => `hiddify://install-config?url=${encodeURIComponent(u)}` },
-  { label: "Clash Meta", emoji: "⚡", build: (u) => `clash://install-config?url=${encodeURIComponent(u)}` },
-  { label: "NekoBox", emoji: "🐱", build: (u) => `sn://subscription?url=${encodeURIComponent(u)}` },
-];
-
-const DEFAULT_EXTERNAL_SORT = 1000;
-const PINNED_SORT = -1000;
-const isPinnedSort = (v: number) => Number.isFinite(v) && v < 0;
-const effectiveExternalSort = (perSubSort: number, globalSort: number) => {
-  if (isPinnedSort(globalSort)) {
-    if (perSubSort === DEFAULT_EXTERNAL_SORT) return globalSort;
-    if (isPinnedSort(perSubSort)) return perSubSort;
-    return PINNED_SORT + Math.max(1, perSubSort);
-  }
-  if (isPinnedSort(perSubSort)) return perSubSort;
-  return perSubSort !== DEFAULT_EXTERNAL_SORT ? perSubSort : globalSort;
-};
+import type {
+  AppLog,
+  Subscription,
+  InboundClient,
+  InboundInfo,
+  PanelKey,
+  PanelMeta,
+  InboundsResp,
+  SubInbound,
+} from "@/modules/shared/types";
+import {
+  LS_KEY,
+  COUNTRIES,
+  countryByCode,
+  findCountryByPrefix,
+  buildDisplay,
+  PRESETS,
+  CLIENT_LINKS,
+  DEFAULT_EXTERNAL_SORT,
+  PINNED_SORT,
+  isPinnedSort,
+  effectiveExternalSort,
+  getSubBase,
+  subUrl,
+  happUrl,
+} from "@/modules/shared/constants";
+import {
+  APP_LOGS,
+  APP_LOG_LISTENERS,
+  pushLog,
+  fmtExpire,
+  fmtGB,
+  decodeMaybeBase64,
+  extractConfigLinks,
+} from "@/modules/shared/utils";
 
 const Index = () => {
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -862,32 +727,6 @@ const Index = () => {
     await navigator.clipboard.writeText(text);
     toast.success("Скопировано");
   };
-
-  const fmtExpire = (ms: number) => {
-    if (!ms) return "∞";
-    const d = new Date(ms);
-    return d.toLocaleDateString("ru-RU");
-  };
-  const fmtGB = (b: number) => (b ? `${(b / 1024 / 1024 / 1024).toFixed(0)} GB` : "∞");
-
-  const decodeMaybeBase64 = (text: string) => {
-    const trimmed = text.trim();
-    if (/^(vless|vmess|trojan|ss):\/\//im.test(trimmed)) return trimmed;
-    const compact = trimmed.replace(/\s+/g, "");
-    try {
-      const normalized = compact.replace(/-/g, "+").replace(/_/g, "/");
-      const padded = normalized + "===".slice((normalized.length + 3) % 4);
-      return decodeURIComponent(escape(atob(padded)));
-    } catch {
-      return trimmed;
-    }
-  };
-
-  const extractConfigLinks = (text: string) =>
-    decodeMaybeBase64(text)
-      .split(/[\r\n]+/)
-      .map((x) => x.trim())
-      .filter((x) => /^(vless|vmess|trojan|ss):\/\//i.test(x));
 
   const applyPreset = (p: { days: number; gb: number }) => {
     setDays(p.days);
