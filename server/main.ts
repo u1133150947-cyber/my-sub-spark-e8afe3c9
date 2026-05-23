@@ -13,6 +13,8 @@ import { extname, join, normalize } from "https://deno.land/std@0.224.0/path/mod
 
 const PORT = Number(Deno.env.get("PORT") ?? 8080);
 const STATIC_DIR = (() => {
+  const prebuilt = join(Deno.cwd(), "prebuilt-dist");
+  try { return Deno.realPathSync(prebuilt); } catch {}
   const raw = Deno.env.get("STATIC_DIR") ?? "./dist";
   try { return Deno.realPathSync(raw); } catch { return raw; }
 })();
