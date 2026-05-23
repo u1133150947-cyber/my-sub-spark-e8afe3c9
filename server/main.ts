@@ -4,7 +4,7 @@
 import { handleRest } from "./postgrest.ts";
 import { handlePanel } from "./panel.ts";
 import { handleSub } from "./sub.ts";
-import { handleUpdate, handleVersion, handleUpdateFromGithub } from "./update.ts";
+import { handleUpdate, handleUpdateStatus, handleVersion, handleUpdateFromGithub } from "./update.ts";
 import { handleAdminAuth } from "./adminAuth.ts";
 import { handleHy2Auth } from "./hy2.ts";
 import { handleInstall, handleAttachDomain, handleDetectPanel } from "./install.ts";
@@ -134,6 +134,9 @@ Deno.serve({ port: PORT }, async (req) => {
   }
   if (url.pathname === "/api/update" || url.pathname === "/api/update/") {
     return withStrictCors(req, await handleUpdate(req, url));
+  }
+  if (url.pathname === "/api/update/status" || url.pathname === "/api/update/status/") {
+    return withStrictCors(req, await handleUpdateStatus(req, url));
   }
   if (url.pathname === "/api/install-panel" || url.pathname === "/api/install-panel/") {
     return withStrictCors(req, await handleInstall(req, url));
