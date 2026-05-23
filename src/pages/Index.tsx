@@ -14,6 +14,7 @@ import { PanelsManager } from "@/components/PanelsManager";
 import { OnlineClients } from "@/components/OnlineClients";
 import { UpdatePanel } from "@/components/UpdatePanel";
 import { ExternalSubsPanel } from "@/components/ExternalSubsPanel";
+import { LogsTab } from "@/modules/logs/LogsTab";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   DropdownMenu,
@@ -110,34 +111,10 @@ const Index = () => {
     return () => { APP_LOG_LISTENERS.delete(fn); };
   }, []);
 
-  // ===== Logs UI state =====
-  type ServerLog = { id: string; ts: string; level: string; action: string; panel_slug: string | null; subscription_id: string | null; status: string | null; duration_ms: number | null; error: string | null; request_id: string | null; meta: any };
-  const [serverLogs, setServerLogs] = useState<ServerLog[]>([]);
-  const [logSource, setLogSource] = useState<"client" | "server" | "all">("all");
-  const [logLevel, setLogLevel] = useState<"all" | "error" | "warn" | "info">("all");
-  const [logSearch, setLogSearch] = useState("");
-  const [logGroup, setLogGroup] = useState(true);
-  const [logHours, setLogHours] = useState(24);
-  const [serverLogsLoading, setServerLogsLoading] = useState(false);
+  // ===== Logs: только badge непрочитанных и тайминг последнего просмотра =====
   const [lastSeenLogTs, setLastSeenLogTs] = useState<number>(() => {
     try { return Number(localStorage.getItem("logs_last_seen") || "0"); } catch { return 0; }
   });
-
-  const loadServerLogs = async () => {
-    setServerLogsLoading(true);
-    try {
-      const params = new URLSearchParams({ hours: String(logHours), limit: "500" });
-      if (logLevel !== "all") params.set("level", logLevel);
-      if (logSearch.trim()) params.set("q", logSearch.trim());
-      const { data, error } = await supabase.functions.invoke(`panel?action=auditLog&${params.toString()}`, { method: "GET" });
-      if (error) throw error;
-      setServerLogs(((data as any)?.logs ?? []) as ServerLog[]);
-    } catch (e: any) {
-      pushLog("error", "auditLog", e?.message ?? String(e));
-    } finally {
-      setServerLogsLoading(false);
-    }
-  };
 
   const panelMeta: PanelMeta[] = (((inbounds?._panels as PanelMeta[]) ?? [])
     .filter((p: any) => p?.slug && p.slug !== "null" && p.slug !== "undefined"));
