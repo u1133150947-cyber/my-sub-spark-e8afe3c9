@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Activity, ArrowDown, ArrowUp, BarChart3, Crown, Loader2, RefreshCw, TrendingUp, Users } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, BarChart3, Crown, Loader2, RefreshCw, TrendingUp, Users, Clock } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
@@ -132,43 +132,65 @@ export const StatsDashboard = () => {
   const maxTotal = top[0]?.total ?? 0;
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold flex items-center gap-2">
-          <BarChart3 className="size-5 text-primary" />
-          Статистика трафика
-        </h2>
+    <section className="space-y-5">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 className="text-xl font-semibold flex items-center gap-2">
+            <BarChart3 className="size-5 text-primary" />
+            Статистика трафика
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Сводка по всем подпискам · обновлено каждое открытие
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           {updatedAt && (
-            <span className="text-xs text-muted-foreground">
-              обновлено: {updatedAt.toLocaleTimeString("ru-RU")}
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1">
+              <Clock className="size-3" />
+              {updatedAt.toLocaleTimeString("ru-RU")}
             </span>
           )}
-          <Button variant="ghost" size="sm" onClick={refresh} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`size-4 mr-1 ${loading ? "animate-spin" : ""}`} />
             Обновить
           </Button>
         </div>
       </div>
 
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <StatCard icon={<Activity className="size-4" />} label="Всего трафика" value={fmtBytes(totals.total)} accent />
-        <StatCard icon={<ArrowDown className="size-4" />} label="Загружено" value={fmtBytes(totals.down)} />
-        <StatCard icon={<ArrowUp className="size-4" />} label="Отправлено" value={fmtBytes(totals.up)} />
-        <StatCard icon={<Users className="size-4" />} label="Активных" value={`${totals.active} / ${perSub.length}`} />
+        <StatCard icon={<ArrowDown className="size-4" />} label="Загружено" value={fmtBytes(totals.down)} hint={totals.total ? `${Math.round((totals.down / totals.total) * 100)}% от общего` : undefined} tone="info" />
+        <StatCard icon={<ArrowUp className="size-4" />} label="Отправлено" value={fmtBytes(totals.up)} hint={totals.total ? `${Math.round((totals.up / totals.total) * 100)}% от общего` : undefined} tone="warn" />
+        <StatCard icon={<Users className="size-4" />} label="Активных" value={`${totals.active}`} hint={`из ${perSub.length} подписок`} tone="success" />
       </div>
 
-      <Card className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
-        <div className="flex items-center gap-2 mb-3 text-sm font-semibold">
-          <TrendingUp className="size-4 text-primary" />
-          Динамика за 24 часа
+      <Card className="p-5 border-border" style={{ background: "var(--gradient-card)" }}>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <TrendingUp className="size-4 text-primary" />
+            Динамика за 24 часа
+          </div>
+          {chartData.length > 0 && (
+            <div className="flex items-center gap-4 text-xs">
+              <div>
+                <div className="text-muted-foreground">За период</div>
+                <div className="font-semibold tabular-nums">{fmtBytes(chartData.reduce((s, d) => s + d.bytes, 0))}</div>
+              </div>
+              <div>
+                <div className="text-muted-foreground">Пик/час</div>
+                <div className="font-semibold tabular-nums">{fmtBytes(Math.max(...chartData.map((d) => d.bytes)))}</div>
+              </div>
+            </div>
+          )}
         </div>
         {snapshots.length < 2 ? (
-          <div className="h-[180px] flex items-center justify-center text-sm text-muted-foreground">
-            Накапливаем данные… снапшоты собираются при каждом обновлении.
+          <div className="h-[200px] flex flex-col items-center justify-center text-sm text-muted-foreground gap-2 border border-dashed border-border rounded-lg">
+            <Loader2 className="size-5 animate-spin opacity-50" />
+            Накапливаем данные…
+            <span className="text-xs opacity-70">Снапшоты собираются при каждом обновлении</span>
           </div>
         ) : (
-          <div className="h-[200px]">
+          <div className="h-[240px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData} margin={{ top: 5, right: 8, bottom: 0, left: -16 }}>
                 <defs>
@@ -203,31 +225,38 @@ export const StatsDashboard = () => {
         )}
       </Card>
 
-      <Card className="p-4 border-border" style={{ background: "var(--gradient-card)" }}>
-        <div className="flex items-center gap-2 mb-4 text-sm font-semibold">
-          <Crown className="size-4 text-primary" />
-          Топ потребителей
+      <Card className="p-5 border-border" style={{ background: "var(--gradient-card)" }}>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Crown className="size-4 text-primary" />
+            Топ потребителей
+          </div>
+          {top.length > 0 && (
+            <span className="text-xs text-muted-foreground">
+              {top.length} из {perSub.length}
+            </span>
+          )}
         </div>
         {top.length === 0 ? (
-          <div className="text-sm text-muted-foreground py-6 text-center">
+          <div className="text-sm text-muted-foreground py-8 text-center">
             {loading ? <Loader2 className="size-4 animate-spin mx-auto" /> : "Пока нет данных"}
           </div>
         ) : (
-          <ol className="space-y-3">
+          <ol className="space-y-3.5">
             {top.map((c, i) => {
               const pct = maxTotal > 0 ? (c.total / maxTotal) * 100 : 0;
               return (
                 <li key={c.id}>
                   <div className="flex items-center justify-between mb-1 text-sm">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className={`size-6 rounded-full flex items-center justify-center text-xs font-bold ${i === 0 ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}>
+                      <span className={`size-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${i === 0 ? "bg-primary text-primary-foreground shadow-[0_0_12px_hsl(var(--primary)/0.4)]" : i === 1 ? "bg-primary/20 text-primary" : i === 2 ? "bg-primary/10 text-primary/80" : "bg-secondary text-muted-foreground"}`}>
                         {i + 1}
                       </span>
                       <span className="truncate font-medium">{c.name}</span>
                     </div>
-                    <span className="text-xs text-muted-foreground tabular-nums">{fmtBytes(c.total)}</span>
+                    <span className="text-xs font-semibold tabular-nums">{fmtBytes(c.total)}</span>
                   </div>
-                  <div className="h-2 rounded-full bg-secondary overflow-hidden">
+                  <div className="h-1.5 rounded-full bg-secondary/60 overflow-hidden">
                     <div
                       className="h-full rounded-full transition-all"
                       style={{ width: `${pct}%`, background: "var(--gradient-hero)" }}
@@ -243,15 +272,46 @@ export const StatsDashboard = () => {
   );
 };
 
-const StatCard = ({ icon, label, value, accent }: { icon: React.ReactNode; label: string; value: string; accent?: boolean }) => (
-  <Card
-    className="p-4 border-border"
-    style={accent ? { background: "var(--gradient-hero)" } : { background: "var(--gradient-card)" }}
-  >
-    <div className={`flex items-center gap-1.5 text-xs mb-1 ${accent ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-      {icon}
-      {label}
-    </div>
-    <div className={`text-xl font-bold tabular-nums ${accent ? "text-primary-foreground" : ""}`}>{value}</div>
-  </Card>
-);
+const StatCard = ({
+  icon,
+  label,
+  value,
+  hint,
+  accent,
+  tone,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  hint?: string;
+  accent?: boolean;
+  tone?: "info" | "warn" | "success";
+}) => {
+  const toneChip =
+    tone === "info"
+      ? "bg-sky-500/15 text-sky-400"
+      : tone === "warn"
+      ? "bg-amber-500/15 text-amber-400"
+      : tone === "success"
+      ? "bg-emerald-500/15 text-emerald-400"
+      : "bg-primary/15 text-primary";
+  return (
+    <Card
+      className="p-4 border-border relative overflow-hidden group hover:border-primary/40 transition-colors"
+      style={accent ? { background: "var(--gradient-hero)" } : { background: "var(--gradient-card)" }}
+    >
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className={`text-[11px] uppercase tracking-wider font-medium ${accent ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+          {label}
+        </div>
+        <div className={`size-7 rounded-lg flex items-center justify-center ${accent ? "bg-primary-foreground/15 text-primary-foreground" : toneChip}`}>
+          {icon}
+        </div>
+      </div>
+      <div className={`text-2xl font-bold tabular-nums leading-tight ${accent ? "text-primary-foreground" : ""}`}>{value}</div>
+      {hint && (
+        <div className={`text-[11px] mt-1 ${accent ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{hint}</div>
+      )}
+    </Card>
+  );
+};
