@@ -1,5 +1,8 @@
+import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { LogOut, Zap } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { APP_LOGS, APP_LOG_LISTENERS } from "@/modules/shared/utils";
 import {
   Sidebar,
   SidebarContent,
@@ -15,10 +18,41 @@ import {
 } from "@/components/ui/sidebar";
 import { NAV_CONFIG } from "./navConfig";
 
+const LOGS_SEEN_KEY = "logs_last_seen_ts";
+
+function useUnreadErrors() {
+  const { pathname } = useLocation();
+  const [count, setCount] = useState(0);
+
+  const recompute = () => {
+    let lastSeen = 0;
+    try { lastSeen = Number(localStorage.getItem(LOGS_SEEN_KEY) ?? "0"); } catch {}
+    setCount(APP_LOGS.filter((l) => l.level === "error" && l.ts > lastSeen).length);
+  };
+
+  useEffect(() => {
+    recompute();
+    APP_LOG_LISTENERS.add(recompute);
+    return () => { APP_LOG_LISTENERS.delete(recompute); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mark as read whenever user opens the logs page.
+  useEffect(() => {
+    if (pathname === "/logs" || pathname.startsWith("/logs/")) {
+      try { localStorage.setItem(LOGS_SEEN_KEY, String(Date.now())); } catch {}
+      setCount(0);
+    }
+  }, [pathname]);
+
+  return count;
+}
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { pathname } = useLocation();
+  const unreadErrors = useUnreadErrors();
 
   const isActive = (href: string) =>
     href === "/subs"
@@ -66,7 +100,12 @@ export function AppSidebar() {
                     >
                       <NavLink to={item.href} className="flex items-center gap-2">
                         <item.icon className="size-4" />
-                        <span>{item.label}</span>
+                        <span className="flex-1">{item.label}</span>
+                        {item.id === "logs" && unreadErrors > 0 && !collapsed && (
+                          <Badge variant="destructive" className="h-5 px-1.5 text-[10px]">
+                            {unreadErrors > 99 ? "99+" : unreadErrors}
+                          </Badge>
+                        )}
                       </NavLink>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

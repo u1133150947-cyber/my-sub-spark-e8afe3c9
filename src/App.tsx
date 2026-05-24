@@ -1,3 +1,4 @@
+import { lazy } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
@@ -7,12 +8,14 @@ import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Login from "./pages/Login.tsx";
 import { RequireAdmin } from "./components/RequireAdmin";
-import DashboardPage from "./modules/dashboard/DashboardPage";
-import SubsListPage from "./modules/subs/SubsListPage";
-import SubsCreatePage from "./modules/subs/SubsCreatePage";
-import PanelsListPage from "./modules/panels/PanelsListPage";
-import UpdatePage from "./modules/panels/UpdatePage";
-import ServerLogsPage from "./modules/serverLogs/ServerLogsPage";
+
+// Code-split heavy pages — they each pull in big dependency trees (charts, qrcode, etc.).
+const DashboardPage = lazy(() => import("./modules/dashboard/DashboardPage"));
+const SubsListPage = lazy(() => import("./modules/subs/SubsListPage"));
+const SubsCreatePage = lazy(() => import("./modules/subs/SubsCreatePage"));
+const PanelsListPage = lazy(() => import("./modules/panels/PanelsListPage"));
+const UpdatePage = lazy(() => import("./modules/panels/UpdatePage"));
+const ServerLogsPage = lazy(() => import("./modules/serverLogs/ServerLogsPage"));
 
 const queryClient = new QueryClient();
 
