@@ -52,12 +52,6 @@ export function useSubsManager(opts: Options = {}) {
   const [renameCountry, setRenameCountry] = useState("");
   const [renameLabel, setRenameLabel] = useState("");
   const [renameSaving, setRenameSaving] = useState(false);
-  const [appLogs, setAppLogs] = useState<AppLog[]>(APP_LOGS.slice());
-  useEffect(() => {
-    const fn = () => setAppLogs(APP_LOGS.slice());
-    APP_LOG_LISTENERS.add(fn);
-    return () => { APP_LOG_LISTENERS.delete(fn); };
-  }, []);
 
   // ===== Logs: только badge непрочитанных и тайминг последнего просмотра =====
   const [lastSeenLogTs, setLastSeenLogTs] = useState<number>(() => {
