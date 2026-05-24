@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
+import { Loader2 } from "lucide-react";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSidebar";
 import { AppTopBar } from "./AppTopBar";
+import { ErrorBoundary } from "./ErrorBoundary";
 import { RenameDialog } from "@/modules/subs/RenameDialog";
 import { useSubsManager } from "@/modules/subs/useSubsManager";
 import type { AppLog } from "@/modules/shared/types";
@@ -31,7 +33,17 @@ export default function AppShell() {
         <div className="flex-1 flex flex-col min-w-0">
           <AppTopBar />
           <main className="flex-1 p-4 md:p-6">
-            <Outlet context={ctx} />
+            <ErrorBoundary>
+              <Suspense
+                fallback={
+                  <div className="flex items-center justify-center py-20 text-muted-foreground">
+                    <Loader2 className="size-5 animate-spin" />
+                  </div>
+                }
+              >
+                <Outlet context={ctx} />
+              </Suspense>
+            </ErrorBoundary>
           </main>
         </div>
       </div>
