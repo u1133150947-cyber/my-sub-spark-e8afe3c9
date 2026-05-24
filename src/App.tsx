@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -7,6 +7,12 @@ import Index from "./pages/Index.tsx";
 import NotFound from "./pages/NotFound.tsx";
 import Login from "./pages/Login.tsx";
 import { RequireAdmin } from "./components/RequireAdmin";
+import DashboardPage from "./modules/dashboard/DashboardPage";
+import SubsListPage from "./modules/subs/SubsListPage";
+import SubsCreatePage from "./modules/subs/SubsCreatePage";
+import PanelsListPage from "./modules/panels/PanelsListPage";
+import UpdatePage from "./modules/panels/UpdatePage";
+import ServerLogsPage from "./modules/serverLogs/ServerLogsPage";
 
 const queryClient = new QueryClient();
 
@@ -18,7 +24,15 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/" element={<RequireAdmin><Index /></RequireAdmin>} />
+          <Route path="/" element={<RequireAdmin><Index /></RequireAdmin>}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="subs" element={<SubsListPage />} />
+            <Route path="subs/create" element={<SubsCreatePage />} />
+            <Route path="panels" element={<PanelsListPage />} />
+            <Route path="update" element={<UpdatePage />} />
+            <Route path="logs" element={<ServerLogsPage />} />
+          </Route>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
