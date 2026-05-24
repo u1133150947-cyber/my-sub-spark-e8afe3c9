@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { StatsDashboard } from "@/components/StatsDashboard";
 import { PanelsManager } from "@/components/PanelsManager";
 import { UpdatePanel } from "@/components/UpdatePanel";
-import { LogsTab } from "@/modules/logs/LogsTab";
+import { LogsTab } from "@/modules/serverLogs/LogsTab";
 import { CreateTab } from "@/modules/subs/CreateTab";
 import { SubsTab } from "@/modules/subs/SubsTab";
 import { RenameDialog } from "@/modules/subs/RenameDialog";
