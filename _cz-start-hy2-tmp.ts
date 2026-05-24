@@ -16,4 +16,4 @@ journalctl -u hysteria-server -n 20 --no-pager 2>&1 | tail -20
 `, (e, s) => {
   s.on('close', () => c.end()).on('data', d => process.stdout.write(d.toString())).stderr.on('data', d => process.stderr.write(d.toString()));
 })).on('error', e => console.error('SSH ERR', e.message))
-  .connect({ host: '185.87.148.138', port: 22, username: 'root', password: 'hf6Ka8viMl', readyTimeout: 10000 });
+  .connect({ host: '185.87.148.138', port: 22, username: 'root', password: 'hf6Ka8viMl', readyTimeout: 30000 });
