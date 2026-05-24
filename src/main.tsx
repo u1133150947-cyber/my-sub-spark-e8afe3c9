@@ -17,7 +17,7 @@ if (typeof window !== "undefined" && !(window as any).__adminFetchPatched) {
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     try {
       let urlStr = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
-      const isLovable = /lovable(?:project)?\.(app|dev)$/i.test(window.location.hostname) || window.location.hostname === "localhost";
+      const isLovable = /lovable(?:project)?\.(app|dev|com)$/i.test(window.location.hostname) || window.location.hostname === "localhost";
       
       let finalInput = input;
       if (!isLovable && SUPABASE_HOST && urlStr.includes(SUPABASE_HOST)) {
