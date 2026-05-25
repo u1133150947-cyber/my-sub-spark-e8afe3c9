@@ -14,7 +14,6 @@ const DashboardPage = lazy(() => import("./modules/dashboard/DashboardPage"));
 const SubsListPage = lazy(() => import("./modules/subs/SubsListPage"));
 const SubsCreatePage = lazy(() => import("./modules/subs/SubsCreatePage"));
 const PanelsListPage = lazy(() => import("./modules/panels/PanelsListPage"));
-const PanelInstallPage = lazy(() => import("./modules/panels/PanelInstallPage"));
 const UpdatePage = lazy(() => import("./modules/panels/UpdatePage"));
 const ServerLogsPage = lazy(() => import("./modules/serverLogs/ServerLogsPage"));
 
@@ -34,7 +33,6 @@ const App = () => (
             <Route path="subs" element={<SubsListPage />} />
             <Route path="subs/create" element={<SubsCreatePage />} />
             <Route path="panels" element={<PanelsListPage />} />
-            <Route path="panels/install" element={<PanelInstallPage />} />
             <Route path="update" element={<UpdatePage />} />
             <Route path="logs" element={<ServerLogsPage />} />
           </Route>
