@@ -3,7 +3,6 @@ import {
   Plus,
   Key,
   Server,
-  Rocket,
   RefreshCw,
   Terminal,
   type LucideIcon,
@@ -39,7 +38,6 @@ export const NAV_CONFIG: NavSection[] = [
     title: "Инфраструктура",
     items: [
       { id: "panels", label: "Панели", icon: Server, href: "/panels" },
-      { id: "panels-install", label: "Установить 3X-UI", icon: Rocket, href: "/panels/install" },
       { id: "update", label: "Обновление", icon: RefreshCw, href: "/update" },
     ],
   },

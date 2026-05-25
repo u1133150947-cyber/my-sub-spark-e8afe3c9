@@ -10,7 +10,7 @@ import { getAdminToken } from "./lib/adminAuth";
 if (typeof window !== "undefined" && !(window as any).__adminFetchPatched) {
   (window as any).__adminFetchPatched = true;
   const origFetch = window.fetch.bind(window);
-  const ADMIN_PATHS = ["/functions/v1/panel", "/functions/v1/sub", "/api/update", "/api/install-panel", "/api/detect-panel", "/api/attach-domain", "/rest/v1/"];
+  const ADMIN_PATHS = ["/functions/v1/panel", "/functions/v1/sub", "/api/update", "/rest/v1/"];
   const SUPABASE_HOST = (() => {
     try { return new URL(import.meta.env.VITE_SUPABASE_URL as string).host; } catch { return ""; }
   })();
