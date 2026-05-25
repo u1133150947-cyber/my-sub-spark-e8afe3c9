@@ -3,7 +3,6 @@ import {
   Plus,
   Key,
   Server,
-  Rocket,
   RefreshCw,
   Terminal,
   type LucideIcon,
