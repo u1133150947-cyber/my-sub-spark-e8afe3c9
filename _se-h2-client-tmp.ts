@@ -1,5 +1,5 @@
 import { Client } from 'ssh2';
-const AUTH = 'c92866b0-40bd-4e2e-ad0f-3dfdd90332e6';
+const AUTH = '16b16b4b-ae36-4b89-a794-888fdaffc9b3';
 const cfgYaml = `server: se.panelsu.ru:443
 auth: ${AUTH}
 tls:
