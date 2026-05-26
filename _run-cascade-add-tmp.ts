@@ -15,15 +15,23 @@ for (const slug of SLUGS) {
     const has = (st.clients||[]).find((c:any)=>c.id===UUID||c.email===EMAIL);
     if (has) { console.log(slug,"already has client",has.email); continue; }
     const settings = JSON.stringify({clients:[{id:UUID,flow:"xtls-rprx-vision",email:EMAIL,limitIp:0,totalGB:0,expiryTime:0,enable:true,tgId:"",subId:"",reset:0}]});
-    try {
-      const res = await panelFetch(slug, "/panel/api/inbounds/addClient", {
-        method:"POST",
-        headers:{"Content-Type":"application/x-www-form-urlencoded"},
-        body:"id="+v.id+"&settings="+encodeURIComponent(settings),
-      });
-      console.log(slug,"addClient:",res.status,JSON.stringify(res.body).slice(0,400));
-    } catch(ee:any) {
-      console.log(slug,"addClient EXC:",ee.message,ee.stack?.split("\\n").slice(0,3).join(" | "));
+    // Try JSON body (new 3X-UI)
+    const tries = [
+      {ct:"application/json", body: JSON.stringify({id:v.id, settings})},
+      {ct:"application/x-www-form-urlencoded", body:"id="+v.id+"&settings="+encodeURIComponent(settings)},
+    ];
+    for (const t of tries) {
+      try {
+        const res = await panelFetch(slug, "/panel/api/inbounds/addClient", {
+          method:"POST",
+          headers:{"Content-Type":t.ct},
+          body:t.body,
+        });
+        console.log(slug, t.ct, "->", res.status, res.body.slice(0,300));
+        if (res.status===200) break;
+      } catch(ee:any) {
+        console.log(slug, t.ct, "EXC:", ee.message);
+      }
     }
   } catch(e:any){ console.log(slug,"ERR:",e.message); }
 }
