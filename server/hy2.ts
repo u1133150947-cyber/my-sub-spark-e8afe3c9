@@ -6,6 +6,21 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+async function checkCloudHy2Auth(body: unknown): Promise<{ ok: boolean; id?: string } | null> {
+  const projectUrl = Deno.env.get("SUPABASE_URL") || "https://tyflywtpmeaqldzaoraj.supabase.co";
+  try {
+    const res = await fetch(`${projectUrl.replace(/\/+$/, "")}/functions/v1/hy2-auth`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function handleHy2Auth(req: Request): Promise<Response> {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: cors });
@@ -25,6 +40,10 @@ export async function handleHy2Auth(req: Request): Promise<Response> {
     `, [auth, auth])[0] as any;
 
     if (!sub) {
+      const cloud = await checkCloudHy2Auth(body);
+      if (cloud?.ok) {
+        return new Response(JSON.stringify({ ok: true, id: cloud.id || auth }), { status: 200, headers: { ...cors, "content-type": "application/json" } });
+      }
       return new Response(JSON.stringify({ ok: false }), { status: 200, headers: { ...cors, "content-type": "application/json" } });
     }
 
