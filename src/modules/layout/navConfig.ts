@@ -5,6 +5,7 @@ import {
   Server,
   RefreshCw,
   Terminal,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 
@@ -45,6 +46,12 @@ export const NAV_CONFIG: NavSection[] = [
     title: "Логи",
     items: [
       { id: "logs", label: "Server логи", icon: Terminal, href: "/logs" },
+    ],
+  },
+  {
+    title: "Справка",
+    items: [
+      { id: "help", label: "Инструкция", icon: BookOpen, href: "/help" },
     ],
   },
 ];

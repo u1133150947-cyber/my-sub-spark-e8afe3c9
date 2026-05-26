@@ -16,6 +16,7 @@ const SubsCreatePage = lazy(() => import("./modules/subs/SubsCreatePage"));
 const PanelsListPage = lazy(() => import("./modules/panels/PanelsListPage"));
 const UpdatePage = lazy(() => import("./modules/panels/UpdatePage"));
 const ServerLogsPage = lazy(() => import("./modules/serverLogs/ServerLogsPage"));
+const HelpPage = lazy(() => import("./modules/help/HelpPage"));
 
 const queryClient = new QueryClient();
 
@@ -35,6 +36,7 @@ const App = () => (
             <Route path="panels" element={<PanelsListPage />} />
             <Route path="update" element={<UpdatePage />} />
             <Route path="logs" element={<ServerLogsPage />} />
+            <Route path="help" element={<HelpPage />} />
           </Route>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
