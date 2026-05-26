@@ -4,7 +4,10 @@ import { listInbounds, panelFetch } from "/opt/sub-manager/server/x3ui.ts";
 const UUID = "2a56beab-d0f7-48d8-bb2e-faf23fb282b4";
 const EMAIL = "cascade-ru-in";
 const SLUGS = ["pff0c43257d","p53180a1f7a","p37e03ed4b0"];
+import { loginPanel } from "/opt/sub-manager/server/x3ui.ts";
 for (const slug of SLUGS) {
+  const sess = await loginPanel(slug);
+  console.log(slug,"cookie:",sess.cookie.slice(0,80),"csrf:",sess.csrf);
   try {
     const ibs = await listInbounds(slug);
     const v = ibs.find((i:any)=>i.protocol==="vless");
