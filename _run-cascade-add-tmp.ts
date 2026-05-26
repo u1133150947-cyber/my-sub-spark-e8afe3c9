@@ -3,7 +3,7 @@ const script = `cat > /tmp/cascadeadd.ts << 'TS'
 import { listInbounds, panelFetch } from "/opt/sub-manager/server/x3ui.ts";
 const UUID = "2a56beab-d0f7-48d8-bb2e-faf23fb282b4";
 const EMAIL = "cascade-ru-in";
-const SLUGS = ["pd7fa18ab53","p2c70200bad","pc58a3d687d"];
+const SLUGS = ["pff0c43257d","p53180a1f7a","p37e03ed4b0"];
 for (const slug of SLUGS) {
   try {
     const ibs = await listInbounds(slug);
