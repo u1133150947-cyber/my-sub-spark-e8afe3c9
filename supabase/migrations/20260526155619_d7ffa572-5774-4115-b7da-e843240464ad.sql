@@ -1,0 +1,1 @@
+ALTER TABLE public.subscription_inbounds DROP CONSTRAINT IF EXISTS subscription_inbounds_one_per_panel; CREATE UNIQUE INDEX IF NOT EXISTS subscription_inbounds_unique_triple ON public.subscription_inbounds (subscription_id, panel, inbound_id);

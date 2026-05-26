@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS public.subscription_inbounds_one_per_panel;

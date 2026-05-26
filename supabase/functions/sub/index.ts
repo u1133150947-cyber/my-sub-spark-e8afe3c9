@@ -710,6 +710,12 @@ Deno.serve(async (req) => {
       ib.panel_name = info?.name ?? "";
       ib.panel_country = info?.country ?? "";
       if (info?.connectionHost) ib.host = info.connectionHost;
+      // RU uses an nginx SNI dispatcher on :8443 that fans out by SNI to the
+      // local-only xray inbounds (127.0.0.1:18443-18446). Clients must always
+      // connect to the public port 8443, not the internal listener port.
+      if (ib.panel === "ru" && Number(ib.port) >= 18443 && Number(ib.port) <= 18446) {
+        ib.port = 8443;
+      }
     }
 
     // Load overrides for the panel+inbound pairs used by this subscription
