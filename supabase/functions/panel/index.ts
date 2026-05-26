@@ -998,20 +998,14 @@ Deno.serve(async (req) => {
 
       const { data: existingLinks } = await supabase.from("subscription_inbounds").select("panel, inbound_id").eq("subscription_id", subId);
       const existingSet = new Set((existingLinks ?? []).map((l) => `${l.panel}:${l.inbound_id}`));
-      // Senior policy: 1 inbound per panel per subscription. Skip any selection
-      // whose panel already has an inbound, and dedupe selections by panel.
-      const existingPanels = new Set((existingLinks ?? []).map((l) => l.panel));
-
       const created: any[] = [];
       const errors: any[] = [];
       const subIdShort = sub.slug.slice(0, 16);
-      const panelsSeen = new Set<string>(existingPanels);
       const baseEmail = String(sub.client_email ?? "").trim() || subIdShort;
       for (const sel of selections) {
         const k = `${sel.panel}:${sel.inboundId}`;
         if (existingSet.has(k)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "already added" }); continue; }
-        if (panelsSeen.has(sel.panel)) { errors.push({ panel: sel.panel, inboundId: sel.inboundId, error: "panel already has an inbound (one-per-panel policy)" }); continue; }
-        panelsSeen.add(sel.panel);
+        existingSet.add(k);
         try {
           if (sel.panel === "standalone") {
             const standaloneId = getStandaloneStrId(Number(sel.inboundId));
