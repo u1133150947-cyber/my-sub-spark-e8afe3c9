@@ -64,6 +64,26 @@ export function RenameDialog(props: Props) {
               autoFocus
               onKeyDown={(e) => { if (e.key === "Enter") saveRename(); }}
             />
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {[
+                { label: "⚡ Игровой ⚡", value: "⚡ Игровой " + (countryByCode(renameCountry)?.name ?? "") + " ⚡" },
+                { label: "🎮 Игровой", value: "🎮 Игровой " + (countryByCode(renameCountry)?.name ?? "") },
+                { label: "🚀 Премиум", value: "🚀 Премиум " + (countryByCode(renameCountry)?.name ?? "") },
+                { label: "📺 YouTube", value: "📺 YouTube без рекламы" },
+                { label: "Очистить", value: "" },
+              ].map((p) => (
+                <Button
+                  key={p.label}
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  onClick={() => setRenameLabel(p.value.trim())}
+                >
+                  {p.label}
+                </Button>
+              ))}
+            </div>
           </div>
           <div className="text-xs text-muted-foreground">
             Превью: <code>{buildDisplay(renameCountry, renameLabel) || "— пусто —"}</code>
