@@ -988,11 +988,12 @@ Deno.serve(async (req) => {
       const subId: string = body.id;
       if (!subId) return new Response(JSON.stringify({ error: "id required" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const { data: sub } = await supabase.from("subscriptions").select("id, client_uuid").eq("id", subId).maybeSingle();
-      if (!sub) return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      if (!sub) return new Response(JSON.stringify({ ok: true, deleted: false, errors: [] }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const { data: links } = await supabase.from("subscription_inbounds").select("panel, inbound_id").eq("subscription_id", subId);
       const errors: any[] = [];
       await Promise.all((links ?? []).map(async (l) => {
         try {
+          if (l.panel === "standalone") return;
           const res = await panelFetch(l.panel as PanelKey, `/panel/api/inbounds/${l.inbound_id}/delClient/${sub.client_uuid}`, { method: "POST" });
           let j: any = {}; try { j = JSON.parse(res.body); } catch {}
           if (!j.success) errors.push({ panel: l.panel, inbound: l.inbound_id, msg: j.msg });
@@ -1000,7 +1001,10 @@ Deno.serve(async (req) => {
           errors.push({ panel: l.panel, inbound: l.inbound_id, error: e instanceof Error ? e.message : String(e) });
         }
       }));
-      await supabase.from("subscriptions").delete().eq("id", subId);
+      await supabase.from("subscription_inbounds").delete().eq("subscription_id", subId);
+      await supabase.from("subscription_external_subs").delete().eq("subscription_id", subId);
+      const { error: delErr } = await supabase.from("subscriptions").delete().eq("id", subId);
+      if (delErr) throw new Error(`db delete subscription: ${delErr.message}`);
       return new Response(JSON.stringify({ ok: true, errors }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
