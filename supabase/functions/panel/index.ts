@@ -377,6 +377,27 @@ function getStandaloneStrId(num: number) {
   if (num === 1002) return "ru";
   return String(num);
 }
+async function resolveStandaloneServer(supabase: any, num: number) {
+  // Legacy aliases
+  if (num === 1001 || num === 1002) {
+    const legacyId = num === 1001 ? "cz" : "ru";
+    const { data } = await supabase
+      .from("standalone_servers")
+      .select("id, name, host, port")
+      .eq("id", legacyId)
+      .maybeSingle();
+    if (data) return data;
+  }
+  // UUID-based servers: compute numId for every row and match
+  const { data: rows } = await supabase
+    .from("standalone_servers")
+    .select("id, name, host, port")
+    .order("created_at", { ascending: true });
+  for (const r of (rows ?? [])) {
+    if (getStandaloneNumId(String(r.id)) === num) return r;
+  }
+  return null;
+}
 function standaloneInboundFromServer(s: StandaloneServer) {
   return {
     id: getStandaloneNumId(String(s.id)),
@@ -859,13 +880,8 @@ Deno.serve(async (req) => {
       for (const sel of validSelections) {
         try {
           if (sel.panel === "standalone") {
-            const standaloneId = getStandaloneStrId(Number(sel.inboundId));
-            const { data: srv } = await supabase
-              .from("standalone_servers")
-              .select("id, name, host, port")
-              .eq("id", standaloneId)
-              .maybeSingle();
-            if (!srv) throw new Error("Standalone server not found");
+            const srv = await resolveStandaloneServer(supabase, Number(sel.inboundId));
+            if (!srv) throw new Error(`Standalone server not found (inboundId=${sel.inboundId})`);
             const streamPlus = { security: "tls", tlsSettings: { serverName: srv.host } };
             const email = `${baseEmail}_standalone${sel.inboundId}`;
             const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
@@ -1008,13 +1024,8 @@ Deno.serve(async (req) => {
         existingSet.add(k);
         try {
           if (sel.panel === "standalone") {
-            const standaloneId = getStandaloneStrId(Number(sel.inboundId));
-            const { data: srv } = await supabase
-              .from("standalone_servers")
-              .select("id, name, host, port")
-              .eq("id", standaloneId)
-              .maybeSingle();
-            if (!srv) throw new Error("Standalone server not found");
+            const srv = await resolveStandaloneServer(supabase, Number(sel.inboundId));
+            if (!srv) throw new Error(`Standalone server not found (inboundId=${sel.inboundId})`);
             const streamPlus = { security: "tls", tlsSettings: { serverName: srv.host } };
             const email = `${baseEmail}_standalone${sel.inboundId}`;
             const { error: ibErr } = await supabase.from("subscription_inbounds").insert({
