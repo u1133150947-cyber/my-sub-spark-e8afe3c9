@@ -14,7 +14,7 @@ const cmd = `
 XRAY=/usr/local/x-ui/bin/xray-linux-amd64
 echo "xray: $XRAY"
 printf '%s' '${cfg}' > /tmp/sehy.json
-pkill -f 'sehy.json' 2>/dev/null; sleep 0.5
+pkill -f 'xray.*hyse' 2>/dev/null; sleep 0.5
 nohup $XRAY run -c /tmp/sehy.json > /tmp/sehy.log 2>&1 </dev/null &
 disown
 for i in $(seq 1 30); do ss -lnt 2>/dev/null | grep -q ':19091' && break; sleep 0.3; done
@@ -25,7 +25,7 @@ echo '--- curl gen_204 ---'
 curl -x socks5h://127.0.0.1:19091 -m 12 -sS -w 'GEN204=%{http_code} TIME=%{time_total}\\n' -o /dev/null http://cp.cloudflare.com/generate_204 2>&1 || echo CURL_FAIL=$?
 echo '--- xray log ---'
 tail -25 /tmp/sehy.log 2>&1
-pkill -f 'sehy.json' 2>/dev/null
+pkill -f 'xray.*hyse' 2>/dev/null
 true
 `;
 
