@@ -7,6 +7,19 @@ const corsHeaders = {
 
 const HAPP_COMPAT_REMARK = "⚡ Hysteria 2";
 
+function standaloneCountryCode(host: string): string {
+  const h = String(host || "").toLowerCase();
+  const m = h.match(/^([a-z]{2})(?:cdn)?\./);
+  return m ? m[1].toUpperCase() : "";
+}
+
+function standaloneHysteriaRemark(inbound: any): string {
+  const cc = standaloneCountryCode(inbound?.host || "");
+  const ci = cc ? COUNTRY_INFO[cc] : undefined;
+  const name = ci?.name || "Hysteria 2";
+  return `⚡ Игровой ${name} ⚡`;
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DEFAULT_EXTERNAL_SORT = 1000;
 const PINNED_SORT = -1000;
@@ -284,7 +297,9 @@ function buildHysteria2(uuid: string, inbound: any, overrides?: Map<string, stri
     params.set("obfs", "salamander");
     params.set("obfs-password", obfsPwd);
   }
-  const display = String(inbound.panel ?? "") === "standalone" ? HAPP_COMPAT_REMARK : inboundDisplay(inbound, overrides, panelInfo);
+  const display = String(inbound.panel ?? "") === "standalone"
+    ? standaloneHysteriaRemark(inbound)
+    : inboundDisplay(inbound, overrides, panelInfo);
   return [`hysteria2://${encodeURIComponent(password)}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`];
 }
 
