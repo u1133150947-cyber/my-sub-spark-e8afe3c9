@@ -27,4 +27,4 @@ TS
 cd /opt/sub-manager && deno run -A --unstable-kv --env=/opt/sub-manager/.env /tmp/cascadeadd.ts 2>&1`;
 const c = new Client();
 c.on('ready',()=>c.exec(script,(e,s)=>{if(e){console.log(e);return;}s.on('close',()=>c.end()).on('data',(d:any)=>process.stdout.write(d.toString())).stderr.on('data',(d:any)=>process.stderr.write(d.toString()));}))
-.connect({host:'82.202.128.147',port:22,username:'root',password:'K!E2QAGrxYFx',readyTimeout:15000});
+.connect({host:'82.202.128.147',port:22,username:'root',password:process.env.RU_SSH_PASSWORD!,readyTimeout:15000});
