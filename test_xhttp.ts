@@ -37,4 +37,4 @@ conn.on('ready', () => {
       .on('data', (d: any) => process.stdout.write(d.toString()))
       .stderr.on('data', (d: any) => process.stderr.write(d.toString()));
   });
-}).connect({ host: '82.202.128.147', port: 22, username: 'root', password: 'K!E2QAGrxYFx', readyTimeout: 15000 });
+}).connect({ host: '87.121.105.143', port: 22, username: 'root', password: 'f4OQrEBYUQnEmwkgqPnwDD', readyTimeout: 15000 });
