@@ -67,17 +67,9 @@ Deno.serve(async (req) => {
 
   try {
     if (action === "request_code") {
-      // throttle: at most 1 unused unexpired code per minute
-      const since = new Date(Date.now() - 60_000).toISOString();
-      const { data: recent } = await supa
-        .from("admin_login_codes")
-        .select("id")
-        .eq("used", false)
-        .gt("created_at", since)
-        .limit(1);
-      if (recent && recent.length) {
-        return json({ ok: true, throttled: true, message: "Код уже отправлен, подожди минуту" });
-      }
+      // A fresh request should always create and send a fresh code. This avoids
+      // stale unsent codes blocking Telegram login after a failed delivery.
+      await supa.from("admin_login_codes").delete().eq("used", false);
 
       const code = randomCode();
       const code_hash = await sha256Hex(code);
@@ -85,7 +77,12 @@ Deno.serve(async (req) => {
       const { error } = await supa.from("admin_login_codes").insert({ code_hash, expires_at });
       if (error) throw error;
 
-      await sendTelegram(`🔐 Код для входа в админку: <b>${code}</b>\nДействителен 5 минут.`);
+      try {
+        await sendTelegram(`🔐 Код для входа в админку: <b>${code}</b>\nДействителен 5 минут.`);
+      } catch (e) {
+        await supa.from("admin_login_codes").delete().eq("code_hash", code_hash);
+        throw e;
+      }
       return json({ ok: true });
     }
 
