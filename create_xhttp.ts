@@ -26,25 +26,24 @@ function ssh(p:any, cmd:string): Promise<string> {
       conn.exec(cmd, (err, stream) => {
         if (err) { conn.end(); reject(err); return; }
         stream.on('close', () => { conn.end(); resolve(out); })
-          .on('data', d => { out += d.toString(); })
-          .stderr.on('data', d => { out += d.toString(); });
+          .on('data', (d: any) => { out += d.toString(); })
+          .stderr.on('data', (d: any) => { out += d.toString(); });
       });
     }).on('error', reject)
       .connect({ host: p.host, port: 22, username: 'root', password: p.pass, readyTimeout: 15000 });
   });
 }
 
+const results: any[] = [];
+
 for (const p of panels) {
   console.log(`\n=== ${p.code.toUpperCase()} ===`);
-  // Generate keys
   const keys = await ssh(p, '/usr/local/x-ui/bin/xray-linux-amd64 x25519');
-  const priv = keys.match(/PrivateKey:\s*(\S+)/)?.[1];
-  const pub = keys.match(/(?:Hash32|Password):\s*(\S+)/g)?.map(s => s.split(/\s+/)[1]);
-  // Actually we need Hash32 line (last one)
-  const hashLine = keys.split('\n').find(l => l.startsWith('Hash32:'));
-  const pubKey = hashLine ? hashLine.split(/\s+/)[1] : '';
+  const priv = keys.match(/PrivateKey:\s*(\S+)/)?.[1] ?? '';
+  const hashLine = keys.split('\n').find(l => l.startsWith('Hash32:')) ?? '';
+  const pubKey = hashLine.split(/\s+/)[1] ?? '';
   const sid = randomBytes(8).toString('hex');
-  console.log('priv:', priv, 'pub:', pubKey, 'sid:', sid);
+  console.log('priv:', priv, '\npub:', pubKey, '\nsid:', sid);
 
   const clients = subs.map(s => ({
     id: s.uuid, email: `${s.suffix}_${p.code}_xh`, enable: true, expiryTime: 0,
@@ -64,10 +63,19 @@ for (const p of panels) {
   });
   const sniffing = JSON.stringify({ enabled: false, destOverride: ["http","tls","quic"], metadataOnly: false, routeOnly: false });
 
-  const sqlEscape = (s:string) => s.replace(/'/g, "''");
-  const sql = `INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, '🏳️ xHTTP', 1, 0, '', 8447, 'vless', '${sqlEscape(settings)}', '${sqlEscape(streamSettings)}', 'inbound-8447', '${sqlEscape(sniffing)}'); SELECT last_insert_rowid();`;
+  const esc = (s:string) => s.replace(/'/g, "''");
+  const sql = `INSERT INTO inbounds (user_id, up, down, total, remark, enable, expiry_time, listen, port, protocol, settings, stream_settings, tag, sniffing) VALUES (1, 0, 0, 0, '${p.code.toUpperCase()} xHTTP', 1, 0, '', 8447, 'vless', '${esc(settings)}', '${esc(streamSettings)}', 'inbound-8447', '${esc(sniffing)}');`;
 
-  const cmd = `cat > /tmp/add_inb.sql << 'SQL'
-${sql}
-SQL
-sqlite3 /etc/x-ui/x-ui.db < /tmp/add_inb.sql && systemctl restart x-ui && sleep 4 && echo "---NEW INBOUNDS---" && sqlite3 /etc/x-ui/x-ui.db "SELECT id, port, protocol, remark
+  // Upload SQL via SFTP-style: use base64 to avoid heredoc issues
+  const b64 = Buffer.from(sql).toString('base64');
+  const cmd = `echo '${b64}' | base64 -d > /tmp/add_inb.sql && sqlite3 /etc/x-ui/x-ui.db < /tmp/add_inb.sql && systemctl restart x-ui && sleep 4 && sqlite3 /etc/x-ui/x-ui.db "SELECT id, port, protocol, remark FROM inbounds;" && echo "---PORTS---" && ss -tlnp | grep 8447 && echo "---NEWID---" && sqlite3 /etc/x-ui/x-ui.db "SELECT id FROM inbounds WHERE port=8447;"`;
+  const out = await ssh(p, cmd);
+  console.log(out);
+  const idMatch = out.match(/---NEWID---\s*\n(\d+)/);
+  const inboundId = idMatch ? Number(idMatch[1]) : null;
+  results.push({ panel: p.code, inboundId, priv, pubKey, sid });
+}
+
+console.log('\n\nRESULTS:', JSON.stringify(results, null, 2));
+import { writeFileSync } from 'fs';
+writeFileSync('/tmp/xhttp_results.json', JSON.stringify(results, null, 2));
