@@ -6,6 +6,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -27,11 +29,21 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: sub, error } = await supabase
+    let { data: sub, error } = await supabase
       .from("subscriptions")
       .select("id, client_uuid, expiry_ms")
-      .or(`client_uuid.eq.${auth},id.eq.${auth}`)
+      .eq("client_uuid", auth)
       .maybeSingle();
+
+    if (!sub && UUID_RE.test(auth)) {
+      const byId = await supabase
+        .from("subscriptions")
+        .select("id, client_uuid, expiry_ms")
+        .eq("id", auth)
+        .maybeSingle();
+      sub = byId.data;
+      error = byId.error;
+    }
 
     if (error || !sub) return json({ ok: false });
 
