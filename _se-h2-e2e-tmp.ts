@@ -10,21 +10,23 @@ const cfg = JSON.stringify({
   }]
 }).replace(/'/g, "'\\''");
 
-const cmd = `set -e
-XRAY=$(ls /usr/local/x-ui/bin/xray* 2>/dev/null | head -1)
-[ -z "$XRAY" ] && XRAY=$(which xray)
+const cmd = `
+XRAY=/usr/local/x-ui/bin/xray-linux-amd64
 echo "xray: $XRAY"
-$XRAY version 2>&1 | head -1
 printf '%s' '${cfg}' > /tmp/sehy.json
-pkill -f 'xray.*sehy' 2>/dev/null; sleep 0.5
-($XRAY run -c /tmp/sehy.json > /tmp/sehy.log 2>&1 &)
-for i in $(seq 1 20); do ss -lnt | grep -q ':19091' && break; sleep 0.2; done
-echo '--- curl via SE hy2 ---'
-curl -x socks5h://127.0.0.1:19091 -m 10 -sS -w 'HTTP=%{http_code} IP=%{remote_ip} TIME=%{time_total}\\n' https://ifconfig.me; echo
-curl -x socks5h://127.0.0.1:19091 -m 10 -sS -w 'GEN204=%{http_code} TIME=%{time_total}\\n' -o /dev/null http://cp.cloudflare.com/generate_204
-echo '--- xray log tail ---'
-tail -20 /tmp/sehy.log
-pkill -f 'xray.*sehy' 2>/dev/null
+pkill -f 'sehy.json' 2>/dev/null; sleep 0.5
+nohup $XRAY run -c /tmp/sehy.json > /tmp/sehy.log 2>&1 </dev/null &
+disown
+for i in $(seq 1 30); do ss -lnt 2>/dev/null | grep -q ':19091' && break; sleep 0.3; done
+ss -lnt | grep ':19091' || echo 'NO LISTEN'
+echo '--- curl ifconfig.me ---'
+curl -x socks5h://127.0.0.1:19091 -m 12 -sS -w '\\nHTTP=%{http_code} IP=%{remote_ip} TIME=%{time_total}\\n' https://ifconfig.me 2>&1 || echo CURL_FAIL=$?
+echo '--- curl gen_204 ---'
+curl -x socks5h://127.0.0.1:19091 -m 12 -sS -w 'GEN204=%{http_code} TIME=%{time_total}\\n' -o /dev/null http://cp.cloudflare.com/generate_204 2>&1 || echo CURL_FAIL=$?
+echo '--- xray log ---'
+tail -25 /tmp/sehy.log 2>&1
+pkill -f 'sehy.json' 2>/dev/null
+true
 `;
 
 const c = new Client();
