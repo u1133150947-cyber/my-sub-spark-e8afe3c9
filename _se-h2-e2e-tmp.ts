@@ -1,6 +1,6 @@
 import { Client } from 'ssh2';
 const AUTH = 'c92866b0-40bd-4e2e-ad0f-3dfdd90332e6';
-const cfg = JSON.stringify({
+const cfgJson = JSON.stringify({
   log: { loglevel: 'warning' },
   inbounds: [{ listen: '127.0.0.1', port: 19091, protocol: 'socks', settings: { auth: 'noauth', udp: true }, tag: 'socks' }],
   outbounds: [{
@@ -8,15 +8,16 @@ const cfg = JSON.stringify({
     settings: { servers: [{ address: 'se.panelsu.ru', port: 443, password: AUTH }] },
     streamSettings: { network: 'raw', security: 'tls', tlsSettings: { serverName: 'se.panelsu.ru', alpn: ['h3'] } }
   }]
-}).replace(/'/g, "'\\''");
+});
+const cfgB64 = Buffer.from(cfgJson).toString('base64');
 
 const cmd = `
 XRAY=/usr/local/x-ui/bin/xray-linux-amd64
 echo "xray: $XRAY"
-printf '%s' '${cfg}' > /tmp/hyse.json
+echo '${cfgB64}' | base64 -d > /tmp/hyse.json
+ls -la /tmp/hyse.json
 pkill -f 'xray.*hyse' 2>/dev/null; sleep 0.5
-nohup $XRAY run -c /tmp/hyse.json > /tmp/hyse.log 2>&1 </dev/null &
-disown
+setsid $XRAY run -c /tmp/hyse.json > /tmp/hyse.log 2>&1 < /dev/null &
 for i in $(seq 1 30); do ss -lnt 2>/dev/null | grep -q ':19091' && break; sleep 0.3; done
 ss -lnt | grep ':19091' || echo 'NO LISTEN'
 echo '--- curl ifconfig.me ---'
