@@ -11,12 +11,16 @@ socks5:
 const b64 = Buffer.from(cfgYaml).toString('base64');
 
 const cmd = `
-which hysteria || echo NOHY
+if ! [ -x /tmp/hyclient ]; then
+  curl -fsSL -o /tmp/hyclient https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
+  chmod +x /tmp/hyclient
+fi
+/tmp/hyclient version 2>&1 | head -2
 ls -la /usr/local/bin/hysteria 2>&1 | head -1
 echo '${b64}' | base64 -d > /tmp/hcli.yaml
 cat /tmp/hcli.yaml
 rm -f /tmp/hcli.log /tmp/hcli.pid
-( hysteria client -c /tmp/hcli.yaml > /tmp/hcli.log 2>&1 & echo $! > /tmp/hcli.pid )
+( /tmp/hyclient client -c /tmp/hcli.yaml > /tmp/hcli.log 2>&1 & echo $! > /tmp/hcli.pid )
 for i in $(seq 1 30); do ss -lnt | grep -q ':11080' && break; sleep 0.2; done
 ss -lnt | grep ':11080' || echo NO_LISTEN
 echo '--- curl ifconfig.me via SE-hy2 ---'
