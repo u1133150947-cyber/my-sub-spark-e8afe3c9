@@ -1,63 +1,42 @@
-# Переход на Sidebar + TopBar архитектуру
+План диагностики без внесения изменений
 
-Большой структурный рефакторинг: текущие Tabs в `Index.tsx` заменяются на левый Sidebar + верхний TopBar, а вкладки превращаются в полноценные роуты React Router.
+Выберу один сервер для проверки: average-coffee, IP `87.121.105.143`, потому что по нему уже есть доступы в истории. Остальные два сервера не трогаю.
 
-## Что изменится
+Что проверим только в read-only режиме:
 
-### Новые файлы
+1. Доступность сервера
+   - SSH-доступ.
+   - TCP-доступность нужных портов снаружи.
+   - Отличим реальную недоступность от заблокированного ICMP ping, потому что `ping` часто режется провайдером или firewall и сам по себе не доказывает, что сервис не работает.
 
-```
-src/modules/layout/
-├── navConfig.ts        — конфигурация меню (секции + пункты)
-├── AppSidebar.tsx      — левая панель на shadcn Sidebar (collapsible="icon")
-└── AppTopBar.tsx       — шапка: SidebarTrigger, поиск, онлайн, меню
+2. Состояние сервисов на выбранном сервере
+   - `x-ui` / `xray` активны или нет.
+   - Какие процессы слушают `443` и связанные локальные порты.
+   - Нет ли конфликта между `nginx`, `caddy`, `x-ui`, `xray`.
 
-src/modules/dashboard/DashboardPage.tsx   — обёртка над StatsDashboard
-src/modules/subs/SubsListPage.tsx         — обёртка над SubsTab
-src/modules/subs/SubsCreatePage.tsx       — форма создания (из текущего SubsTab)
-src/modules/subs/SubsBulkPage.tsx         — bulk операции
-src/modules/panels/PanelsListPage.tsx     — обёртка над PanelsManager
-src/modules/panels/InboundsPage.tsx       — обёртка над InboundsManager
-src/modules/panels/HealthPage.tsx         — health check
-src/modules/logs/ClientLogsPage.tsx       — клиентские appLogs
-src/modules/serverLogs/ServerLogsPage.tsx — серверные (переиспользовать LogsTab)
-```
+3. Конфигурация inbound на выбранном сервере
+   - Какие inbound реально созданы.
+   - На каких портах они слушают.
+   - Какие у них `tag`, `protocol`, `realitySettings`, `serverNames`, `shortIds`, `dest`.
+   - Совпадает ли это с тем, что ожидает RU SNI-диспетчер/каскад.
 
-### Изменяемые файлы
+4. Маршрутизация каскада
+   - Проверим, доходит ли RU до выбранного нового сервера по нужному адресу/порту.
+   - Проверим, не отправляет ли RU всё по старому маршруту через CZ.
+   - Проверим routing rules: outboundTag, inboundTag, порядок правил, fallback.
 
-- `src/pages/Index.tsx` — превращается в shell: Sidebar + TopBar + `<Routes>` для подстраниц. Вся текущая логика `useSubsManager` поднимается в shell и передаётся через Outlet context (или используется на страницах напрямую).
-- `src/App.tsx` — маршрут `/` теперь рендерит Index с вложенными роутами (`/dashboard`, `/subs`, `/subs/create`, `/subs/bulk`, `/panels`, `/inbounds`, `/health`, `/logs/client`, `/logs/server`).
+5. Логи без перезапуска
+   - Последние ошибки `x-ui`/`xray`.
+   - Ошибки handshake, TLS/Reality, connection refused, timeout, invalid user, wrong shortId/SNI.
+   - Никаких очисток логов, перезапусков и правок.
 
-### Используемые компоненты
+6. Ответ по результату
+   - Вернусь с коротким выводом: где именно обрыв — клиент → RU, RU SNI → локальный inbound, RU → новый сервер, или новый сервер → интернет.
+   - Отдельно скажу, что можно чинить первым, но без применения фикса до твоего подтверждения.
 
-Использую shadcn `Sidebar` (`src/components/ui/sidebar.tsx`) согласно guideline: `collapsible="icon"`, `SidebarTrigger` в шапке, активный пункт через `NavLink`/`useLocation`. **Не** делаю кастомный `<aside>` из примера пользователя — shadcn даёт mobile drawer, keyboard shortcut и стейт автоматически.
-
-## Технические детали
-
-- **Состояние `useSubsManager`**: вызывается один раз в `Index` shell, прокидывается через `Outlet context` (`useOutletContext`), чтобы не дублировать загрузку данных и сохранить онлайн-счётчик.
-- **Гитнор**: папка `src/modules/logs` ранее попадала под `logs` в `.gitignore`. `ClientLogsPage.tsx` положу в `src/modules/clientLogs/`, серверный лог остаётся в `src/modules/serverLogs/`.
-- **Иконки**: lucide-react (LayoutDashboard, Key, Plus, Settings, Server, Network, Activity, User, Terminal, LogOut) — не эмодзи, чтобы соответствовать дизайн-системе.
-- **Дизайн-токены**: только семантические классы (`bg-sidebar`, `text-sidebar-foreground`, `bg-primary` и т.д.), без хардкода цветов.
-- **Mobile**: shadcn Sidebar сам переключается в Sheet < md.
-- **Fallback роут**: `/` → redirect на `/dashboard`.
-
-## Объём и риски
-
-- ~12 новых файлов, переписывание `Index.tsx` и `App.tsx`.
-- Риск: текущий `useSubsManager` (689 строк) тесно связан с Tabs (`activeTab`). Нужно проверить, что переключение по роутам не ломает lazy-загрузку вкладок (где есть `active={activeTab === "..."}` пропсы — заменить на `true` на своей странице).
-- Существующие компоненты (`SubsTab`, `PanelsManager`, `InboundsManager`, `StatsDashboard`, `OnlineClients`, `LogsTab`) **не трогаю** — только оборачиваю в Page-компоненты.
-- После рефакторинга `Index.tsx` сократится с ~156 строк до ~40 (только shell с роутами).
-
-## Что НЕ входит
-
-- Поиск в TopBar — добавлю заглушку с TODO, реальный глобальный поиск отдельной задачей.
-- Уведомления (Bell) — пропускаю до отдельного запроса.
-- Тема оформления в dropdown — пропускаю.
-- Перенос логики формы создания подписки из `SubsTab` в отдельный `SubsCreatePage` — на первой итерации `SubsCreatePage` просто рендерит `<SubsTab defaultMode="create" />` (если такой пропс есть) или дублирует существующий UI. Полное разделение — отдельная задача.
-
-## Подтверждение
-
-Это большой рефакторинг (~1.5-2 часа работы агента, много токенов). Подтверди:
-1. Делать в один проход всё, или поэтапно (сначала Sidebar+TopBar+routing, потом расщепление страниц)?
-2. ОК использовать shadcn Sidebar вместо кастомного `<aside>` из твоего примера?
-3. Оставлять текущий `Index.tsx` с Tabs до полной готовности нового, или сразу заменять?
+Гарантии на этот проход:
+- Не меняю порты.
+- Не перезапускаю сервисы.
+- Не переписываю конфиги.
+- Не трогаю сразу три сервера.
+- Проверяю только один выбранный сервер и возвращаюсь с диагностическим ответом.
