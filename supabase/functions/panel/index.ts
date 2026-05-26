@@ -820,6 +820,45 @@ Deno.serve(async (req) => {
         }
       }));
 
+      // Hysteria2 standalone servers: pull per-user traffic from each server's
+      // trafficStats API and merge by subscription.client_uuid (which is the
+      // auth id returned by hy2-auth and reported by Hysteria as the user key).
+      const { data: hy2Servers } = await supabase
+        .from("standalone_servers")
+        .select("id, name, host, stats_port, stats_secret");
+      const { data: subsForHy2 } = await supabase
+        .from("subscriptions")
+        .select("id, client_uuid");
+      const uuidToSub = new Map<string, string>();
+      (subsForHy2 ?? []).forEach((s: any) => { if (s.client_uuid) uuidToSub.set(String(s.client_uuid), s.id); });
+      await Promise.all((hy2Servers ?? []).map(async (srv: any) => {
+        if (!srv.stats_port || !srv.stats_secret || !srv.host) return;
+        const url = `http://${srv.host}:${srv.stats_port}/traffic`;
+        const tag = `hy2:${srv.host}`;
+        try {
+          const ctrl = new AbortController();
+          const to = setTimeout(() => ctrl.abort(), 8000);
+          const r = await fetch(url, {
+            headers: { Authorization: String(srv.stats_secret) },
+            signal: ctrl.signal,
+          });
+          clearTimeout(to);
+          if (!r.ok) { panelErrors[tag] = `HTTP ${r.status}`; return; }
+          const data = await r.json() as Record<string, { tx?: number; rx?: number }>;
+          for (const [authId, v] of Object.entries(data ?? {})) {
+            const sid = uuidToSub.get(String(authId)) ?? (subs?.find((s: any) => s.id === authId)?.id);
+            if (!sid) continue;
+            const tx = Number(v?.tx ?? 0); // server -> client (down for user)
+            const rx = Number(v?.rx ?? 0); // client -> server (up for user)
+            const cur = usagePerSub.get(sid) ?? { up: 0, down: 0, total: 0 };
+            cur.up += rx; cur.down += tx; cur.total += tx + rx;
+            usagePerSub.set(sid, cur);
+          }
+        } catch (e) {
+          panelErrors[tag] = e instanceof Error ? e.message : String(e);
+        }
+      }));
+
       const rows = Array.from(usagePerSub.entries()).map(([sid, v]) => ({ subscription_id: sid, used_bytes: v.total }));
       if (rows.length) await supabase.from("traffic_snapshots").insert(rows);
 
