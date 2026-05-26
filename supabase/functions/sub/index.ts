@@ -284,7 +284,14 @@ function buildHysteria2(uuid: string, inbound: any, overrides?: Map<string, stri
     params.set("obfs", "salamander");
     params.set("obfs-password", obfsPwd);
   }
-  const display = String(inbound.panel ?? "") === "standalone" ? HAPP_COMPAT_REMARK : inboundDisplay(inbound, overrides, panelInfo);
+  const isStandalone = String(inbound.panel ?? "") === "standalone";
+  let display: string;
+  if (isStandalone) {
+    const ov = overrides?.get(`${inbound.panel}:${inbound.inbound_id ?? inbound.id}`);
+    display = (ov && ov.trim()) ? ov : HAPP_COMPAT_REMARK;
+  } else {
+    display = inboundDisplay(inbound, overrides, panelInfo);
+  }
   return [`hysteria2://${encodeURIComponent(password)}@${inbound.host}:${inbound.port}?${params.toString()}#${encodeURIComponent(display)}`];
 }
 
