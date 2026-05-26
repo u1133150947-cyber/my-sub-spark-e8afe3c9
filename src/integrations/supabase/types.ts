@@ -302,6 +302,8 @@ export type Database = {
           id: string
           name: string
           port: number
+          stats_port: number | null
+          stats_secret: string | null
           updated_at: string
         }
         Insert: {
@@ -310,6 +312,8 @@ export type Database = {
           id?: string
           name: string
           port?: number
+          stats_port?: number | null
+          stats_secret?: string | null
           updated_at?: string
         }
         Update: {
@@ -318,6 +322,8 @@ export type Database = {
           id?: string
           name?: string
           port?: number
+          stats_port?: number | null
+          stats_secret?: string | null
           updated_at?: string
         }
         Relationships: []
