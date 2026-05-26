@@ -6,14 +6,20 @@ id hysteria 2>&1 | head -1
 which hysteria || echo NO_BIN
 ls /root/.acme.sh/${DOMAIN}_ecc/ 2>&1 | head -3
 
-echo '== kill stuck apt =='
-pkill -9 -f 'apt-get|dpkg|unattended' 2>/dev/null || true
-rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock /var/cache/apt/archives/lock 2>/dev/null || true
-dpkg --configure -a 2>&1 | tail -3 || true
-
-echo '== deps =='
-DEBIAN_FRONTEND=noninteractive apt-get install -y -qq curl socat ca-certificates 2>&1 | tail -3
-which curl
+echo '== deps (with lock timeout) =='
+DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=180 install -y -qq curl socat ca-certificates 2>&1 | tail -5 &
+APID=$!
+# watchdog
+for i in $(seq 1 60); do
+  if ! kill -0 $APID 2>/dev/null; then break; fi
+  sleep 3
+done
+if kill -0 $APID 2>/dev/null; then
+  echo 'apt still running after 180s, killing'
+  kill -9 $APID 2>/dev/null || true
+fi
+wait $APID 2>/dev/null || true
+which curl || { echo 'NO CURL — abort'; exit 1; }
 
 echo '== acme =='
 if [ ! -d /root/.acme.sh ]; then
