@@ -1,92 +1,67 @@
-## Цель
+## Проблема
 
-На зарубежных нодах вырезать рекламу YouTube, отправляя только YouTube/Google-Ads трафик через RU-сервер по SOCKS5. Всё остальное продолжает выходить через зарубежную ноду напрямую.
+ОЗУ на RU: 843/961 MB (87.7%) на 1 vCPU / 8.65 GB диска. На сервере нужны только:
+- **Hysteria 2** (через 3x-ui inbound)
+- **3x-ui панель** (под Caddy на ru.panelsu.ru)
+- **Xray-core** (бэк 3x-ui)
+- **Caddy** (reverse proxy + сертификаты)
 
-Архитектура:
+Всё остальное — наследие старых установок (h-ui / x-ui v1 / marzban / hiddify / nginx / тестовые скрипты в /root и /opt) — кандидаты на снос.
 
-```text
-Клиент → CZ (xray)
-           ├─ geosite:youtube + geosite:google-ads → SOCKS5 → RU:1080 → интернет
-           └─ остальное → freedom (CZ напрямую)
-```
+## Блокер
 
-После проверки на CZ — раскатываем тот же routing на DE / FI / SE.
+SSH-пароль `root@82.202.128.147` в БД пустой, старый `K!E2QAGrxYFx` уже не подходит (Authentication failed). **Нужен актуальный пароль** — без него на сервер не зайти.
 
-## Этап 1. RU: поднять SOCKS5 inbound
+## Шаги после получения пароля
 
-На `82.202.128.147` (RU, x-ui):
+### 1. Диагностика (read-only, ничего не трогаем)
+- `free -h`, `df -h`, `uptime`
+- `ps aux --sort=-%mem | head -20` — кто ест RAM
+- `systemctl list-units --state=running` — что вообще крутится
+- `ss -tlnpu` — какие порты заняты и каким процессом
+- `dpkg -l | grep -Ei 'nginx|apache|x-ui|marzban|hiddify|hysteria|xray|sing-box|warp|cockpit|webmin'`
+- `du -sh /opt/* /var/log/* /root/* /var/lib/docker 2>/dev/null`
+- `journalctl --disk-usage`
+- `docker ps -a` (если есть)
+- `crontab -l` + `ls /etc/cron.*`
 
-1. В x-ui добавить inbound:
-   - protocol: `socks`
-   - listen: `0.0.0.0`
-   - port: `11080` (внешний, нестандартный)
-   - settings: `auth=password`, аккаунт `yt-relay` + длинный пароль (сохранить в Supabase secret `RU_SOCKS_PASSWORD`)
-   - udp: `true` (нужно для QUIC YouTube)
-2. Firewall: `iptables`/`nft` — `ACCEPT tcp/udp 11080` только с IP зарубежных нод (CZ `185.87.148.138`, позже DE/FI/SE). Всем остальным — DROP.
-3. Проверить с CZ: `curl -x socks5h://yt-relay:PASS@82.202.128.147:11080 https://ifconfig.me` → должен вернуть RU IP.
+### 2. Сохранить пароль в БД
+`UPDATE panels SET ssh_password = '...' WHERE slug = 'ru'` — чтобы дальше всё работало через панель и старые tmp-скрипты больше не плодить.
 
-## Этап 2. CZ: routing YouTube → RU SOCKS
+### 3. Безопасный снос (в порядке риска: от низкого к высокому)
 
-На `185.87.148.138`, через 3x-ui отредактировать xray template (`settings.xrayTemplateConfig`):
+**Точно лишнее:**
+- Старые tmp-скрипты в `/root` и `/opt` (test-*, install-*, *.log) — после ревью
+- `apt autoremove --purge` + `apt clean`
+- `journalctl --vacuum-size=100M` (логи systemd обычно занимают сотни мб)
+- Ротация `/var/log/*.gz`
+- Residual пакеты (`dpkg -l | awk '/^rc/'`)
 
-**outbounds** — добавить:
-```json
-{
-  "tag": "ru-socks",
-  "protocol": "socks",
-  "settings": {
-    "servers": [{
-      "address": "82.202.128.147",
-      "port": 11080,
-      "users": [{ "user": "yt-relay", "pass": "<RU_SOCKS_PASSWORD>" }]
-    }]
-  }
-}
-```
+**Условно лишнее (если найдём при диагностике):**
+- Старая `x-ui` v1 от sprov / vaxilu — если стоит параллельно с 3x-ui
+- `h-ui`, `marzban`, `hiddify-manager` — если когда-то ставились
+- `nginx` / `apache2` — если Caddy уже всё проксирует
+- `cockpit`, `webmin` — старые веб-панели
+- WARP / wgcf, если не используется в outbound
+- Docker — если ни один контейнер не нужен (typically жрёт RAM)
 
-**routing.rules** — в начало списка:
-```json
-{ "type": "field", "outboundTag": "ru-socks",
-  "domain": ["geosite:youtube", "geosite:google-ads",
-             "domain:googlevideo.com", "domain:ytimg.com",
-             "domain:youtube-nocookie.com", "domain:youtu.be"] }
-```
+**Для каждой находки** перед удалением:
+- проверить, не слушает ли порт, нужный нам (2053, 443, 80, hysteria UDP)
+- `systemctl stop` + `disable`, потом `apt purge` / `rm -rf` директорий
+- после каждого блока — `free -h` и `systemctl status x-ui caddy` чтобы убедиться, что основное живо
 
-Existing freedom/direct outbound остаётся дефолтным для всего остального.
+### 4. Финальная проверка
+- Панель `https://ru.panelsu.ru/` открывается
+- Hysteria 2 inbound принимает подключения (тест клиентом)
+- `free -h` показывает заметное снижение RAM
+- Все наши подписки в `subscription_inbounds` с `panel='ru'` продолжают работать
 
-Перезапустить xray: `systemctl restart x-ui`.
+## Что НЕ трогаем
+- `x-ui` (3x-ui) и его БД `/etc/x-ui/x-ui.db`
+- `xray` бинарь, который запускает 3x-ui
+- `caddy` + `/etc/caddy/Caddyfile` + сертификаты `/root/cert/ru.panelsu.ru/`
+- ssh / sshd_config / authorized_keys
 
-## Этап 3. Проверка на CZ
+---
 
-С клиента, подключённого к CZ-инбаунду текущей подписки:
-1. `curl https://ifconfig.me` → CZ IP (ничего не сломалось).
-2. `curl https://www.youtube.com -v` (или открыть YouTube в браузере + `chrome://net-internals`) → IP/маршрут до googlevideo должен быть RU.
-3. Открыть видео — проверить что preroll/midroll реклама пропадает (за счёт того, что googlevideo ходит через RU, где Google отдаёт сильно меньше рекламы / другие правила).
-4. Проверить QUIC/UDP (YouTube любит h3): убедиться что 11080/udp реально проходит. Если нет — отключить h3 в браузере для теста или принять fallback на TCP.
-
-Логи смотрим: `journalctl -u x-ui -f` на CZ и `journalctl -u x-ui -f` на RU.
-
-## Этап 4. Раскатка на DE / FI / SE
-
-Скрипт `setup-yt-relay.ts` (по аналогии с `configure-h2-servers.ts`):
-- читает `panels` из Supabase
-- для каждой ноды кроме RU добавляет в xray template тот же `ru-socks` outbound + routing rule (идемпотентно: проверяет наличие tag `ru-socks` перед вставкой)
-- перезапускает x-ui
-- логирует результат в `audit_log`
-
-Firewall на RU обновляем — добавляем DE/FI/SE IP в whitelist 11080.
-
-## Технические детали
-
-- **Почему SOCKS, а не VLESS-туннель RU↔CZ**: проще в xray (один outbound, без TLS-обвязки), а защиту даёт firewall whitelist по source IP + пароль. Open SOCKS наружу без whitelist — нельзя.
-- **UDP**: socks outbound в xray поддерживает UDP, нужно для QUIC YouTube. Если будут проблемы — добавим `"settings.udp": true` и `sniffing.enabled: true` с `destOverride: ["http","tls","quic"]` в inbound на CZ.
-- **Geosite**: `geosite:youtube` уже включает основные домены, `geosite:google-ads` режет рекламные эндпоинты. Дополнительные `domain:googlevideo.com` и т.д. — подстраховка на случай устаревшего geosite-файла.
-- **Sniffing** на CZ inbound должен быть включён (иначе routing по домену не сработает для TLS) — у вас, судя по предыдущим конфигам, уже так.
-- **Secret**: пароль SOCKS — в Supabase secret `RU_SOCKS_PASSWORD`, скрипты раскатки читают оттуда.
-- **Откат**: достаточно убрать routing rule и outbound `ru-socks` из template и перезапустить x-ui. Бэкап template сохраняем перед изменением.
-
-## Риски
-
-- YouTube определяет RU IP → может показать региональные ограничения / другой набор рекламы (вместо отсутствия). В этом случае поможет связка RU SOCKS → WARP, но это уже следующий шаг.
-- Скорость YouTube ограничится каналом RU-ноды и линком CZ↔RU. Для Самары это, наоборот, скорее плюс.
-- Если RU нода ляжет — YouTube перестанет грузиться на всех зарубежных нодах. Можно добавить fallback rule `balancerTag` на direct, но усложнит конфиг — отложим.
+**Дай SSH-пароль от `root@82.202.128.147` и переключи в build mode** — пройдусь по шагу 1, вернусь со списком конкретного мусора и подтверждением что валить, потом снесу.
