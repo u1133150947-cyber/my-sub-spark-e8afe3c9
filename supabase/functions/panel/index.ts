@@ -796,16 +796,6 @@ Deno.serve(async (req) => {
     }
 
     if (action === "stats") {
-      // Debug: ?action=stats&debug=ru returns raw per-email traffic from one panel.
-      const debugSlug = url.searchParams.get("debug");
-      if (debugSlug) {
-        try {
-          const raw = await getClientTrafficsByEmail(debugSlug as any);
-          return new Response(JSON.stringify({ slug: debugSlug, raw }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        } catch (e) {
-          return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-        }
-      }
       const all = await getAllPanels();
       const { data: subs } = await supabase.from("subscriptions").select("id, name, client_email, created_at");
 
