@@ -537,6 +537,44 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ...result, _panels: meta }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    if (action === "syncRealityKeys") {
+      const slugParam = url.searchParams.get("panel");
+      const all = await getAllPanels();
+      const targets = slugParam ? all.filter((p) => p.slug === slugParam) : all;
+      const report: any[] = [];
+      for (const p of targets) {
+        try {
+          const inbounds = await listInbounds(p.slug);
+          for (const ib of inbounds) {
+            let ss: any = {};
+            try { ss = JSON.parse(ib.streamSettings ?? "{}"); } catch {}
+            const rs = ss?.realitySettings;
+            if (!rs?.privateKey) continue;
+            const truePriv = rs.privateKey;
+            const truePub = rs?.settings?.publicKey ?? rs.publicKey;
+            // update all rows for this panel+inbound
+            const { data: rows } = await supabase
+              .from("subscription_inbounds")
+              .select("id, stream_settings")
+              .eq("panel", p.slug)
+              .eq("inbound_id", ib.id);
+            for (const row of rows ?? []) {
+              const cur = row.stream_settings ?? {};
+              const curRs = cur.realitySettings ?? {};
+              const before = { priv: curRs.privateKey, pub: curRs.publicKey };
+              if (before.priv === truePriv && before.pub === truePub) continue;
+              const next = { ...cur, realitySettings: { ...curRs, privateKey: truePriv, publicKey: truePub } };
+              await supabase.from("subscription_inbounds").update({ stream_settings: next }).eq("id", row.id);
+              report.push({ panel: p.slug, inbound_id: ib.id, row_id: row.id, before, after: { priv: truePriv, pub: truePub } });
+            }
+          }
+        } catch (e) {
+          report.push({ panel: p.slug, error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      return new Response(JSON.stringify({ updated: report.length, report }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+    }
+
     if (action === "healthCheck") {
       const all = await getAllPanels();
       const out: { panel: string; status: string; latency_ms: number; message: string }[] = [];
