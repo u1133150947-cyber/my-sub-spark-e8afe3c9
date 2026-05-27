@@ -815,11 +815,22 @@ Deno.serve(async (req) => {
       const emailToSub = new Map<string, string>();
       (allLinks ?? []).forEach((l: any) => { if (l.client_email) emailToSub.set(l.client_email, l.subscription_id); });
       (subs ?? []).forEach((s) => { if (!emailToSub.has(s.client_email)) emailToSub.set(s.client_email, s.id); });
+      // 3x-ui actually stores client emails as `<subscriptions.client_email>_<panel_internal_slug><inbound_id>`,
+      // which never exact-matches our subscription_inbounds.client_email (e.g. `Paul_nspm78_ru13`).
+      // Build a prefix index over `subscriptions.client_email + "_"` so usage rolls up correctly.
+      const subByPrefix: { prefix: string; sid: string }[] = [];
+      (subs ?? []).forEach((s: any) => { if (s.client_email) subByPrefix.push({ prefix: String(s.client_email) + "_", sid: s.id }); });
+      const resolveEmailToSub = (email: string): string | undefined => {
+        const direct = emailToSub.get(email);
+        if (direct) return direct;
+        const pref = subByPrefix.find((p) => email.startsWith(p.prefix));
+        return pref?.sid;
+      };
       await Promise.all(all.map(async (p) => {
         try {
           const m = await getClientTrafficsByEmail(p.slug);
           for (const [email, v] of Object.entries(m)) {
-            const sid = emailToSub.get(email);
+            const sid = resolveEmailToSub(email);
             if (!sid) continue;
             const cur = usagePerSub.get(sid) ?? { up: 0, down: 0, total: 0 };
             cur.up += v.up; cur.down += v.down; cur.total += v.total;
