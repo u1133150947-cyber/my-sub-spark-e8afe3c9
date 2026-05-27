@@ -848,10 +848,13 @@ Deno.serve(async (req) => {
           for (const [authId, v] of Object.entries(data ?? {})) {
             const sid = uuidToSub.get(String(authId)) ?? (subs?.find((s: any) => s.id === authId)?.id);
             if (!sid) continue;
-            const tx = Number(v?.tx ?? 0); // server -> client (down for user)
-            const rx = Number(v?.rx ?? 0); // client -> server (up for user)
+            // Hysteria2 trafficStats reports tx/rx FROM THE CLIENT'S perspective:
+            //   tx = bytes the client sent   -> "up"   for the user
+            //   rx = bytes the client got    -> "down" for the user
+            const tx = Number(v?.tx ?? 0);
+            const rx = Number(v?.rx ?? 0);
             const cur = usagePerSub.get(sid) ?? { up: 0, down: 0, total: 0 };
-            cur.up += rx; cur.down += tx; cur.total += tx + rx;
+            cur.up += tx; cur.down += rx; cur.total += tx + rx;
             usagePerSub.set(sid, cur);
           }
         } catch (e) {
